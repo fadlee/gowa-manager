@@ -18,7 +18,6 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS instances (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
-      binary_path TEXT NOT NULL,
       port INTEGER,
       status TEXT DEFAULT 'stopped',
       config TEXT DEFAULT '{}',
@@ -44,13 +43,13 @@ export const queries = {
   getAllInstances: db.prepare('SELECT * FROM instances ORDER BY created_at DESC'),
   getInstanceById: db.prepare('SELECT * FROM instances WHERE id = ?'),
   createInstance: db.prepare(`
-    INSERT INTO instances (name, binary_path, port, config) 
-    VALUES (?, ?, ?, ?) 
+    INSERT INTO instances (name, port, config) 
+    VALUES (?, ?, ?) 
     RETURNING *
   `),
   updateInstance: db.prepare(`
     UPDATE instances 
-    SET name = ?, binary_path = ?, port = ?, config = ?, updated_at = CURRENT_TIMESTAMP 
+    SET name = ?, port = ?, config = ?, updated_at = CURRENT_TIMESTAMP 
     WHERE id = ? 
     RETURNING *
   `),

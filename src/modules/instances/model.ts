@@ -4,8 +4,7 @@ import type { Instance } from '../../types'
 export namespace InstanceModel {
   // Create instance request
   export const createBody = t.Object({
-    name: t.String({ minLength: 1, maxLength: 100 }),
-    binary_path: t.String({ minLength: 1 }),
+    name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
     config: t.Optional(t.String())
   })
   export type createBody = Instance.CreateRequest
@@ -13,7 +12,6 @@ export namespace InstanceModel {
   // Update instance request
   export const updateBody = t.Object({
     name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
-    binary_path: t.Optional(t.String({ minLength: 1 })),
     config: t.Optional(t.String())
   })
   export type updateBody = Instance.UpdateRequest
@@ -22,7 +20,6 @@ export namespace InstanceModel {
   export const instanceResponse = t.Object({
     id: t.Number(),
     name: t.String(),
-    binary_path: t.String(),
     port: t.Union([t.Number(), t.Null()]),
     status: t.String(),
     config: t.String(),

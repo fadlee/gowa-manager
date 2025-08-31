@@ -17,21 +17,18 @@ export type ValidationError = {
 // Instance Types
 export namespace Instance {
   export type CreateRequest = {
-    name: string;
-    binary_path: string;
+    name?: string;
     config?: string;
   }
 
   export type UpdateRequest = {
     name?: string;
-    binary_path?: string;
     config?: string;
   }
 
   export type Response = {
     id: number;
     name: string;
-    binary_path: string;
     port: number | null;
     status: string;
     config: string;
@@ -62,39 +59,6 @@ export namespace Instance {
   export type SuccessResponse = {
     success: true;
     message: string;
-  }
-}
-
-// Binary Types
-export namespace Binary {
-  export type CreateRequest = {
-    name: string;
-    path: string;
-  }
-
-  export type Response = {
-    id: number;
-    name: string;
-    path: string;
-    uploaded_at: string;
-  }
-
-  export type ListResponse = Response[];
-
-  export type UploadResponse = {
-    success: boolean;
-    message: string;
-    binary?: Response;
-  }
-
-  export type NotFoundError = {
-    error: 'Binary not found';
-    success: false;
-  }
-
-  export type ValidationResponse = {
-    valid: boolean;
-    error?: string;
   }
 }
 

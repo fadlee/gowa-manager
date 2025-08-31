@@ -30,7 +30,9 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
   // Create new instance
   .post('/', async ({ body, set }) => {
     try {
-      const instance = await InstanceService.createInstance(body)
+      // Handle case where body might be undefined or empty
+      const requestBody = body || {}
+      const instance = await InstanceService.createInstance(requestBody)
       set.status = 201
       return instance
     } catch (error) {

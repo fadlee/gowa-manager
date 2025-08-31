@@ -1,4 +1,4 @@
-import { queries, db } from '../../db'
+import { queries } from '../../db'
 import { join } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { InstanceModel } from './model'
@@ -6,6 +6,19 @@ import { SystemService } from '../system/service'
 
 // Process management utilities
 const runningProcesses = new Map<number, { pid: number; startTime: number }>()
+
+// GOWA binary path
+const GOWA_BINARY_PATH = join(process.cwd(), 'data', 'bin', 'gowa')
+
+// Generate random instance name
+function generateRandomName(): string {
+  const adjectives = ['fast', 'swift', 'bright', 'cool', 'smart', 'quick', 'active', 'dynamic']
+  const nouns = ['app', 'service', 'worker', 'server', 'instance', 'process', 'handler', 'engine']
+  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)]
+  const noun = nouns[Math.floor(Math.random() * nouns.length)]
+  const randomNum = Math.floor(Math.random() * 1000)
+  return `${adjective}-${noun}-${randomNum}`
+}
 
 export abstract class InstanceService {
   // Get all instances
@@ -24,12 +37,29 @@ export abstract class InstanceService {
     // Get next available port dynamically
     const port = await SystemService.getNextAvailablePort()
 
-    const config = data.config || '{}'
+    // Generate name if not provided
+    const name = data.name || generateRandomName()
+    
+    // Set default config with gowa rest command
+    const defaultConfig = {
+      args: ['rest', '--port=PORT']
+    }
+    
+    let config = defaultConfig
+    if (data.config) {
+      try {
+        const parsedConfig = JSON.parse(data.config)
+        config = { ...defaultConfig, ...parsedConfig }
+      } catch {
+        // If config is invalid JSON, use default
+        config = defaultConfig
+      }
+    }
+
     const instance = queries.createInstance.get(
-      data.name,
-      data.binary_path,
+      name,
       port,
-      config
+      JSON.stringify(config)
     ) as InstanceModel.instanceResponse
 
     // Create instance directory
@@ -59,7 +89,6 @@ export abstract class InstanceService {
 
     const updated = queries.updateInstance.get(
       data.name || existing.name,
-      data.binary_path || existing.binary_path,
       existing.port,
       data.config || existing.config,
       id
@@ -177,7 +206,7 @@ export abstract class InstanceService {
       }
 
       console.log(`Starting instance ${id}:`, {
-        binary: instance.binary_path,
+        binary: GOWA_BINARY_PATH,
         args: processedArgs,
         workingDir: instanceDir,
         envKeys: Object.keys(env).filter(k => k !== 'PORT' && !k.startsWith('SYSTEM_')),
@@ -186,7 +215,7 @@ export abstract class InstanceService {
 
       // Spawn process using Bun.spawn
       const spawnedProcess = Bun.spawn({
-        cmd: [instance.binary_path, ...processedArgs],
+        cmd: [GOWA_BINARY_PATH, ...processedArgs],
         cwd: instanceDir, // Run in instance-specific directory
         env
       })
