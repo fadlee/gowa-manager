@@ -28,6 +28,7 @@ export namespace Instance {
 
   export type Response = {
     id: number;
+    key: string;
     name: string;
     port: number | null;
     status: string;

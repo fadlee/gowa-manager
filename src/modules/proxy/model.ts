@@ -6,7 +6,7 @@ export namespace ProxyModel {
 
   // Proxy request info
   export const proxyRequest = t.Object({
-    instanceId: t.String(),
+    instanceKey: t.String(),
     path: t.String(),
     method: t.String(),
     headers: t.Record(t.String(), t.String()),
@@ -32,7 +32,7 @@ export namespace ProxyModel {
   export const instanceOfflineError = t.Object({
     error: t.String(),
     success: t.Literal(false),
-    instanceId: t.Optional(t.String())
+    instanceKey: t.Optional(t.String())
   })
   export type instanceOfflineError = Proxy.InstanceOfflineError
 
@@ -44,7 +44,7 @@ export namespace ProxyModel {
 
   // Proxy status response
   export const proxyStatus = t.Object({
-    instanceId: t.String(),
+    instanceKey: t.String(),
     instanceName: t.String(),
     status: t.String(),
     port: t.Union([t.Number(), t.Null()]),
@@ -71,7 +71,7 @@ export namespace ProxyModel {
 
   // WebSocket connection status
   export const wsConnectionStatus = t.Object({
-    instanceId: t.String(),
+    instanceKey: t.String(),
     connected: t.Boolean(),
     targetUrl: t.Optional(t.String())
   })
@@ -87,7 +87,7 @@ export namespace ProxyModel {
   // WebSocket error
   export const wsError = t.Object({
     error: t.String(),
-    instanceId: t.String()
+    instanceKey: t.String()
   })
   export type wsError = Proxy.WSError
 }

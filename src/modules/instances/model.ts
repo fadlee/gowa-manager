@@ -19,6 +19,7 @@ export namespace InstanceModel {
   // Instance response
   export const instanceResponse = t.Object({
     id: t.Number(),
+    key: t.String(),
     name: t.String(),
     port: t.Union([t.Number(), t.Null()]),
     status: t.String(),

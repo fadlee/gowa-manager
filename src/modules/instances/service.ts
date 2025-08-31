@@ -1,7 +1,7 @@
-import { queries } from '../../db'
-import { join } from 'path'
-import { existsSync, mkdirSync } from 'fs'
-import { InstanceModel } from './model'
+import { existsSync, mkdirSync } from 'node:fs'
+import type { InstanceModel } from './model'
+import { join } from 'node:path'
+import { queries, generateInstanceKey } from '../../db'
 import { SystemService } from '../system/service'
 
 // Process management utilities
@@ -39,12 +39,12 @@ export abstract class InstanceService {
 
     // Generate name if not provided
     const name = data.name || generateRandomName()
-    
+
     // Set default config with gowa rest command
     const defaultConfig = {
       args: ['rest', '--port=PORT']
     }
-    
+
     let config = defaultConfig
     if (data.config) {
       try {
@@ -56,7 +56,11 @@ export abstract class InstanceService {
       }
     }
 
+    // Generate a unique key for the instance
+    const key = generateInstanceKey()
+
     const instance = queries.createInstance.get(
+      key,
       name,
       port,
       JSON.stringify(config)
@@ -88,6 +92,7 @@ export abstract class InstanceService {
     if (!existing) return null
 
     const updated = queries.updateInstance.get(
+      existing.key,
       data.name || existing.name,
       existing.port,
       data.config || existing.config,
@@ -166,10 +171,10 @@ export abstract class InstanceService {
           args = config.args.trim() ? config.args.trim().split(/\s+/) : []
         }
       }
-      
+
       console.log(`Debug - config.args type: ${typeof config.args}, value:`, config.args)
       console.log(`Debug - processed args:`, args)
-      
+
       const processedArgs = args.map((arg: string) =>
         arg.replace(/PORT/g, instance.port?.toString() || '8080')
       )
@@ -198,7 +203,7 @@ export abstract class InstanceService {
           }
         })
       }
-      
+
       const env = {
         ...process.env,
         PORT: instance.port?.toString() || '8080',
