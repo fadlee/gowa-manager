@@ -1,0 +1,73 @@
+import { t } from 'elysia'
+import type { Instance } from '../../types'
+
+export namespace InstanceModel {
+  // Create instance request
+  export const createBody = t.Object({
+    name: t.String({ minLength: 1, maxLength: 100 }),
+    binary_path: t.String({ minLength: 1 }),
+    config: t.Optional(t.String())
+  })
+  export type createBody = Instance.CreateRequest
+
+  // Update instance request
+  export const updateBody = t.Object({
+    name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+    binary_path: t.Optional(t.String({ minLength: 1 })),
+    config: t.Optional(t.String())
+  })
+  export type updateBody = Instance.UpdateRequest
+
+  // Instance response
+  export const instanceResponse = t.Object({
+    id: t.Number(),
+    name: t.String(),
+    binary_path: t.String(),
+    port: t.Union([t.Number(), t.Null()]),
+    status: t.String(),
+    config: t.String(),
+    created_at: t.String(),
+    updated_at: t.String()
+  })
+  export type instanceResponse = Instance.Response
+
+  // Instance list response
+  export const instanceListResponse = t.Array(instanceResponse)
+  export type instanceListResponse = Instance.ListResponse
+
+  // Control action request
+  export const controlAction = t.Object({
+    action: t.Union([t.Literal('start'), t.Literal('stop'), t.Literal('restart')])
+  })
+  export type controlAction = Instance.ControlAction
+
+  // Status response
+  export const statusResponse = t.Object({
+    id: t.Number(),
+    name: t.String(),
+    status: t.String(),
+    port: t.Union([t.Number(), t.Null()]),
+    pid: t.Union([t.Number(), t.Null()]),
+    uptime: t.Union([t.Number(), t.Null()])
+  })
+  export type statusResponse = Instance.StatusResponse
+
+  // Error responses
+  export const notFoundError = t.Object({
+    error: t.Literal('Instance not found'),
+    success: t.Literal(false)
+  })
+  export type notFoundError = Instance.NotFoundError
+
+  export const validationError = t.Object({
+    error: t.String(),
+    success: t.Literal(false)
+  })
+  export type validationError = typeof validationError.static
+
+  export const successResponse = t.Object({
+    success: t.Literal(true),
+    message: t.String()
+  })
+  export type successResponse = Instance.SuccessResponse
+}
