@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { join } from 'path'
+import { join } from 'node:path'
 
 // Utility function to generate 8-character random keys
 function generateInstanceKey(): string {
@@ -14,7 +14,7 @@ function generateInstanceKey(): string {
 // Initialize database schema first
 function initializeDatabase() {
   // Create data directory if it doesn't exist
-  const fs = require('fs')
+  const fs = require('node:fs')
   const dataDir = join(process.cwd(), 'data')
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
@@ -46,8 +46,6 @@ const db = initializeDatabase()
 
 // Export db for direct access when needed
 export { db, generateInstanceKey }
-
-// Simple CRUD helpers
 export const queries = {
   // Instances
   getAllInstances: db.prepare('SELECT * FROM instances ORDER BY created_at DESC'),

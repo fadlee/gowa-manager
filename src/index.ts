@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { cors } from '@elysiajs/cors'
 import './db' // Import to initialize database
+import './restart' // Import to auto-restart instances
 import { instancesModule } from './modules/instances'
 import { systemModule } from './modules/system'
 import { proxyModule } from './modules/proxy'
