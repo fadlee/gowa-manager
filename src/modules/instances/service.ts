@@ -1,102 +1,23 @@
-import { existsSync, mkdirSync } from 'node:fs'
 import type { InstanceModel } from './model'
-import { join } from 'node:path'
 import { queries, generateInstanceKey } from '../../db'
 import { SystemService } from '../system/service'
+import { ProcessManager, type ProcessInfo } from './utils/process-manager'
+import { DirectoryManager } from './utils/directory-manager'
+import { ConfigParser } from './utils/config-parser'
+import { NameGenerator } from './utils/name-generator'
+import { join } from 'node:path'
 
-// Process management utilities
-interface ProcessInfo {
-  process: Bun.Subprocess;
-  pid: number;
-  startTime: number;
-  cleanup?: () => void;
-}
-
-const runningProcesses = new Map<number, ProcessInfo>()
-
-// Graceful shutdown handler
-let isShuttingDown = false
-
-// Cleanup all running instances (kill processes only, no database updates)
-async function cleanupAllInstances(): Promise<void> {
-  if (isShuttingDown) return
-  isShuttingDown = true
-
-  console.log('Cleaning up all running instances...')
-  const cleanupPromises: Promise<void>[] = []
-
-  for (const [instanceId, processInfo] of runningProcesses) {
-    cleanupPromises.push(
-      new Promise<void>((resolve) => {
-        try {
-          console.log(`Killing instance ${instanceId} (PID: ${processInfo.pid})`)
-
-          // Force kill immediately - no graceful shutdown needed for crash/restart scenarios
-          processInfo.process.kill('SIGKILL')
-          console.log(`Force killed instance ${instanceId}`)
-          resolve()
-
-        } catch (error) {
-          console.warn(`Failed to kill instance ${instanceId}:`, error)
-          resolve()
-        }
-      })
-    )
-  }
-
-  await Promise.all(cleanupPromises)
-  runningProcesses.clear()
-  console.log('All instances cleaned up')
-}
-
-// Register process exit handlers
-process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM, cleaning up...')
-  await cleanupAllInstances()
-  process.exit(0)
-})
-
-process.on('SIGINT', async () => {
-  console.log('Received SIGINT, cleaning up...')
-  await cleanupAllInstances()
-  process.exit(0)
-})
-
-process.on('beforeExit', async () => {
-  await cleanupAllInstances()
-})
-
-// Handle uncaught exceptions
-process.on('uncaughtException', async (error) => {
-  console.error('Uncaught exception:', error)
-  await cleanupAllInstances()
-  process.exit(1)
-})
-
-process.on('unhandledRejection', async (reason, promise) => {
-  console.error('Unhandled rejection at:', promise, 'reason:', reason)
-  await cleanupAllInstances()
-  process.exit(1)
-})
-
-// GOWA binary path
 const GOWA_BINARY_PATH = join(process.cwd(), 'data', 'bin', 'gowa')
 
-// Generate random instance name
-function generateRandomName(): string {
-  const adjectives = ['fast', 'swift', 'bright', 'cool', 'smart', 'quick', 'active', 'dynamic']
-  const nouns = ['app', 'service', 'worker', 'server', 'instance', 'process', 'handler', 'engine']
-  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)]
-  const noun = nouns[Math.floor(Math.random() * nouns.length)]
-  const randomNum = Math.floor(Math.random() * 1000)
-  return `${adjective}-${noun}-${randomNum}`
-}
+// Initialize process exit handlers
+ProcessManager.setupExitHandlers()
 
 export abstract class InstanceService {
   // Expose cleanup function for external use
   static async cleanupAllInstances(): Promise<void> {
-    return cleanupAllInstances()
+    return ProcessManager.cleanupAllInstances()
   }
+
   // Get all instances
   static getAllInstances(): InstanceModel.instanceListResponse {
     return queries.getAllInstances.all() as InstanceModel.instanceListResponse
@@ -114,12 +35,10 @@ export abstract class InstanceService {
     const port = await SystemService.getNextAvailablePort()
 
     // Generate name if not provided
-    const name = data.name || generateRandomName()
+    const name = data.name || NameGenerator.generateRandomName()
 
     // Set default config with gowa rest command
-    const defaultConfig = {
-      args: ['rest', '--port=PORT']
-    }
+    const defaultConfig = ConfigParser.getDefaultConfig()
 
     let config = defaultConfig
     if (data.config) {
@@ -143,23 +62,9 @@ export abstract class InstanceService {
     ) as InstanceModel.instanceResponse
 
     // Create instance directory
-    this.createInstanceDirectory(instance.id)
+    DirectoryManager.createInstanceDirectory(instance.id)
 
     return instance
-  }
-
-  // Create instance-specific directory
-  private static createInstanceDirectory(instanceId: number): string {
-    const instanceDir = join(process.cwd(), 'data', 'instances', instanceId.toString())
-    if (!existsSync(instanceDir)) {
-      mkdirSync(instanceDir, { recursive: true })
-    }
-    return instanceDir
-  }
-
-  // Get instance directory path
-  private static getInstanceDirectory(instanceId: number): string {
-    return join(process.cwd(), 'data', 'instances', instanceId.toString())
   }
 
   // Update instance
@@ -189,30 +94,17 @@ export abstract class InstanceService {
     }
 
     // Clean up instance directory
-    this.cleanupInstanceDirectory(id)
+    DirectoryManager.cleanupInstanceDirectory(id)
 
     const result = queries.deleteInstance.run(id)
     return result.changes > 0
-  }
-
-  // Clean up instance directory
-  private static cleanupInstanceDirectory(instanceId: number): void {
-    const instanceDir = this.getInstanceDirectory(instanceId)
-    if (existsSync(instanceDir)) {
-      try {
-        const fs = require('fs')
-        fs.rmSync(instanceDir, { recursive: true, force: true })
-      } catch (error) {
-        console.warn(`Failed to cleanup instance directory ${instanceDir}:`, error)
-      }
-    }
   }
 
   private static isReallyRunning(id: number): boolean {
     const instance = this.getInstanceById(id)
     if (!instance) return false
 
-    return runningProcesses.has(id)
+    return ProcessManager.isReallyRunning(id)
   }
 
   // Start instance
@@ -226,65 +118,12 @@ export abstract class InstanceService {
 
     try {
       // Ensure instance directory exists
-      const instanceDir = this.createInstanceDirectory(id)
+      const instanceDir = DirectoryManager.createInstanceDirectory(id)
 
-      // Parse configuration to get command arguments and environment
-      let config: any = {}
-      try {
-        config = JSON.parse(instance.config || '{}')
-      } catch {
-        config = {}
-      }
-
-      // Prepare command arguments, replacing PORT placeholder
-      let args: string[] = []
-      if (config.args) {
-        if (Array.isArray(config.args)) {
-          // If args is already an array, use it directly
-          args = config.args
-        } else if (typeof config.args === 'string') {
-          // If args is a string, split it by spaces (handling quoted arguments)
-          args = config.args.trim() ? config.args.trim().split(/\s+/) : []
-        }
-      }
-
-      console.log(`Debug - config.args type: ${typeof config.args}, value:`, config.args)
-      console.log(`Debug - processed args:`, args)
-
-      const processedArgs = args.map((arg: string) =>
-        arg.replace(/PORT/g, instance.port?.toString() || '8080')
-      )
-
-      // Prepare environment variables
-      let envVars: Record<string, string> = {}
-      if (config.env) {
-        if (typeof config.env === 'object') {
-          envVars = config.env
-        } else if (typeof config.env === 'string' || typeof config.envVars === 'string') {
-          // Parse environment variables from string format "KEY=value KEY2=value2"
-          const envString = config.env || config.envVars || ''
-          envString.split(/\s+/).forEach((pair: string) => {
-            const [key, ...valueParts] = pair.split('=')
-            if (key && valueParts.length > 0) {
-              envVars[key] = valueParts.join('=')
-            }
-          })
-        }
-      } else if (config.envVars && typeof config.envVars === 'string') {
-        // Handle legacy envVars field
-        config.envVars.split(/\s+/).forEach((pair: string) => {
-          const [key, ...valueParts] = pair.split('=')
-          if (key && valueParts.length > 0) {
-            envVars[key] = valueParts.join('=')
-          }
-        })
-      }
-
-      const env = {
-        ...process.env,
-        PORT: instance.port?.toString() || '8080',
-        ...envVars
-      }
+      // Parse configuration
+      const config = ConfigParser.parseConfig(instance.config)
+      const processedArgs = ConfigParser.processArgs(config, instance.port || 8080)
+      const env = ConfigParser.parseEnvironmentVars(config, instance.port || 8080)
 
       console.log(`Starting instance ${id}:`, {
         binary: GOWA_BINARY_PATH,
@@ -315,15 +154,15 @@ export abstract class InstanceService {
         }
       }
 
-      runningProcesses.set(id, processInfo)
+      ProcessManager.addProcess(id, processInfo)
 
       // Monitor process exit (no database updates)
       spawnedProcess.exited.then(() => {
         console.log(`Instance ${id} process exited`)
-        runningProcesses.delete(id)
+        ProcessManager.removeProcess(id)
       }).catch((error) => {
         console.error(`Instance ${id} process error:`, error)
-        runningProcesses.delete(id)
+        ProcessManager.removeProcess(id)
       })
 
       // Update status in database
@@ -342,17 +181,7 @@ export abstract class InstanceService {
     const instance = this.getInstanceById(id)
     if (!instance) return null
 
-    const processInfo = runningProcesses.get(id)
-    if (processInfo) {
-      try {
-        // Graceful shutdown with SIGTERM
-        processInfo.process.kill('SIGTERM')
-        runningProcesses.delete(id)
-      } catch (error) {
-        console.error(`Failed to stop process ${processInfo.pid}:`, error)
-      }
-    }
-
+    ProcessManager.stopProcess(id)
     queries.updateInstanceStatus.run('stopped', id)
     return this.getInstanceStatus(id)
   }
@@ -362,22 +191,7 @@ export abstract class InstanceService {
     const instance = this.getInstanceById(id)
     if (!instance) return null
 
-    const processInfo = runningProcesses.get(id)
-    if (processInfo) {
-      try {
-        // Forceful kill with SIGKILL
-        processInfo.process.kill('SIGKILL')
-        runningProcesses.delete(id)
-        console.log(`Forcefully killed instance ${id} with PID ${processInfo.pid}`)
-      } catch (error) {
-        console.error(`Failed to kill process ${processInfo.pid}:`, error)
-        // If process doesn't exist anymore, that's fine
-        if (error instanceof Error && (error as any).code !== 'ESRCH') {
-          throw error
-        }
-      }
-    }
-
+    ProcessManager.killProcess(id)
     queries.updateInstanceStatus.run('stopped', id)
     return this.getInstanceStatus(id)
   }
@@ -395,7 +209,7 @@ export abstract class InstanceService {
     const instance = this.getInstanceById(id)
     if (!instance) return null
 
-    const processInfo = runningProcesses.get(id)
+    const processInfo = ProcessManager.getProcessInfo(id)
     const uptime = processInfo ? Date.now() - processInfo.startTime : null
 
     return {
