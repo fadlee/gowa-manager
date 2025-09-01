@@ -142,7 +142,7 @@ export namespace Proxy {
   }
 
   export type Status = {
-    instanceId: string;
+    instanceKey: string;
     instanceName: string;
     status: string;
     port: number | null;

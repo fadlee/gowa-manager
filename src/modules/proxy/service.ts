@@ -244,7 +244,7 @@ export abstract class ProxyService {
     if (!instance) return null
 
     return {
-      instanceId: instanceKey,
+      instanceKey: instanceKey,
       instanceName: instance.name,
       status: instance.status,
       port: instance.port,
@@ -265,7 +265,7 @@ export abstract class ProxyService {
     return allInstances
       .filter(instance => instance.status === 'running' && instance.port)
       .map(instance => ({
-        instanceId: instance.key,
+        instanceKey: instance.key,
         instanceName: instance.name,
         status: instance.status,
         port: instance.port,
