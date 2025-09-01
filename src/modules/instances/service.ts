@@ -5,7 +5,79 @@ import { queries, generateInstanceKey } from '../../db'
 import { SystemService } from '../system/service'
 
 // Process management utilities
-const runningProcesses = new Map<number, { pid: number; startTime: number }>()
+interface ProcessInfo {
+  process: Bun.Subprocess;
+  pid: number;
+  startTime: number;
+  cleanup?: () => void;
+}
+
+const runningProcesses = new Map<number, ProcessInfo>()
+
+// Graceful shutdown handler
+let isShuttingDown = false
+
+// Cleanup all running instances (kill processes only, no database updates)
+async function cleanupAllInstances(): Promise<void> {
+  if (isShuttingDown) return
+  isShuttingDown = true
+
+  console.log('Cleaning up all running instances...')
+  const cleanupPromises: Promise<void>[] = []
+
+  for (const [instanceId, processInfo] of runningProcesses) {
+    cleanupPromises.push(
+      new Promise<void>((resolve) => {
+        try {
+          console.log(`Killing instance ${instanceId} (PID: ${processInfo.pid})`)
+
+          // Force kill immediately - no graceful shutdown needed for crash/restart scenarios
+          processInfo.process.kill('SIGKILL')
+          console.log(`Force killed instance ${instanceId}`)
+          resolve()
+
+        } catch (error) {
+          console.warn(`Failed to kill instance ${instanceId}:`, error)
+          resolve()
+        }
+      })
+    )
+  }
+
+  await Promise.all(cleanupPromises)
+  runningProcesses.clear()
+  console.log('All instances cleaned up')
+}
+
+// Register process exit handlers
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, cleaning up...')
+  await cleanupAllInstances()
+  process.exit(0)
+})
+
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT, cleaning up...')
+  await cleanupAllInstances()
+  process.exit(0)
+})
+
+process.on('beforeExit', async () => {
+  await cleanupAllInstances()
+})
+
+// Handle uncaught exceptions
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught exception:', error)
+  await cleanupAllInstances()
+  process.exit(1)
+})
+
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason)
+  await cleanupAllInstances()
+  process.exit(1)
+})
 
 // GOWA binary path
 const GOWA_BINARY_PATH = join(process.cwd(), 'data', 'bin', 'gowa')
@@ -21,6 +93,10 @@ function generateRandomName(): string {
 }
 
 export abstract class InstanceService {
+  // Expose cleanup function for external use
+  static async cleanupAllInstances(): Promise<void> {
+    return cleanupAllInstances()
+  }
   // Get all instances
   static getAllInstances(): InstanceModel.instanceListResponse {
     return queries.getAllInstances.all() as InstanceModel.instanceListResponse
@@ -225,10 +301,29 @@ export abstract class InstanceService {
         env
       })
 
-      // Store process info
-      runningProcesses.set(id, {
+      // Store process info with monitoring
+      const processInfo: ProcessInfo = {
+        process: spawnedProcess,
         pid: spawnedProcess.pid,
-        startTime: Date.now()
+        startTime: Date.now(),
+        cleanup: () => {
+          try {
+            spawnedProcess.kill()
+          } catch (error) {
+            console.warn(`Failed to cleanup process ${spawnedProcess.pid}:`, error)
+          }
+        }
+      }
+
+      runningProcesses.set(id, processInfo)
+
+      // Monitor process exit (no database updates)
+      spawnedProcess.exited.then(() => {
+        console.log(`Instance ${id} process exited`)
+        runningProcesses.delete(id)
+      }).catch((error) => {
+        console.error(`Instance ${id} process error:`, error)
+        runningProcesses.delete(id)
       })
 
       // Update status in database
@@ -251,7 +346,7 @@ export abstract class InstanceService {
     if (processInfo) {
       try {
         // Graceful shutdown with SIGTERM
-        process.kill(processInfo.pid, 'SIGTERM')
+        processInfo.process.kill('SIGTERM')
         runningProcesses.delete(id)
       } catch (error) {
         console.error(`Failed to stop process ${processInfo.pid}:`, error)
@@ -271,7 +366,7 @@ export abstract class InstanceService {
     if (processInfo) {
       try {
         // Forceful kill with SIGKILL
-        process.kill(processInfo.pid, 'SIGKILL')
+        processInfo.process.kill('SIGKILL')
         runningProcesses.delete(id)
         console.log(`Forcefully killed instance ${id} with PID ${processInfo.pid}`)
       } catch (error) {

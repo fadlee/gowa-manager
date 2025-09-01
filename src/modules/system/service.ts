@@ -86,13 +86,10 @@ export abstract class SystemService {
       return Promise.resolve(false)
     }
     
-    // First check database
-    const result = db.prepare('SELECT COUNT(*) as count FROM instances WHERE port = ?').get(port) as { count: number }
-    if (result.count > 0) {
-      return Promise.resolve(false)
-    }
+    // Only check database for ports assigned to OTHER instances (not during restart)
+    // Skip database check during restart scenarios - rely on actual network test
     
-    // Then check actual network port
+    // Check actual network port availability
     return new Promise((resolve) => {
       const server = createServer()
       
