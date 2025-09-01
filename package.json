@@ -6,6 +6,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "bun --watch run src/index.ts",
+    "dev:client": "cd client && bun run dev",
+    "dev:all": "bun run dev & cd client && bun run dev",
+    "build:client": "cd client && bun run build",
     "test": "bun run test-server.ts",
     "test:isolation": "bun run test-isolation.ts",
     "reset-db": "bun run reset-db.ts"

@@ -1,0 +1,92 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '../lib/api'
+import { InstanceCard } from './InstanceCard'
+import { CreateInstanceDialog } from './CreateInstanceDialog'
+import { Button } from './ui/button'
+import { Plus, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+
+export function InstanceList() {
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data: instances, isLoading, error, refetch } = useQuery({
+    queryKey: ['instances'],
+    queryFn: () => apiClient.getInstances(),
+  })
+
+  const refreshMutation = useMutation({
+    mutationFn: () => apiClient.getInstances(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['instances'] })
+    },
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600 mb-4">Failed to load instances</p>
+        <Button onClick={() => refetch()} variant="outline">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Instance
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => refreshMutation.mutate()}
+            disabled={refreshMutation.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+        
+        {instances && (
+          <p className="text-sm text-gray-600">
+            {instances.length} instance{instances.length !== 1 ? 's' : ''}
+          </p>
+        )}
+      </div>
+
+      {instances && instances.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {instances.map((instance) => (
+            <InstanceCard key={instance.id} instance={instance} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+          <p className="text-gray-600 mb-4">No instances found</p>
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create your first instance
+          </Button>
+        </div>
+      )}
+
+      <CreateInstanceDialog 
+        open={showCreateDialog} 
+        onOpenChange={setShowCreateDialog}
+      />
+    </div>
+  )
+}
