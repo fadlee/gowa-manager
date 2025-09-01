@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 import { cors } from '@elysiajs/cors'
+import { staticPlugin } from '@elysiajs/static'
 import './db' // Import to initialize database
 import './restart' // Import to auto-restart instances
 import { instancesModule } from './modules/instances'
@@ -34,7 +35,7 @@ const app = new Elysia()
   })
 
   // Health check endpoint
-  .get('/', () => {
+  .get('/api/health', () => {
     const data: ApiResponse = {
       message: "GOWA Manager API is running",
       success: true
@@ -55,6 +56,17 @@ const app = new Elysia()
   .use(proxyModule)
   .use(instancesModule)
   .use(systemModule)
+
+  // Serve static files (client build)
+  .use(staticPlugin({
+    assets: 'public/assets',
+    prefix: '/assets',
+    indexHTML: false
+  }))
+
+  .get('/', () => {
+    return Bun.file('public/index.html')
+  })
 
   .listen(3000)
 

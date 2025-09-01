@@ -7,7 +7,7 @@
     "build": "tsc",
     "dev": "bun --watch run src/index.ts",
     "dev:client": "cd client && bun run dev",
-    "dev:all": "bun run dev & cd client && bun run dev",
+    "dev:all": "cd client && bun run build:watch & bun --watch run src/index.ts",
     "build:client": "cd client && bun run build",
     "test": "bun run test-server.ts",
     "test:isolation": "bun run test-isolation.ts",
@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@elysiajs/cors": "^0.8.0",
-    "elysia": "^0.8.17"
+    "@elysiajs/static": "^1.3.0",
+    "elysia": "^0.8.17",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.9.0",
