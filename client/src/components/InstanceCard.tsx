@@ -13,7 +13,12 @@ import {
   Edit,
   Loader2,
   Clock,
-  Hash
+  Hash,
+  ChevronDown,
+  ChevronRight,
+  Shield,
+  Link,
+  Settings
 } from 'lucide-react'
 import { EditInstanceDialog } from './EditInstanceDialog'
 
@@ -23,6 +28,8 @@ interface InstanceCardProps {
 
 export function InstanceCard({ instance }: InstanceCardProps) {
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [openWithJsonView, setOpenWithJsonView] = useState(false)
+  const [showConfig, setShowConfig] = useState(false)
   const queryClient = useQueryClient()
 
   // Get real-time status
@@ -105,6 +112,68 @@ export function InstanceCard({ instance }: InstanceCardProps) {
   const isStopped = status?.status?.toLowerCase() === 'stopped'
   const isError = status?.status?.toLowerCase() === 'error'
   const isLoading = startMutation.isPending || stopMutation.isPending || restartMutation.isPending
+  
+  const renderConfigSummary = (configStr: string) => {
+    try {
+      const config = JSON.parse(configStr)
+      const flags = config.flags || {}
+      
+      // Extract key configuration details
+      const hasBasicAuth = flags.basicAuth && flags.basicAuth.length > 0
+      const hasWebhooks = flags.webhooks && flags.webhooks.length > 0
+      
+      return (
+        <div className="space-y-2 text-xs">
+          {/* Basic Auth Summary */}
+          {hasBasicAuth && (
+            <div className="flex items-center">
+              <Shield className="w-3 h-3 mr-1 text-blue-500" />
+              <span className="font-medium">Basic Auth:</span>
+              <span className="ml-1 text-gray-600">
+                {flags.basicAuth.length} credential{flags.basicAuth.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+          
+          {/* Webhooks Summary */}
+          {hasWebhooks && (
+            <div className="flex items-center">
+              <Link className="w-3 h-3 mr-1 text-purple-500" />
+              <span className="font-medium">Webhooks:</span>
+              <span className="ml-1 text-gray-600">
+                {flags.webhooks.length} endpoint{flags.webhooks.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+          
+          {/* Other Important Settings */}
+          <div className="flex items-center">
+            <Settings className="w-3 h-3 mr-1 text-gray-500" />
+            <span className="font-medium">Advanced Settings:</span>
+            <span className="ml-1 text-gray-600">
+              {Object.keys(flags).filter(key => key !== 'basicAuth' && key !== 'webhooks').length} configured
+            </span>
+          </div>
+          
+          {/* Show JSON button */}
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full h-6 text-xs mt-1"
+            onClick={() => {
+              // Open edit dialog with JSON view enabled
+              setOpenWithJsonView(true)
+              setShowEditDialog(true)
+            }}
+          >
+            View Full Configuration
+          </Button>
+        </div>
+      )
+    } catch (error) {
+      return <span className="text-xs text-red-500">Invalid configuration format</span>
+    }
+  }
 
   return (
     <>
@@ -147,10 +216,23 @@ export function InstanceCard({ instance }: InstanceCardProps) {
             )}
             {instance.config && instance.config !== '{}' && (
               <div className="text-gray-600">
-                <span className="font-medium">Config:</span>
-                <pre className="overflow-x-auto p-2 mt-1 text-xs bg-gray-50 rounded border">
-                  {JSON.stringify(JSON.parse(instance.config), null, 2)}
-                </pre>
+                <button 
+                  onClick={() => setShowConfig(!showConfig)}
+                  className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none"
+                >
+                  {showConfig ? (
+                    <ChevronDown className="w-4 h-4 mr-1" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 mr-1" />
+                  )}
+                  Configuration
+                </button>
+                
+                {showConfig && (
+                  <div className="mt-2 space-y-2">
+                    {renderConfigSummary(instance.config)}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -215,7 +297,10 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowEditDialog(true)}
+                  onClick={() => {
+                    setOpenWithJsonView(false)
+                    setShowEditDialog(true)
+                  }}
                   className="flex-1"
                 >
                   <Edit className="mr-1 w-4 h-4" />
@@ -230,7 +315,11 @@ export function InstanceCard({ instance }: InstanceCardProps) {
       <EditInstanceDialog
         instance={instance}
         open={showEditDialog}
-        onOpenChange={setShowEditDialog}
+        onOpenChange={(open) => {
+          setShowEditDialog(open)
+          if (!open) setOpenWithJsonView(false)
+        }}
+        showJsonViewInitial={openWithJsonView}
       />
     </>
   )

@@ -54,3 +54,27 @@ export interface SystemStatus {
     next_available: number;
   };
 }
+
+// CLI Flags Configuration Types
+export interface BasicAuthPair {
+  username: string;
+  password: string;
+}
+
+export interface CliFlags {
+  accountValidation?: boolean;
+  basicAuth?: BasicAuthPair[];
+  os?: string;
+  webhooks?: string[];
+  autoMarkRead?: boolean;
+  autoReply?: string;
+  basePath?: string;
+  debug?: boolean;
+  webhookSecret?: string;
+}
+
+export interface InstanceConfig {
+  args?: string[];
+  env?: Record<string, string>;
+  flags?: CliFlags;
+}

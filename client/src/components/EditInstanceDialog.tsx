@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
-import type { Instance } from '../types'
+import type { Instance, CliFlags, InstanceConfig } from '../types'
 import {
   Dialog,
   DialogContent,
@@ -12,19 +12,23 @@ import {
 } from './ui/dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Loader2, Trash2 } from 'lucide-react'
+import { Loader2, Trash2, Eye, EyeOff, Code } from 'lucide-react'
+import { CliFlagsComponent } from './CliFlags/index'
 
 interface EditInstanceDialogProps {
   instance: Instance
   open: boolean
   onOpenChange: (open: boolean) => void
+  showJsonViewInitial?: boolean
 }
 
-export function EditInstanceDialog({ instance, open, onOpenChange }: EditInstanceDialogProps) {
+export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewInitial = false }: EditInstanceDialogProps) {
   const [name, setName] = useState('')
-  const [config, setConfig] = useState('')
-  const [errors, setErrors] = useState<{name?: string, config?: string}>({})
+  const [flags, setFlags] = useState<CliFlags>({})
+  const [errors, setErrors] = useState<{name?: string}>({})
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showJsonView, setShowJsonView] = useState(showJsonViewInitial)
+  const [jsonConfig, setJsonConfig] = useState('')
   const queryClient = useQueryClient()
 
   // Initialize form with instance data
@@ -32,13 +36,28 @@ export function EditInstanceDialog({ instance, open, onOpenChange }: EditInstanc
     if (open && instance) {
       setName(instance.name)
       try {
-        const configObj = JSON.parse(instance.config)
-        setConfig(JSON.stringify(configObj, null, 2))
+        const configObj: InstanceConfig = JSON.parse(instance.config)
+        setJsonConfig(JSON.stringify(configObj, null, 2))
+        
+        // Extract flags from config if they exist
+        if (configObj.flags) {
+          setFlags(configObj.flags)
+        } else {
+          setFlags({
+            accountValidation: true,
+            os: 'GowaManager'
+          })
+        }
       } catch {
-        setConfig(instance.config || '')
+        setFlags({
+          accountValidation: true,
+          os: 'GowaManager'
+        })
+        setJsonConfig('{}')
       }
       setErrors({})
       setShowDeleteConfirm(false)
+      setShowJsonView(false)
     }
   }, [open, instance])
 
@@ -73,18 +92,10 @@ export function EditInstanceDialog({ instance, open, onOpenChange }: EditInstanc
   }
 
   const validateForm = () => {
-    const newErrors: {name?: string, config?: string} = {}
+    const newErrors: {name?: string} = {}
     
     if (name.trim().length < 1 || name.trim().length > 100) {
       newErrors.name = 'Name must be between 1 and 100 characters'
-    }
-    
-    if (config.trim()) {
-      try {
-        JSON.parse(config)
-      } catch {
-        newErrors.config = 'Config must be valid JSON'
-      }
     }
     
     setErrors(newErrors)
@@ -104,15 +115,18 @@ export function EditInstanceDialog({ instance, open, onOpenChange }: EditInstanc
       data.name = name.trim()
     }
     
-    const trimmedConfig = config.trim()
-    try {
-      const normalizedConfig = trimmedConfig ? JSON.stringify(JSON.parse(trimmedConfig)) : '{}'
-      if (normalizedConfig !== instance.config) {
-        data.config = normalizedConfig
-      }
-    } catch {
-      // This should not happen due to validation, but just in case
-      return
+    // Build configuration
+    let finalConfig: InstanceConfig = {
+      args: ['rest', '--port=PORT'],
+      flags: flags
+    }
+    
+    // Update the JSON view
+    setJsonConfig(JSON.stringify(finalConfig, null, 2))
+    
+    const normalizedConfig = JSON.stringify(finalConfig)
+    if (normalizedConfig !== instance.config) {
+      data.config = normalizedConfig
     }
 
     // Only update if there are actual changes
@@ -165,7 +179,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange }: EditInstanc
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Instance</DialogTitle>
           <DialogDescription>
@@ -191,26 +205,50 @@ export function EditInstanceDialog({ instance, open, onOpenChange }: EditInstanc
             )}
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="edit-config" className="text-sm font-medium text-gray-700">
-              Configuration
-            </label>
-            <textarea
-              id="edit-config"
-              placeholder='{"port": 8080, "args": ["--debug"]}'
-              value={config}
-              onChange={(e) => setConfig(e.target.value)}
-              className={`flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none font-mono ${
-                errors.config ? 'border-red-500' : 'border-gray-300 focus-visible:ring-blue-500'
-              }`}
-              rows={4}
-            />
-            {errors.config && (
-              <p className="text-sm text-red-600">{errors.config}</p>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">
+                Configuration
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowJsonView(!showJsonView)}
+                className="flex items-center gap-1 h-7 px-2 text-xs"
+              >
+                {showJsonView ? (
+                  <>
+                    <EyeOff className="h-3 w-3" />
+                    Hide JSON
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-3 w-3" />
+                    View JSON
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            {showJsonView ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <Code className="h-4 w-4 text-gray-500" />
+                  <span className="text-xs text-gray-500">JSON Configuration (Read-only)</span>
+                </div>
+                <pre className="bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border border-gray-200 max-h-96">
+                  {jsonConfig}
+                </pre>
+                <p className="text-xs text-gray-500 mt-1">
+                  This is the raw configuration that will be saved. Use the form above to make changes.
+                </p>
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-md p-4 max-h-96 overflow-y-auto">
+                <CliFlagsComponent flags={flags} onChange={setFlags} />
+              </div>
             )}
-            <p className="text-xs text-gray-500">
-              JSON format for configuration parameters
-            </p>
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
