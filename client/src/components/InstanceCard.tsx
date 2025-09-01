@@ -112,54 +112,54 @@ export function InstanceCard({ instance }: InstanceCardProps) {
   const isStopped = status?.status?.toLowerCase() === 'stopped'
   const isError = status?.status?.toLowerCase() === 'error'
   const isLoading = startMutation.isPending || stopMutation.isPending || restartMutation.isPending
-  
+
   const renderConfigSummary = (configStr: string) => {
     try {
       const config = JSON.parse(configStr)
       const flags = config.flags || {}
-      
+
       // Extract key configuration details
       const hasBasicAuth = flags.basicAuth && flags.basicAuth.length > 0
       const hasWebhooks = flags.webhooks && flags.webhooks.length > 0
-      
+
       return (
         <div className="space-y-2 text-xs">
           {/* Basic Auth Summary */}
           {hasBasicAuth && (
             <div className="flex items-center">
-              <Shield className="w-3 h-3 mr-1 text-blue-500" />
+              <Shield className="mr-1 w-3 h-3 text-blue-500" />
               <span className="font-medium">Basic Auth:</span>
               <span className="ml-1 text-gray-600">
                 {flags.basicAuth.length} credential{flags.basicAuth.length !== 1 ? 's' : ''}
               </span>
             </div>
           )}
-          
+
           {/* Webhooks Summary */}
           {hasWebhooks && (
             <div className="flex items-center">
-              <Link className="w-3 h-3 mr-1 text-purple-500" />
+              <Link className="mr-1 w-3 h-3 text-purple-500" />
               <span className="font-medium">Webhooks:</span>
               <span className="ml-1 text-gray-600">
                 {flags.webhooks.length} endpoint{flags.webhooks.length !== 1 ? 's' : ''}
               </span>
             </div>
           )}
-          
+
           {/* Other Important Settings */}
           <div className="flex items-center">
-            <Settings className="w-3 h-3 mr-1 text-gray-500" />
+            <Settings className="mr-1 w-3 h-3 text-gray-500" />
             <span className="font-medium">Advanced Settings:</span>
             <span className="ml-1 text-gray-600">
               {Object.keys(flags).filter(key => key !== 'basicAuth' && key !== 'webhooks').length} configured
             </span>
           </div>
-          
+
           {/* Show JSON button */}
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="w-full h-6 text-xs mt-1"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-1 w-full h-6 text-xs"
             onClick={() => {
               // Open edit dialog with JSON view enabled
               setOpenWithJsonView(true)
@@ -183,18 +183,38 @@ export function InstanceCard({ instance }: InstanceCardProps) {
             <CardTitle className="pr-2 text-lg font-medium truncate">
               {instance.name}
             </CardTitle>
-            <Badge variant={getStatusVariant(status?.status || 'unknown')}>
-              {status?.status || 'unknown'}
-            </Badge>
-          </div>
-          <div className="flex items-center space-x-4 text-sm text-gray-600">
-            <div className="flex items-center">
-              <Hash className="mr-1 w-3 h-3" />
-              {instance.id}
+            <div className="flex gap-2 items-center">
+              {isRunning && status?.port && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenProxy}
+                  className="h-6 text-xs"
+                >
+                  <ExternalLink className="mr-1 w-4 h-4" />
+                  Open
+                </Button>
+              )}
+              <Badge variant={getStatusVariant(status?.status || 'unknown')}>
+                {status?.status || 'unknown'}
+              </Badge>
             </div>
-            {status?.port && (
+          </div>
+          <div className="flex items-center justify-between w-full text-sm text-gray-600">
+            <div className="flex items-center space-x-4">
               <div className="flex items-center">
-                <span>Port: {status.port}</span>
+                <Hash className="mr-1 w-3 h-3" />
+                {instance.id}
+              </div>
+              {status?.port && (
+                <div className="flex items-center">
+                  <span>Port: {status.port}</span>
+                </div>
+              )}
+            </div>
+            {status?.pid && (
+              <div className="ml-4">
+                <span>PID: {status.pid}</span>
               </div>
             )}
           </div>
@@ -202,12 +222,6 @@ export function InstanceCard({ instance }: InstanceCardProps) {
 
         <CardContent className="pb-3">
           <div className="space-y-2 text-sm">
-            {status?.pid && (
-              <div className="flex items-center text-gray-600">
-                <span className="mr-2 font-medium">PID:</span>
-                <span>{status.pid}</span>
-              </div>
-            )}
             {status?.uptime !== null && (
               <div className="flex items-center text-gray-600">
                 <Clock className="mr-2 w-3 h-3" />
@@ -216,18 +230,18 @@ export function InstanceCard({ instance }: InstanceCardProps) {
             )}
             {instance.config && instance.config !== '{}' && (
               <div className="text-gray-600">
-                <button 
+                <button
                   onClick={() => setShowConfig(!showConfig)}
                   className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none"
                 >
                   {showConfig ? (
-                    <ChevronDown className="w-4 h-4 mr-1" />
+                    <ChevronDown className="mr-1 w-4 h-4" />
                   ) : (
-                    <ChevronRight className="w-4 h-4 mr-1" />
+                    <ChevronRight className="mr-1 w-4 h-4" />
                   )}
                   Configuration
                 </button>
-                
+
                 {showConfig && (
                   <div className="mt-2 space-y-2">
                     {renderConfigSummary(instance.config)}
@@ -282,17 +296,6 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                   </>
                 )}
 
-                {isRunning && status?.port && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleOpenProxy}
-                    className="flex-1"
-                  >
-                    <ExternalLink className="mr-1 w-4 h-4" />
-                    Open
-                  </Button>
-                )}
 
                 <Button
                   variant="ghost"
