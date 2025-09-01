@@ -6,7 +6,13 @@ import './restart' // Import to auto-restart instances
 import { instancesModule } from './modules/instances'
 import { systemModule } from './modules/system'
 import { proxyModule } from './modules/proxy'
+import { authModule } from './modules/auth'
+import { basicAuth } from './middlewares/auth'
 import type { ApiResponse } from './types'
+
+// Get credentials from environment variables
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin'
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'password'
 
 const app = new Elysia()
   .use(cors({
@@ -17,12 +23,18 @@ const app = new Elysia()
   }))
 
   // Global error handler
-  .onError(({ code, error, set }) => {
+  .onError(({ code, error, set }: any) => {
     console.error('Server error:', error)
 
     if (code === 'VALIDATION') {
       set.status = 400
       return { error: 'Validation failed', success: false }
+    }
+
+    if (code === 'UNAUTHORIZED') {
+      set.status = 401
+      set.headers['WWW-Authenticate'] = 'Basic realm="GOWA Manager"'
+      return { error: 'Unauthorized', success: false }
     }
 
     if (code === 'NOT_FOUND') {
@@ -34,7 +46,7 @@ const app = new Elysia()
     return { error: 'Internal server error', success: false }
   })
 
-  // Health check endpoint
+  // Health check endpoint (no auth required)
   .get('/api/health', () => {
     const data: ApiResponse = {
       message: "GOWA Manager API is running",
@@ -52,19 +64,30 @@ const app = new Elysia()
     return data
   })
 
-  // Register feature modules
+  // Register auth module
+  .use(authModule)
   .use(proxyModule)
   .use(instancesModule)
   .use(systemModule)
 
-  // Serve static files (client build)
+  // // Protected API routes (when auth is enabled)
+  .guard(
+    {
+      beforeHandle: basicAuth(ADMIN_USERNAME, ADMIN_PASSWORD),
+    },
+    (app) => app
+      .use(instancesModule)
+      .use(systemModule)
+  )
+
+  // Serve static files (client build) with optional auth
   .use(staticPlugin({
     assets: 'public/assets',
     prefix: '/assets',
     indexHTML: false
   }))
 
-  .get('/', () => {
+  .get('/', ({ headers, set }: any) => {
     return Bun.file('public/index.html')
   })
 

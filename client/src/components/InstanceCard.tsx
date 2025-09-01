@@ -5,12 +5,12 @@ import type { Instance } from '../types'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
-import { 
-  Play, 
-  Square, 
-  RotateCcw, 
-  ExternalLink, 
-  Edit, 
+import {
+  Play,
+  Square,
+  RotateCcw,
+  ExternalLink,
+  Edit,
   Loader2,
   Clock,
   Hash
@@ -85,7 +85,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
     const seconds = Math.floor(uptime / 1000)
     const minutes = Math.floor(seconds / 60)
     const hours = Math.floor(minutes / 60)
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes % 60}m`
     } else if (minutes > 0) {
@@ -103,14 +103,15 @@ export function InstanceCard({ instance }: InstanceCardProps) {
 
   const isRunning = status?.status?.toLowerCase() === 'running'
   const isStopped = status?.status?.toLowerCase() === 'stopped'
+  const isError = status?.status?.toLowerCase() === 'error'
   const isLoading = startMutation.isPending || stopMutation.isPending || restartMutation.isPending
 
   return (
     <>
-      <Card className="hover:shadow-md transition-shadow">
+      <Card className="transition-shadow hover:shadow-md">
         <CardHeader className="pb-3">
-          <div className="flex items-start justify-between">
-            <CardTitle className="text-lg font-medium truncate pr-2">
+          <div className="flex justify-between items-start">
+            <CardTitle className="pr-2 text-lg font-medium truncate">
               {instance.name}
             </CardTitle>
             <Badge variant={getStatusVariant(status?.status || 'unknown')}>
@@ -119,7 +120,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
           </div>
           <div className="flex items-center space-x-4 text-sm text-gray-600">
             <div className="flex items-center">
-              <Hash className="h-3 w-3 mr-1" />
+              <Hash className="mr-1 w-3 h-3" />
               {instance.id}
             </div>
             {status?.port && (
@@ -134,20 +135,20 @@ export function InstanceCard({ instance }: InstanceCardProps) {
           <div className="space-y-2 text-sm">
             {status?.pid && (
               <div className="flex items-center text-gray-600">
-                <span className="font-medium mr-2">PID:</span>
+                <span className="mr-2 font-medium">PID:</span>
                 <span>{status.pid}</span>
               </div>
             )}
             {status?.uptime !== null && (
               <div className="flex items-center text-gray-600">
-                <Clock className="h-3 w-3 mr-2" />
+                <Clock className="mr-2 w-3 h-3" />
                 <span>Uptime: {formatUptime(status.uptime)}</span>
               </div>
             )}
             {instance.config && instance.config !== '{}' && (
               <div className="text-gray-600">
                 <span className="font-medium">Config:</span>
-                <pre className="text-xs mt-1 p-2 bg-gray-50 rounded border overflow-x-auto">
+                <pre className="overflow-x-auto p-2 mt-1 text-xs bg-gray-50 rounded border">
                   {JSON.stringify(JSON.parse(instance.config), null, 2)}
                 </pre>
               </div>
@@ -159,23 +160,23 @@ export function InstanceCard({ instance }: InstanceCardProps) {
           <div className="flex flex-wrap gap-2 w-full">
             {isLoading ? (
               <Button disabled className="flex-1">
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                 Processing...
               </Button>
             ) : (
               <>
-                {isStopped && (
+                {(isStopped || isError) && (
                   <Button
                     variant="default"
                     size="sm"
                     onClick={() => startMutation.mutate()}
                     className="flex-1"
                   >
-                    <Play className="h-4 w-4 mr-1" />
+                    <Play className="mr-1 w-4 h-4" />
                     Start
                   </Button>
                 )}
-                
+
                 {isRunning && (
                   <>
                     <Button
@@ -184,7 +185,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                       onClick={() => stopMutation.mutate()}
                       className="flex-1"
                     >
-                      <Square className="h-4 w-4 mr-1" />
+                      <Square className="mr-1 w-4 h-4" />
                       Stop
                     </Button>
                     <Button
@@ -193,12 +194,12 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                       onClick={() => restartMutation.mutate()}
                       className="flex-1"
                     >
-                      <RotateCcw className="h-4 w-4 mr-1" />
+                      <RotateCcw className="mr-1 w-4 h-4" />
                       Restart
                     </Button>
                   </>
                 )}
-                
+
                 {isRunning && status?.port && (
                   <Button
                     variant="outline"
@@ -206,18 +207,18 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                     onClick={handleOpenProxy}
                     className="flex-1"
                   >
-                    <ExternalLink className="h-4 w-4 mr-1" />
+                    <ExternalLink className="mr-1 w-4 h-4" />
                     Open
                   </Button>
                 )}
-                
+
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowEditDialog(true)}
                   className="flex-1"
                 >
-                  <Edit className="h-4 w-4 mr-1" />
+                  <Edit className="mr-1 w-4 h-4" />
                   Edit
                 </Button>
               </>

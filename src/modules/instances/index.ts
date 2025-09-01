@@ -37,9 +37,9 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
       return instance
     } catch (error) {
       set.status = 400
-      return { 
+      return {
         error: error instanceof Error ? error.message : 'Failed to create instance',
-        success: false 
+        success: false
       }
     }
   }, {
@@ -92,9 +92,9 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
       return status
     } catch (error) {
       set.status = 500
-      return { 
+      return {
         error: error instanceof Error ? error.message : 'Failed to start instance',
-        success: false 
+        success: false
       }
     }
   }, {
@@ -131,9 +131,9 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
       return status
     } catch (error) {
       set.status = 500
-      return { 
+      return {
         error: error instanceof Error ? error.message : 'Failed to kill instance',
-        success: false 
+        success: false
       }
     }
   }, {
@@ -155,9 +155,9 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
       return status
     } catch (error) {
       set.status = 500
-      return { 
+      return {
         error: error instanceof Error ? error.message : 'Failed to restart instance',
-        success: false 
+        success: false
       }
     }
   }, {
