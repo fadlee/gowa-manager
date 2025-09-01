@@ -1,5 +1,5 @@
 {
-  "name": "server",
+  "name": "gowa-manager",
   "version": "0.0.1",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +11,8 @@
     "build:client": "cd client && bun run build",
     "test": "bun run test-server.ts",
     "test:isolation": "bun run test-isolation.ts",
-    "reset-db": "bun run reset-db.ts"
+    "reset-db": "bun run reset-db.ts",
+    "compile": "bun build --compile --minify --target bun --outfile gowa-manager --bytecode ./src/index.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^0.8.0",

@@ -79,13 +79,13 @@ const handleProxyRequest = async (
 
 export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
   // Get all available proxy targets
-  .get('/', () => {
-    return ProxyService.getAvailableProxyTargets()
-  }, {
-    response: {
-      200: ProxyModel.proxyStatusList
-    }
-  })
+  // .get('/', () => {
+  //   return ProxyService.getAvailableProxyTargets()
+  // }, {
+  //   response: {
+  //     200: ProxyModel.proxyStatusList
+  //   }
+  // })
 
   // Dynamic proxy route - forwards all requests to the target instance
   .all('/:instanceKey/*', async ({ params: { instanceKey }, request, set, headers }) => {
