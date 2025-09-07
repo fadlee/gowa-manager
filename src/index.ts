@@ -111,6 +111,21 @@ const app = new Elysia()
   )
 
   // Serve static files (client build) with embedded support
+  .get('/favicon.ico', () => {
+    const file = getStaticFile('/favicon.ico')
+
+    if (!file) {
+      throw new Error('Favicon not found')
+    }
+
+    return new Response(file.content, {
+      headers: {
+        'Content-Type': file.contentType,
+        'Cache-Control': 'public, max-age=31536000' // 1 year cache for favicon
+      }
+    })
+  })
+
   .get('/assets/*', ({ params }: any) => {
     const path = '/assets/' + params['*']
     const file = getStaticFile(path)
