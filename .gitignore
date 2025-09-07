@@ -12,3 +12,4 @@ data/*
 # Build outputs
 dist/
 public/
+src/embedded-static.ts

@@ -6,14 +6,23 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "build:tsc": "tsc --noEmit",
+    "build:client": "cd client && bun run build",
+    "embed-static": "bun run scripts/embed-static.ts",
+    "prebuild:production": "bun run build:client && bun run embed-static",
+    "build:production": "bun run prebuild:production && bun run build",
     "dev:server": "bun --watch run src/index.ts",
     "dev:client": "cd client && bun run dev",
     "dev": "cd client && bun run build:watch & bun --watch run src/index.ts",
-    "build:client": "cd client && bun run build",
     "test": "bun run test-server.ts",
     "test:isolation": "bun run test-isolation.ts",
     "reset-db": "bun run reset-db.ts",
-    "compile": "bun build --compile --minify --target bun --outfile gowa-manager --bytecode ./src/index.ts"
+    "compile": "bun run build:production && bun build --compile --minify --target bun --outfile gowa-manager src/index.ts",
+    "compile:all": "bun run build:production && npm run compile:linux-x64 && npm run compile:linux-arm64 && npm run compile:darwin-x64 && npm run compile:darwin-arm64 && npm run compile:windows-x64",
+    "compile:linux-x64": "bun build --compile --minify --target=bun-linux-x64 --outfile=dist/gowa-manager-linux-x64 src/index.ts",
+    "compile:linux-arm64": "bun build --compile --minify --target=bun-linux-arm64 --outfile=dist/gowa-manager-linux-arm64 src/index.ts",
+    "compile:darwin-x64": "bun build --compile --minify --target=bun-darwin-x64 --outfile=dist/gowa-manager-macos-x64 src/index.ts",
+    "compile:darwin-arm64": "bun build --compile --minify --target=bun-darwin-arm64 --outfile=dist/gowa-manager-macos-arm64 src/index.ts",
+    "compile:windows-x64": "bun build --compile --minify --target=bun-windows-x64 --outfile=dist/gowa-manager-windows-x64.exe src/index.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^0.8.0",

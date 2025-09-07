@@ -4,6 +4,7 @@ import { staticPlugin } from '@elysiajs/static'
 import './db' // Import to initialize database
 import './restart' // Import to auto-restart instances
 import { downloadGowaBinary } from './binary-download' // Import binary auto-download
+import { getStaticFile } from './static-handler' // Import embedded static handler
 import { instancesModule } from './modules/instances'
 import { systemModule } from './modules/system'
 import { proxyModule } from './modules/proxy'
@@ -14,7 +15,7 @@ import type { ApiResponse } from './types'
 // Auto-download GOWA binary if not present
 ;(async () => {
   await downloadGowaBinary()
-  
+
   // Test pidusage functionality
   const { ResourceMonitor } = await import('./modules/instances/utils/resource-monitor')
   const pidusageWorks = await ResourceMonitor.testPidUsage()
@@ -82,10 +83,8 @@ const app = new Elysia()
   // Register auth module
   .use(authModule)
   .use(proxyModule)
-  .use(instancesModule)
-  .use(systemModule)
 
-  // // Protected API routes (when auth is enabled)
+  // Protected API routes (when auth is enabled)
   .guard(
     {
       beforeHandle: basicAuth(ADMIN_USERNAME, ADMIN_PASSWORD),
@@ -95,15 +94,36 @@ const app = new Elysia()
       .use(systemModule)
   )
 
-  // Serve static files (client build) with optional auth
-  .use(staticPlugin({
-    assets: 'public/assets',
-    prefix: '/assets',
-    indexHTML: false
-  }))
+  // Serve static files (client build) with embedded support
+  .get('/assets/*', ({ params }: any) => {
+    const path = '/assets/' + params['*']
+    const file = getStaticFile(path)
 
-  .get('/', ({ headers, set }: any) => {
-    return Bun.file('public/index.html')
+    if (!file) {
+      throw new Error('File not found')
+    }
+
+    return new Response(file.content, {
+      headers: {
+        'Content-Type': file.contentType,
+        'Cache-Control': 'public, max-age=31536000' // 1 year cache for assets
+      }
+    })
+  })
+
+  .get('/', () => {
+    const file = getStaticFile('/index.html')
+
+    if (!file) {
+      return new Response('Web UI not found', { status: 404 })
+    }
+
+    return new Response(file.content, {
+      headers: {
+        'Content-Type': file.contentType,
+        'Cache-Control': 'no-cache' // No cache for index.html
+      }
+    })
   })
 
   .listen(3000)
