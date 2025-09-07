@@ -5,9 +5,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "bun --watch run src/index.ts",
+    "dev:server": "bun --watch run src/index.ts",
     "dev:client": "cd client && bun run dev",
-    "dev:all": "cd client && bun run build:watch & bun --watch run src/index.ts",
+    "dev": "cd client && bun run build:watch & bun --watch run src/index.ts",
     "build:client": "cd client && bun run build",
     "test": "bun run test-server.ts",
     "test:isolation": "bun run test-isolation.ts",

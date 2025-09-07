@@ -3,12 +3,18 @@ import { cors } from '@elysiajs/cors'
 import { staticPlugin } from '@elysiajs/static'
 import './db' // Import to initialize database
 import './restart' // Import to auto-restart instances
+import { downloadGowaBinary } from './binary-download' // Import binary auto-download
 import { instancesModule } from './modules/instances'
 import { systemModule } from './modules/system'
 import { proxyModule } from './modules/proxy'
 import { authModule } from './modules/auth'
 import { basicAuth } from './middlewares/auth'
 import type { ApiResponse } from './types'
+
+// Auto-download GOWA binary if not present
+;(async () => {
+  await downloadGowaBinary()
+})()
 
 // Get credentials from environment variables
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin'
