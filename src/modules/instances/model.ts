@@ -46,7 +46,14 @@ export namespace InstanceModel {
     status: t.String(),
     port: t.Union([t.Number(), t.Null()]),
     pid: t.Union([t.Number(), t.Null()]),
-    uptime: t.Union([t.Number(), t.Null()])
+    uptime: t.Union([t.Number(), t.Null()]),
+    resources: t.Optional(t.Object({
+      cpuPercent: t.Number(),
+      memoryMB: t.Number(),
+      memoryPercent: t.Number(),
+      avgCpu: t.Optional(t.Number()),
+      avgMemory: t.Optional(t.Number())
+    }))
   })
   export type statusResponse = Instance.StatusResponse
 

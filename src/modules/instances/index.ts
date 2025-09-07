@@ -106,8 +106,8 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
   })
 
   // Stop instance (graceful)
-  .post('/:id/stop', ({ params: { id }, set }) => {
-    const status = InstanceService.stopInstance(Number(id))
+  .post('/:id/stop', async ({ params: { id }, set }) => {
+    const status = await InstanceService.stopInstance(Number(id))
     if (!status) {
       set.status = 404
       return { error: 'Instance not found', success: false }
@@ -121,9 +121,9 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
   })
 
   // Kill instance (forceful)
-  .post('/:id/kill', ({ params: { id }, set }) => {
+  .post('/:id/kill', async ({ params: { id }, set }) => {
     try {
-      const status = InstanceService.killInstance(Number(id))
+      const status = await InstanceService.killInstance(Number(id))
       if (!status) {
         set.status = 404
         return { error: 'Instance not found', success: false }
@@ -169,8 +169,8 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
   })
 
   // Get instance status
-  .get('/:id/status', ({ params: { id }, set }) => {
-    const status = InstanceService.getInstanceStatus(Number(id))
+  .get('/:id/status', async ({ params: { id }, set }) => {
+    const status = await InstanceService.getInstanceStatus(Number(id))
     if (!status) {
       set.status = 404
       return { error: 'Instance not found', success: false }

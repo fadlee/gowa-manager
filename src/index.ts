@@ -14,6 +14,15 @@ import type { ApiResponse } from './types'
 // Auto-download GOWA binary if not present
 ;(async () => {
   await downloadGowaBinary()
+  
+  // Test pidusage functionality
+  const { ResourceMonitor } = await import('./modules/instances/utils/resource-monitor')
+  const pidusageWorks = await ResourceMonitor.testPidUsage()
+  if (pidusageWorks) {
+    console.log('✅ Resource monitoring (pidusage) is working')
+  } else {
+    console.warn('⚠️  Resource monitoring (pidusage) test failed - CPU/memory stats may not be available')
+  }
 })()
 
 // Get credentials from environment variables

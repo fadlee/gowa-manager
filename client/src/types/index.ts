@@ -27,6 +27,13 @@ export interface InstanceStatus {
   port: number | null;
   pid: number | null;
   uptime: number | null;
+  resources?: {
+    cpuPercent: number;
+    memoryMB: number;
+    memoryPercent: number;
+    avgCpu?: number;
+    avgMemory?: number;
+  };
 }
 
 // API Response Types

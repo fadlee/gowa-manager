@@ -155,7 +155,7 @@ export async function downloadGowaBinary(): Promise<void> {
       throw new Error(`Failed to fetch release info: ${response.statusText}`)
     }
     
-    const release: GitHubRelease = await response.json()
+    const release = await response.json() as GitHubRelease
     console.log(`🏷️  Latest version: ${release.tag_name}`)
     
     // Find the correct asset for current platform

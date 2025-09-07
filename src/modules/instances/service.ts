@@ -5,6 +5,7 @@ import { ProcessManager, type ProcessInfo } from './utils/process-manager'
 import { DirectoryManager } from './utils/directory-manager'
 import { ConfigParser } from './utils/config-parser'
 import { NameGenerator } from './utils/name-generator'
+import { ResourceMonitor } from './utils/resource-monitor'
 import { join } from 'node:path'
 
 const GOWA_BINARY_PATH = join(process.cwd(), 'data', 'bin', 'gowa')
@@ -95,6 +96,9 @@ export abstract class InstanceService {
 
     // Clean up instance directory
     DirectoryManager.cleanupInstanceDirectory(id)
+    
+    // Clear resource history
+    ResourceMonitor.clearHistory(id)
 
     const result = queries.deleteInstance.run(id)
     return result.changes > 0
@@ -137,7 +141,11 @@ export abstract class InstanceService {
       const spawnedProcess = Bun.spawn({
         cmd: [GOWA_BINARY_PATH, ...processedArgs],
         cwd: instanceDir, // Run in instance-specific directory
-        env
+        env,
+        onExit: (subprocess, exitCode, signalCode, error) => {
+          console.log(`Instance ${id} process exited with code ${exitCode}`)
+          ProcessManager.removeProcess(id)
+        }
       })
 
       // Store process info with monitoring
@@ -168,7 +176,7 @@ export abstract class InstanceService {
       // Update status in database
       queries.updateInstanceStatus.run('running', id)
 
-      return this.getInstanceStatus(id)
+      return await this.getInstanceStatus(id)
     } catch (error) {
       console.error(`Failed to start instance ${id}:`, error)
       queries.updateInstanceStatus.run('error', id)
@@ -177,23 +185,27 @@ export abstract class InstanceService {
   }
 
   // Stop instance (graceful)
-  static stopInstance(id: number): InstanceModel.statusResponse | null {
+  static async stopInstance(id: number): Promise<InstanceModel.statusResponse | null> {
     const instance = this.getInstanceById(id)
     if (!instance) return null
 
     ProcessManager.stopProcess(id)
+    // Clear resource history when stopping
+    ResourceMonitor.clearHistory(id)
     queries.updateInstanceStatus.run('stopped', id)
-    return this.getInstanceStatus(id)
+    return await this.getInstanceStatus(id)
   }
 
   // Kill instance (forceful)
-  static killInstance(id: number): InstanceModel.statusResponse | null {
+  static async killInstance(id: number): Promise<InstanceModel.statusResponse | null> {
     const instance = this.getInstanceById(id)
     if (!instance) return null
 
     ProcessManager.killProcess(id)
+    // Clear resource history when killing
+    ResourceMonitor.clearHistory(id)
     queries.updateInstanceStatus.run('stopped', id)
-    return this.getInstanceStatus(id)
+    return await this.getInstanceStatus(id)
   }
 
   // Restart instance
@@ -201,16 +213,27 @@ export abstract class InstanceService {
     this.stopInstance(id)
     // Wait a bit before starting
     await new Promise(resolve => setTimeout(resolve, 1000))
-    return this.startInstance(id)
+    return await this.startInstance(id)
   }
 
   // Get instance status
-  static getInstanceStatus(id: number): InstanceModel.statusResponse | null {
+  static async getInstanceStatus(id: number): Promise<InstanceModel.statusResponse | null> {
     const instance = this.getInstanceById(id)
     if (!instance) return null
 
     const processInfo = ProcessManager.getProcessInfo(id)
     const uptime = processInfo ? Date.now() - processInfo.startTime : null
+
+    let resources = undefined
+    
+    // Get resource usage if process is running
+    if (processInfo?.pid && instance.status === 'running') {
+      try {
+        resources = await ResourceMonitor.getResourceUsage(processInfo.pid, id)
+      } catch (error) {
+        console.warn(`Failed to get resource usage for instance ${id}:`, error)
+      }
+    }
 
     return {
       id: instance.id,
@@ -218,7 +241,8 @@ export abstract class InstanceService {
       status: instance.status,
       port: instance.port,
       pid: processInfo?.pid || null,
-      uptime
+      uptime,
+      resources: resources || undefined
     }
   }
 }

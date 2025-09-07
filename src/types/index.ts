@@ -50,6 +50,13 @@ export namespace Instance {
     port: number | null;
     pid: number | null;
     uptime: number | null;
+    resources?: {
+      cpuPercent: number;
+      memoryMB: number;
+      memoryPercent: number;
+      avgCpu?: number;
+      avgMemory?: number;
+    };
   }
 
   export type NotFoundError = {

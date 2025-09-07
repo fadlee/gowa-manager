@@ -14,11 +14,8 @@ import {
   Loader2,
   Clock,
   Hash,
-  ChevronDown,
-  ChevronRight,
-  Shield,
-  Link,
-  Settings
+  Cpu,
+  MemoryStick
 } from 'lucide-react'
 import { EditInstanceDialog } from './EditInstanceDialog'
 
@@ -29,7 +26,6 @@ interface InstanceCardProps {
 export function InstanceCard({ instance }: InstanceCardProps) {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [openWithJsonView, setOpenWithJsonView] = useState(false)
-  const [showConfig, setShowConfig] = useState(false)
   const queryClient = useQueryClient()
 
   // Get real-time status
@@ -102,6 +98,27 @@ export function InstanceCard({ instance }: InstanceCardProps) {
     }
   }
 
+  const formatMemory = (memoryMB: number) => {
+    if (memoryMB >= 1024) {
+      return `${(memoryMB / 1024).toFixed(1)} GB`
+    }
+    return `${memoryMB.toFixed(1)} MB`
+  }
+
+  const getCpuColor = (cpuPercent: number) => {
+    if (cpuPercent >= 80) return 'text-red-500'
+    if (cpuPercent >= 60) return 'text-orange-500'
+    if (cpuPercent >= 40) return 'text-yellow-500'
+    return 'text-green-500'
+  }
+
+  const getMemoryColor = (memoryPercent: number) => {
+    if (memoryPercent >= 80) return 'text-red-500'
+    if (memoryPercent >= 60) return 'text-orange-500'
+    if (memoryPercent >= 40) return 'text-yellow-500'
+    return 'text-blue-500'
+  }
+
   const handleOpenProxy = () => {
     if (status?.port) {
       window.open(apiClient.getProxyUrl(instance.key), '_blank')
@@ -112,68 +129,6 @@ export function InstanceCard({ instance }: InstanceCardProps) {
   const isStopped = status?.status?.toLowerCase() === 'stopped'
   const isError = status?.status?.toLowerCase() === 'error'
   const isLoading = startMutation.isPending || stopMutation.isPending || restartMutation.isPending
-
-  const renderConfigSummary = (configStr: string) => {
-    try {
-      const config = JSON.parse(configStr)
-      const flags = config.flags || {}
-
-      // Extract key configuration details
-      const hasBasicAuth = flags.basicAuth && flags.basicAuth.length > 0
-      const hasWebhooks = flags.webhooks && flags.webhooks.length > 0
-
-      return (
-        <div className="space-y-2 text-xs">
-          {/* Basic Auth Summary */}
-          {hasBasicAuth && (
-            <div className="flex items-center">
-              <Shield className="mr-1 w-3 h-3 text-blue-500" />
-              <span className="font-medium">Basic Auth:</span>
-              <span className="ml-1 text-gray-600">
-                {flags.basicAuth.length} credential{flags.basicAuth.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
-
-          {/* Webhooks Summary */}
-          {hasWebhooks && (
-            <div className="flex items-center">
-              <Link className="mr-1 w-3 h-3 text-purple-500" />
-              <span className="font-medium">Webhooks:</span>
-              <span className="ml-1 text-gray-600">
-                {flags.webhooks.length} endpoint{flags.webhooks.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
-
-          {/* Other Important Settings */}
-          <div className="flex items-center">
-            <Settings className="mr-1 w-3 h-3 text-gray-500" />
-            <span className="font-medium">Advanced Settings:</span>
-            <span className="ml-1 text-gray-600">
-              {Object.keys(flags).filter(key => key !== 'basicAuth' && key !== 'webhooks').length} configured
-            </span>
-          </div>
-
-          {/* Show JSON button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-1 w-full h-6 text-xs"
-            onClick={() => {
-              // Open edit dialog with JSON view enabled
-              setOpenWithJsonView(true)
-              setShowEditDialog(true)
-            }}
-          >
-            View Full Configuration
-          </Button>
-        </div>
-      )
-    } catch (error) {
-      return <span className="text-xs text-red-500">Invalid configuration format</span>
-    }
-  }
 
   return (
     <>
@@ -200,7 +155,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
               </Badge>
             </div>
           </div>
-          <div className="flex items-center justify-between w-full text-sm text-gray-600">
+          <div className="flex justify-between items-center w-full text-sm text-gray-600">
             <div className="flex items-center space-x-4">
               <div className="flex items-center">
                 <Hash className="mr-1 w-3 h-3" />
@@ -228,25 +183,32 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                 <span>Uptime: {formatUptime(status.uptime)}</span>
               </div>
             )}
-            {instance.config && instance.config !== '{}' && (
-              <div className="text-gray-600">
-                <button
-                  onClick={() => setShowConfig(!showConfig)}
-                  className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none"
-                >
-                  {showConfig ? (
-                    <ChevronDown className="mr-1 w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="mr-1 w-4 h-4" />
-                  )}
-                  Configuration
-                </button>
 
-                {showConfig && (
-                  <div className="mt-2 space-y-2">
-                    {renderConfigSummary(instance.config)}
+            {/* Resource Usage Display */}
+            {isRunning && status?.resources && (
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center text-gray-600">
+                    <Cpu className={`mr-2 w-3 h-3 ${getCpuColor(status.resources.cpuPercent)}`} />
+                    <span>CPU: {status.resources.cpuPercent.toFixed(1)}%</span>
+                    {status.resources.avgCpu !== undefined && (
+                      <span className="ml-1 text-xs text-gray-500">
+                        (avg: {status.resources.avgCpu.toFixed(1)}%)
+                      </span>
+                    )}
                   </div>
-                )}
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center text-gray-600">
+                    <MemoryStick className={`mr-2 w-3 h-3 ${getMemoryColor(status.resources.memoryPercent)}`} />
+                    <span>Memory: {formatMemory(status.resources.memoryMB)} ({status.resources.memoryPercent.toFixed(1)}%)</span>
+                    {status.resources.avgMemory !== undefined && (
+                      <span className="ml-1 text-xs text-gray-500">
+                        (avg: {formatMemory(status.resources.avgMemory)})
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
