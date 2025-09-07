@@ -6,9 +6,15 @@ import { DirectoryManager } from './utils/directory-manager'
 import { ConfigParser } from './utils/config-parser'
 import { NameGenerator } from './utils/name-generator'
 import { ResourceMonitor } from './utils/resource-monitor'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
-const GOWA_BINARY_PATH = join(process.cwd(), 'data', 'bin', 'gowa')
+// Get GOWA binary path (respects DATA_DIR env var or CLI config)
+function getGowaBinaryPath(): string {
+  const dataDir = process.env.DATA_DIR || join(process.cwd(), 'data')
+  // Resolve relative paths to absolute paths
+  const absoluteDataDir = resolve(dataDir)
+  return join(absoluteDataDir, 'bin', 'gowa')
+}
 
 // Initialize process exit handlers
 ProcessManager.setupExitHandlers()
@@ -129,8 +135,9 @@ export abstract class InstanceService {
       const processedArgs = ConfigParser.processArgs(config, instance.port || 8080)
       const env = ConfigParser.parseEnvironmentVars(config, instance.port || 8080)
 
+      const gowaBinaryPath = getGowaBinaryPath()
       console.log(`Starting instance ${id}:`, {
-        binary: GOWA_BINARY_PATH,
+        binary: gowaBinaryPath,
         args: processedArgs,
         workingDir: instanceDir,
         envKeys: Object.keys(env).filter(k => k !== 'PORT' && !k.startsWith('SYSTEM_')),
@@ -139,7 +146,7 @@ export abstract class InstanceService {
 
       // Spawn process using Bun.spawn
       const spawnedProcess = Bun.spawn({
-        cmd: [GOWA_BINARY_PATH, ...processedArgs],
+        cmd: [gowaBinaryPath, ...processedArgs],
         cwd: instanceDir, // Run in instance-specific directory
         env,
         onExit: (subprocess, exitCode, signalCode, error) => {

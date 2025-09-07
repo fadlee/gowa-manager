@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { cors } from '@elysiajs/cors'
 import { staticPlugin } from '@elysiajs/static'
+import { getConfig } from './cli' // Import CLI configuration
 import './db' // Import to initialize database
 import './restart' // Import to auto-restart instances
 import { downloadGowaBinary } from './binary-download' // Import binary auto-download
@@ -11,6 +12,20 @@ import { proxyModule } from './modules/proxy'
 import { authModule } from './modules/auth'
 import { basicAuth } from './middlewares/auth'
 import type { ApiResponse } from './types'
+
+// Parse CLI configuration
+const config = getConfig()
+
+// Set environment variables from CLI config
+if (config.dataDir) {
+  process.env.DATA_DIR = config.dataDir
+}
+if (config.adminUsername) {
+  process.env.ADMIN_USERNAME = config.adminUsername
+}
+if (config.adminPassword) {
+  process.env.ADMIN_PASSWORD = config.adminPassword
+}
 
 // Auto-download GOWA binary if not present
 ;(async () => {
@@ -26,9 +41,10 @@ import type { ApiResponse } from './types'
   }
 })()
 
-// Get credentials from environment variables
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin'
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'password'
+// Configuration from CLI args (takes precedence over env vars)
+const ADMIN_USERNAME = config.adminUsername
+const ADMIN_PASSWORD = config.adminPassword
+const PORT = config.port
 
 const app = new Elysia()
   .use(cors({
@@ -126,6 +142,9 @@ const app = new Elysia()
     })
   })
 
-  .listen(3000)
+  .listen(PORT)
 
 console.log(`🚀 GOWA Manager server is running on ${app.server?.hostname}:${app.server?.port}`)
+console.log(`👤 Admin credentials: ${ADMIN_USERNAME}/${ADMIN_PASSWORD}`)
+console.log(`📂 Data directory: ${config.dataDir || './data'}`)
+console.log(`🌐 Open: http://localhost:${PORT}`)

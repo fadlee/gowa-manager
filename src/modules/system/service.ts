@@ -1,5 +1,5 @@
 import { queries, db } from '../../db'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import type { SystemModel } from './model'
 import { createServer } from 'net'
 
@@ -64,13 +64,16 @@ export abstract class SystemService {
 
   // Get system configuration
   static getSystemConfig(): SystemModel.configResponse {
+    const dataDir = process.env.DATA_DIR || join(process.cwd(), 'data')
+    // Resolve relative paths to absolute paths
+    const absoluteDataDir = resolve(dataDir)
     return {
       port_range: {
         min: 8000,
         max: 9000
       },
-      data_directory: join(process.cwd(), 'data'),
-      binaries_directory: join(process.cwd(), 'data', 'binaries')
+      data_directory: absoluteDataDir,
+      binaries_directory: join(absoluteDataDir, 'binaries')
     }
   }
 

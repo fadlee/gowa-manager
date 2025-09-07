@@ -1,10 +1,10 @@
-import type { 
-  Instance, 
-  CreateInstanceRequest, 
-  UpdateInstanceRequest, 
+import type {
+  Instance,
+  CreateInstanceRequest,
+  UpdateInstanceRequest,
   InstanceStatus,
   ApiSuccess,
-  SystemStatus 
+  SystemStatus
 } from '../types';
 
 const API_BASE = '/api';
@@ -15,7 +15,7 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
-    
+
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -91,7 +91,7 @@ class ApiClient {
 
   // Proxy utilities
   getProxyUrl(instanceKey: string): string {
-    return `http://localhost:3000/app/${instanceKey}/`;
+    return window.location.origin + `/app/${instanceKey}/`;
   }
 }
 

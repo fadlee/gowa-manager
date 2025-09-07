@@ -1,5 +1,5 @@
 import { mkdir, exists, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 
@@ -58,7 +58,7 @@ function getPlatformAssetName(): string {
 
 async function downloadFile(url: string, outputPath: string): Promise<void> {
   console.log(`📥 Downloading: ${url}`)
-  
+
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Failed to download: ${response.statusText}`)
@@ -71,10 +71,10 @@ async function downloadFile(url: string, outputPath: string): Promise<void> {
 
 async function extractBinary(zipPath: string, extractDir: string, targetBinaryPath: string): Promise<void> {
   console.log(`📦 Extracting: ${zipPath}`)
-  
+
   // Create extraction directory
   await mkdir(extractDir, { recursive: true })
-  
+
   // Extract zip file using unzip command
   return new Promise((resolve, reject) => {
     const unzipProcess = spawn('unzip', ['-o', zipPath, '-d', extractDir], {
@@ -91,15 +91,15 @@ async function extractBinary(zipPath: string, extractDir: string, targetBinaryPa
         // Find the main binary file (should be the largest file or follow naming pattern)
         const fs = require('node:fs')
         const files = fs.readdirSync(extractDir)
-        
+
         // Look for files that might be the binary (exclude readme, etc.)
-        const binaryFile = files.find((file: string) => 
-          file.toLowerCase() !== 'readme.md' && 
+        const binaryFile = files.find((file: string) =>
+          file.toLowerCase() !== 'readme.md' &&
           file.toLowerCase() !== 'license' &&
           !file.includes('.')
-        ) || files.find((file: string) => 
-          file.includes('whatsapp') || 
-          file.includes('main') || 
+        ) || files.find((file: string) =>
+          file.includes('whatsapp') ||
+          file.includes('main') ||
           file.includes('app')
         )
 
@@ -108,10 +108,10 @@ async function extractBinary(zipPath: string, extractDir: string, targetBinaryPa
         }
 
         const sourceBinaryPath = join(extractDir, binaryFile)
-        
+
         // Copy and rename the binary to target location
         await Bun.write(targetBinaryPath, Bun.file(sourceBinaryPath))
-        
+
         // Make binary executable on Unix systems
         if (process.platform !== 'win32') {
           const chmodProcess = spawn('chmod', ['+x', targetBinaryPath])
@@ -132,57 +132,60 @@ async function extractBinary(zipPath: string, extractDir: string, targetBinaryPa
 export async function downloadGowaBinary(): Promise<void> {
   try {
     console.log('🚀 Checking for GOWA binary auto-download...')
-    
-    const dataDir = join(process.cwd(), 'data')
-    const binDir = join(dataDir, 'bin')
+
+    // Use custom data directory if specified
+    const dataDir = process.env.DATA_DIR || join(process.cwd(), 'data')
+    // Resolve relative paths to absolute paths
+    const absoluteDataDir = resolve(dataDir)
+    const binDir = join(absoluteDataDir, 'bin')
     const binaryPath = join(binDir, BINARY_NAME)
-    
+
     // Create directories if they don't exist
     await mkdir(binDir, { recursive: true })
-    
+
     // Check if binary already exists
     const binaryExists = await exists(binaryPath)
     if (binaryExists) {
       console.log(`✅ GOWA binary already exists: ${binaryPath}`)
       return
     }
-    
+
     console.log('📡 Fetching latest release information...')
-    
+
     // Get latest release info
     const response = await fetch(REPO_URL)
     if (!response.ok) {
       throw new Error(`Failed to fetch release info: ${response.statusText}`)
     }
-    
+
     const release = await response.json() as GitHubRelease
     console.log(`🏷️  Latest version: ${release.tag_name}`)
-    
+
     // Find the correct asset for current platform
     const platformName = getPlatformAssetName()
-    const asset = release.assets.find(asset => 
+    const asset = release.assets.find(asset =>
       asset.name.includes(platformName) && asset.name.endsWith('.zip')
     )
-    
+
     if (!asset) {
       console.warn(`⚠️  No binary found for platform: ${platformName}`)
       console.log('Available assets:', release.assets.map(a => a.name))
       return
     }
-    
+
     console.log(`📦 Found asset: ${asset.name}`)
-    
+
     // Download the zip file
-    const tempDir = join(dataDir, 'temp')
+    const tempDir = join(absoluteDataDir, 'temp')
     const zipPath = join(tempDir, asset.name)
     const extractDir = join(tempDir, 'extract')
-    
+
     await mkdir(tempDir, { recursive: true })
-    
+
     try {
       await downloadFile(asset.browser_download_url, zipPath)
       await extractBinary(zipPath, extractDir, binaryPath)
-      
+
       console.log(`🎉 GOWA binary successfully installed: ${binaryPath}`)
     } finally {
       // Cleanup temp files
@@ -192,7 +195,7 @@ export async function downloadGowaBinary(): Promise<void> {
         console.warn('⚠️  Failed to cleanup temp files:', cleanupError)
       }
     }
-    
+
   } catch (error) {
     console.error('❌ Failed to download GOWA binary:', error)
     console.log('ℹ️  You can manually download and place the binary at data/bin/gowa')

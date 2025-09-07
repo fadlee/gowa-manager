@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { getConfig } from './cli'
 
 // Utility function to generate 8-character random keys
 function generateInstanceKey(): string {
@@ -15,13 +16,17 @@ function generateInstanceKey(): string {
 function initializeDatabase() {
   // Create data directory if it doesn't exist
   const fs = require('node:fs')
-  const dataDir = join(process.cwd(), 'data')
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
+  const config = getConfig()
+  // Use data directory from CLI config
+  const dataDir = config.dataDir
+  // Resolve relative paths to absolute paths
+  const absoluteDataDir = resolve(dataDir)
+  if (!fs.existsSync(absoluteDataDir)) {
+    fs.mkdirSync(absoluteDataDir, { recursive: true })
   }
 
   // Simple SQLite database connection
-  const db = new Database(join(process.cwd(), 'data', 'gowa.db'))
+  const db = new Database(join(absoluteDataDir, 'gowa.db'))
 
   // Create tables
   db.exec(`
