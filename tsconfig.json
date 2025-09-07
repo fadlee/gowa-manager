@@ -1,26 +1,37 @@
 {
   "compilerOptions": {
     // Environment settings
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
     "module": "ESNext",
     "jsx": "react-jsx",
     "jsxImportSource": "react",
 
-    // Types
+    // Types - exclude conflicting node types when using bun
     "types": ["bun-types"],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
 
     // Output settings
-    "declaration": true,
+    "declaration": false,
     "outDir": "dist",
-    "noEmit": false,
+    "noEmit": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
 
     // Module resolution
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": false
+    "allowImportingTsExtensions": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Strict type checking
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictFunctionTypes": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist", "client"]
 }
