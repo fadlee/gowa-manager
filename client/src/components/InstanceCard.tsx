@@ -15,7 +15,9 @@ import {
   Clock,
   Hash,
   Cpu,
-  MemoryStick
+  MemoryStick,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react'
 import { EditInstanceDialog } from './EditInstanceDialog'
 
@@ -67,19 +69,28 @@ export function InstanceCard({ instance }: InstanceCardProps) {
     },
   })
 
-  const getStatusVariant = (status: string) => {
+  const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'running':
-        return 'success'
+        return 'bg-green-500'
       case 'stopped':
-        return 'secondary'
+        return 'bg-gray-400'
       case 'starting':
       case 'stopping':
-        return 'warning'
+        return 'bg-yellow-500'
       case 'error':
-        return 'destructive'
+        return 'bg-red-500'
       default:
-        return 'outline'
+        return 'bg-gray-300'
+    }
+  }
+
+  const getCardBorderColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'error':
+        return 'border-orange-200 bg-orange-50'
+      default:
+        return 'border-gray-200'
     }
   }
 
@@ -132,145 +143,204 @@ export function InstanceCard({ instance }: InstanceCardProps) {
 
   return (
     <>
-      <Card className="transition-shadow hover:shadow-md">
-        <CardHeader className="pb-3">
+      <Card className={`transition-shadow hover:shadow-md ${getCardBorderColor(status?.status || 'unknown')}`}>
+        <CardHeader className="pb-4">
+          {/* Header with status dot */}
           <div className="flex justify-between items-start">
-            <CardTitle className="pr-2 text-lg font-medium truncate">
+            <CardTitle className="text-xl font-semibold text-gray-900 truncate">
               {instance.name}
             </CardTitle>
-            <div className="flex gap-2 items-center">
-              {isRunning && status?.port && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleOpenProxy}
-                  className="h-6 text-xs"
-                >
-                  <ExternalLink className="mr-1 w-4 h-4" />
-                  Open
-                </Button>
-              )}
-              <Badge variant={getStatusVariant(status?.status || 'unknown')}>
-                {status?.status || 'unknown'}
-              </Badge>
-            </div>
+            <div className={`w-3 h-3 rounded-full ${getStatusColor(status?.status || 'unknown')}`} />
           </div>
-          <div className="flex justify-between items-center w-full text-sm text-gray-600">
+
+          {/* Instance details */}
+          <div className="space-y-1 text-sm text-gray-600">
             <div className="flex items-center space-x-4">
-              <div className="flex items-center">
-                <Hash className="mr-1 w-3 h-3" />
-                {instance.id}
-              </div>
-              {status?.port && (
-                <div className="flex items-center">
-                  <span>Port: {status.port}</span>
-                </div>
-              )}
+              <span>#{instance.id}</span>
+              <span>Port: {status?.port || '--'}</span>
+              <span>PID: {status?.pid || '--'}</span>
             </div>
-            {status?.pid && (
-              <div className="ml-4">
-                <span>PID: {status.pid}</span>
-              </div>
-            )}
           </div>
         </CardHeader>
 
-        <CardContent className="pb-3">
-          <div className="space-y-2 text-sm">
-            {status?.uptime !== null && (
-              <div className="flex items-center text-gray-600">
-                <Clock className="mr-2 w-3 h-3" />
-                <span>Uptime: {formatUptime(status.uptime)}</span>
-              </div>
-            )}
+        <CardContent className="pb-4">
+          {/* Status messages */}
+          {isStopped && (
+            <div className="flex items-center mb-4 text-sm text-gray-600 bg-gray-100">
+              <Square className="mr-2 w-4 h-4 text-gray-500" />
+              <span className="text-sm text-gray-600">
+                Stopped {status?.uptime ? formatUptime(Date.now() - status.uptime) + ' ago' : ''}
+              </span>
+            </div>
+          )}
 
-            {/* Resource Usage Display */}
-            {isRunning && status?.resources && (
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center text-gray-600">
-                    <Cpu className={`mr-2 w-3 h-3 ${getCpuColor(status.resources.cpuPercent)}`} />
-                    <span>CPU: {status.resources.cpuPercent.toFixed(1)}%</span>
-                    {status.resources.avgCpu !== undefined && (
-                      <span className="ml-1 text-xs text-gray-500">
-                        (avg: {status.resources.avgCpu.toFixed(1)}%)
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center text-gray-600">
-                    <MemoryStick className={`mr-2 w-3 h-3 ${getMemoryColor(status.resources.memoryPercent)}`} />
-                    <span>Memory: {formatMemory(status.resources.memoryMB)} ({status.resources.memoryPercent.toFixed(1)}%)</span>
-                    {status.resources.avgMemory !== undefined && (
-                      <span className="ml-1 text-xs text-gray-500">
-                        (avg: {formatMemory(status.resources.avgMemory)})
-                      </span>
-                    )}
-                  </div>
-                </div>
+          {isError && (
+            <div className="flex items-center p-3 mb-4 bg-yellow-100 rounded-lg">
+              <AlertTriangle className="mr-2 w-4 h-4 text-yellow-600" />
+              <span className="text-sm text-yellow-800">
+                Failed to start - Port already in use
+              </span>
+            </div>
+          )}
+
+          {/* Uptime for running instances */}
+          {isRunning && (
+            <div className="flex items-center mb-4 text-sm text-gray-600">
+              <Clock className="mr-2 w-4 h-4" />
+              <span>Uptime: {status?.uptime ? formatUptime(status.uptime) : '--'}</span>
+            </div>
+          )}
+
+          {/* Resource monitoring */}
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
+                CPU USAGE
               </div>
-            )}
+              <div className="text-lg font-semibold text-gray-900">
+                {isRunning && status?.resources ? `${status.resources.cpuPercent.toFixed(1)}%` : '--'}
+              </div>
+              <div className="mt-2 w-full h-1 bg-gray-200 rounded-full">
+                <div
+                  className="h-1 bg-blue-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(status?.resources?.cpuPercent || 0, 100)}%` }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
+                MEMORY
+              </div>
+              <div className="text-lg font-semibold text-gray-900">
+                {isRunning && status?.resources ? formatMemory(status.resources.memoryMB) : '--'}
+            </div>
+              <div className="mt-2 w-full h-1 bg-gray-200 rounded-full">
+                <div
+                  className="h-1 bg-blue-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(status?.resources?.memoryPercent || 0, 100)}%` }}
+                />
+              </div>
+            </div>
           </div>
         </CardContent>
 
         <CardFooter className="pt-0">
-          <div className="flex flex-wrap gap-2 w-full">
+          <div className="flex gap-1.5 w-full">
             {isLoading ? (
-              <Button disabled className="flex-1">
-                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+              <Button disabled className="flex-1 h-8">
+                <Loader2 className="mr-2 w-3 h-3 animate-spin" />
                 Processing...
               </Button>
             ) : (
               <>
-                {(isStopped || isError) && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => startMutation.mutate()}
-                    className="flex-1"
-                  >
-                    <Play className="mr-1 w-4 h-4" />
-                    Start
-                  </Button>
-                )}
-
+                {/* Running state buttons */}
                 {isRunning && (
                   <>
                     <Button
-                      variant="destructive"
+                      variant="outline"
                       size="sm"
-                      onClick={() => stopMutation.mutate()}
-                      className="flex-1"
+                      onClick={handleOpenProxy}
+                      className="px-3 h-8 text-xs text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100"
                     >
-                      <Square className="mr-1 w-4 h-4" />
-                      Stop
+                      <ExternalLink className="mr-1 w-3 h-3" />
+                      Open
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => restartMutation.mutate()}
-                      className="flex-1"
+                      className="p-0 w-8 h-8"
                     >
-                      <RotateCcw className="mr-1 w-4 h-4" />
-                      Restart
+                      <RotateCcw className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setOpenWithJsonView(false)
+                        setShowEditDialog(true)
+                      }}
+                      className="p-0 w-8 h-8"
+                    >
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => stopMutation.mutate()}
+                      className="p-0 w-8 h-8 text-red-600 bg-red-50 border-red-200 hover:bg-red-100"
+                    >
+                      <Square className="w-3 h-3" />
                     </Button>
                   </>
                 )}
 
+                {/* Stopped state buttons */}
+                {isStopped && (
+                  <>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => startMutation.mutate()}
+                      className="px-3 h-8 text-xs bg-green-600 hover:bg-green-700"
+                    >
+                      <Play className="mr-1 w-3 h-3" />
+                      Start
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setOpenWithJsonView(false)
+                        setShowEditDialog(true)
+                      }}
+                      className="p-0 w-8 h-8"
+                    >
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="p-0 w-8 h-8 text-gray-500"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </>
+                )}
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setOpenWithJsonView(false)
-                    setShowEditDialog(true)
-                  }}
-                  className="flex-1"
-                >
-                  <Edit className="mr-1 w-4 h-4" />
-                  Edit
-                </Button>
+                {/* Error state buttons */}
+                {isError && (
+                  <>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => startMutation.mutate()}
+                      className="px-3 h-8 text-xs bg-green-600 hover:bg-green-700"
+                    >
+                      <Play className="mr-1 w-3 h-3" />
+                      Retry
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setOpenWithJsonView(false)
+                        setShowEditDialog(true)
+                      }}
+                      className="p-0 w-8 h-8"
+                    >
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="p-0 w-8 h-8 text-gray-500"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>
