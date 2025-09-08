@@ -7,13 +7,11 @@ import { ConfigParser } from './utils/config-parser'
 import { NameGenerator } from './utils/name-generator'
 import { ResourceMonitor } from './utils/resource-monitor'
 import { join, resolve } from 'node:path'
+import { VersionManager } from '../system/version-manager'
 
-// Get GOWA binary path (respects DATA_DIR env var or CLI config)
-function getGowaBinaryPath(): string {
-  const dataDir = process.env.DATA_DIR || join(process.cwd(), 'data')
-  // Resolve relative paths to absolute paths
-  const absoluteDataDir = resolve(dataDir)
-  return join(absoluteDataDir, 'bin', 'gowa')
+// Get GOWA binary path for a specific version (respects DATA_DIR env var or CLI config)
+function getGowaBinaryPath(version: string = 'latest'): string {
+  return VersionManager.getVersionBinaryPath(version)
 }
 
 // Initialize process exit handlers
@@ -65,7 +63,8 @@ export abstract class InstanceService {
       key,
       name,
       port,
-      JSON.stringify(config)
+      JSON.stringify(config),
+      data.gowa_version || 'latest'
     ) as InstanceModel.instanceResponse
 
     // Create instance directory
@@ -84,6 +83,7 @@ export abstract class InstanceService {
       data.name || existing.name,
       existing.port,
       data.config || existing.config,
+      data.gowa_version || existing.gowa_version || 'latest',
       id
     ) as InstanceModel.instanceResponse
 
@@ -127,6 +127,13 @@ export abstract class InstanceService {
     }
 
     try {
+      // Validate that the required version is available
+      const version = instance.gowa_version || 'latest'
+      const versionAvailable = await VersionManager.isVersionAvailable(version)
+      if (!versionAvailable) {
+        throw new Error(`GOWA version '${version}' is not installed. Please install it first.`)
+      }
+
       // Ensure instance directory exists
       const instanceDir = DirectoryManager.createInstanceDirectory(id)
 
@@ -135,7 +142,7 @@ export abstract class InstanceService {
       const processedArgs = ConfigParser.processArgs(config, instance.port || 8080)
       const env = ConfigParser.parseEnvironmentVars(config, instance.port || 8080)
 
-      const gowaBinaryPath = getGowaBinaryPath()
+      const gowaBinaryPath = getGowaBinaryPath(version)
       console.log(`Starting instance ${id}:`, {
         binary: gowaBinaryPath,
         args: processedArgs,

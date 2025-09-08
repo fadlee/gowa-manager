@@ -6,6 +6,7 @@ export interface Instance {
   port: number | null;
   status: string;
   config: string;
+  gowa_version: string;
   created_at: string;
   updated_at: string;
 }
@@ -13,11 +14,13 @@ export interface Instance {
 export interface CreateInstanceRequest {
   name?: string;
   config?: string;
+  gowa_version?: string;
 }
 
 export interface UpdateInstanceRequest {
   name?: string;
   config?: string;
+  gowa_version?: string;
 }
 
 export interface InstanceStatus {
@@ -84,4 +87,22 @@ export interface InstanceConfig {
   args?: string[];
   env?: Record<string, string>;
   flags?: CliFlags;
+}
+
+// Version Types
+export interface VersionInfo {
+  version: string;
+  path: string;
+  installed: boolean;
+  isLatest: boolean;
+  size?: number;
+  installedAt?: Date;
+}
+
+export interface VersionInstallRequest {
+  version: string;
+}
+
+export interface VersionCleanupRequest {
+  keepCount?: number;
 }

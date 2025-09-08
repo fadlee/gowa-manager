@@ -37,10 +37,22 @@ function initializeDatabase() {
       port INTEGER,
       status TEXT DEFAULT 'stopped',
       config TEXT DEFAULT '{}',
+      gowa_version TEXT DEFAULT 'latest',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `)
+
+  // Migration: Add gowa_version column if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE instances ADD COLUMN gowa_version TEXT DEFAULT 'latest'`)
+    console.log('Added gowa_version column to existing instances table')
+  } catch (error) {
+    // Column already exists, which is fine
+    if (!error.message.includes('duplicate column name')) {
+      console.warn('Migration warning:', error.message)
+    }
+  }
 
   console.log('Database initialized successfully')
   return db
@@ -57,13 +69,13 @@ export const queries = {
   getInstanceById: db.prepare('SELECT * FROM instances WHERE id = ?'),
   getInstanceByKey: db.prepare('SELECT * FROM instances WHERE key = ?'),
   createInstance: db.prepare(`
-    INSERT INTO instances (key, name, port, config)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO instances (key, name, port, config, gowa_version)
+    VALUES (?, ?, ?, ?, ?)
     RETURNING *
   `),
   updateInstance: db.prepare(`
     UPDATE instances
-    SET key = ?, name = ?, port = ?, config = ?, updated_at = CURRENT_TIMESTAMP
+    SET key = ?, name = ?, port = ?, config = ?, gowa_version = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
     RETURNING *
   `),

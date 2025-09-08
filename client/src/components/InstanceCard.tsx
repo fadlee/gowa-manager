@@ -160,6 +160,16 @@ export function InstanceCard({ instance }: InstanceCardProps) {
               <span>Port: {status?.port || '--'}</span>
               <span>PID: {status?.pid || '--'}</span>
             </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+                {instance.gowa_version || 'latest'}
+              </span>
+              {instance.gowa_version === 'latest' && (
+                <Badge variant="secondary" className="text-xs">
+                  Latest
+                </Badge>
+              )}
+            </div>
           </div>
         </CardHeader>
 

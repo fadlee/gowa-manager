@@ -56,7 +56,7 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
             />
             <p className="text-xs text-gray-500">Custom OS name for the instance</p>
           </div>
-          
+
           {/* Auto Mark Read */}
           <div className="flex justify-between items-center">
             <div className="space-y-0.5">
@@ -70,7 +70,7 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
           </div>
 
           {/* Debug Mode */}
-          <div className="flex justify-between items-center">
+          {/* <div className="flex justify-between items-center">
             <div className="space-y-0.5">
               <label className="text-sm font-medium">Debug Mode</label>
               <p className="text-xs text-gray-500">Enable debug logging</p>
@@ -79,7 +79,7 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
               checked={flags.debug ?? false}
               onCheckedChange={(checked) => updateFlag('debug', checked)}
             />
-          </div>
+          </div> */}
 
           {/* Auto Reply */}
           <div className="space-y-2">
@@ -93,7 +93,7 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
           </div>
 
           {/* Base Path */}
-          <div className="space-y-2">
+          {/* <div className="space-y-2">
             <label className="text-sm font-medium">Base Path</label>
             <Input
               placeholder="/gowa"
@@ -101,7 +101,7 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
               onChange={(e) => updateFlag('basePath', e.target.value)}
             />
             <p className="text-xs text-gray-500">Base path for subpath deployment</p>
-          </div>
+          </div> */}
 
           {/* Webhook Secret */}
           <div className="space-y-2">

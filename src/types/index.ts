@@ -19,11 +19,13 @@ export namespace Instance {
   export type CreateRequest = {
     name?: string;
     config?: string;
+    gowa_version?: string;
   }
 
   export type UpdateRequest = {
     name?: string;
     config?: string;
+    gowa_version?: string;
   }
 
   export type Response = {
@@ -33,6 +35,7 @@ export namespace Instance {
     port: number | null;
     status: string;
     config: string;
+    gowa_version: string;
     created_at: string;
     updated_at: string;
   }

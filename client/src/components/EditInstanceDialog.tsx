@@ -12,8 +12,9 @@ import {
 } from './ui/dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Loader2, Trash2, Eye, EyeOff, Code } from 'lucide-react'
+import { Loader2, Trash2, Eye, EyeOff, Code, ChevronDown, ChevronUp, Settings, AlertCircle } from 'lucide-react'
 import { CliFlagsComponent } from './CliFlags/index'
+import { VersionSelector } from './VersionSelector'
 
 interface EditInstanceDialogProps {
   instance: Instance
@@ -24,10 +25,12 @@ interface EditInstanceDialogProps {
 
 export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewInitial = false }: EditInstanceDialogProps) {
   const [name, setName] = useState('')
+  const [version, setVersion] = useState('latest')
   const [flags, setFlags] = useState<CliFlags>({})
   const [errors, setErrors] = useState<{name?: string}>({})
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showJsonView, setShowJsonView] = useState(showJsonViewInitial)
+  const [showConfiguration, setShowConfiguration] = useState(true) // Expanded by default for edit
   const [jsonConfig, setJsonConfig] = useState('')
   const queryClient = useQueryClient()
 
@@ -35,6 +38,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
   useEffect(() => {
     if (open && instance) {
       setName(instance.name)
+      setVersion(instance.gowa_version || 'latest')
       try {
         const configObj: InstanceConfig = JSON.parse(instance.config)
         setJsonConfig(JSON.stringify(configObj, null, 2))
@@ -62,7 +66,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
   }, [open, instance])
 
   const updateMutation = useMutation({
-    mutationFn: (data: { name?: string; config?: string }) => 
+    mutationFn: (data: { name?: string; config?: string; gowa_version?: string }) => 
       apiClient.updateInstance(instance.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['instances'] })
@@ -109,10 +113,14 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
       return
     }
 
-    const data: { name?: string; config?: string } = {}
+    const data: { name?: string; config?: string; gowa_version?: string } = {}
     
     if (name.trim() !== instance.name) {
       data.name = name.trim()
+    }
+    
+    if (version !== (instance.gowa_version || 'latest')) {
+      data.gowa_version = version
     }
     
     // Build configuration
@@ -183,7 +191,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
         <DialogHeader>
           <DialogTitle>Edit Instance</DialogTitle>
           <DialogDescription>
-            Modify the instance name and configuration parameters.
+            Modify the instance name, GOWA version, and configuration parameters.
           </DialogDescription>
         </DialogHeader>
         
@@ -205,50 +213,92 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
             )}
           </div>
 
+          <VersionSelector
+            value={version}
+            onChange={setVersion}
+            disabled={updateMutation.isPending}
+          />
+          
+          {version !== (instance.gowa_version || 'latest') && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+              <div className="flex items-center gap-2 text-sm text-yellow-800">
+                <AlertCircle className="h-4 w-4" />
+                <span>
+                  <strong>Version Change:</strong> Changing the GOWA version will require restarting the instance to take effect.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Collapsible Configuration Section */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">
-                Configuration
-              </label>
+            <div className="border border-gray-200 rounded-md">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowJsonView(!showJsonView)}
-                className="flex items-center gap-1 h-7 px-2 text-xs"
+                onClick={() => setShowConfiguration(!showConfiguration)}
+                className="w-full flex items-center justify-between p-3 h-auto font-medium text-gray-700 hover:bg-gray-50"
               >
-                {showJsonView ? (
-                  <>
-                    <EyeOff className="h-3 w-3" />
-                    Hide JSON
-                  </>
+                <div className="flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  <span>Configuration</span>
+                </div>
+                {showConfiguration ? (
+                  <ChevronUp className="h-4 w-4" />
                 ) : (
-                  <>
-                    <Eye className="h-3 w-3" />
-                    View JSON
-                  </>
+                  <ChevronDown className="h-4 w-4" />
                 )}
               </Button>
-            </div>
-            
-            {showJsonView ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Code className="h-4 w-4 text-gray-500" />
-                  <span className="text-xs text-gray-500">JSON Configuration (Read-only)</span>
+              
+              {showConfiguration && (
+                <div className="border-t border-gray-200 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">
+                      GOWA settings for this instance
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowJsonView(!showJsonView)}
+                      className="flex items-center gap-1 h-7 px-2 text-xs"
+                    >
+                      {showJsonView ? (
+                        <>
+                          <EyeOff className="h-3 w-3" />
+                          Hide JSON
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-3 w-3" />
+                          View JSON
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {showJsonView ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Code className="h-4 w-4 text-gray-500" />
+                        <span className="text-xs text-gray-500">JSON Configuration (Read-only)</span>
+                      </div>
+                      <pre className="bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border border-gray-200 max-h-96">
+                        {jsonConfig}
+                      </pre>
+                      <p className="text-xs text-gray-500 mt-1">
+                        This is the raw configuration that will be saved. Use the form above to make changes.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="max-h-96 overflow-y-auto">
+                      <CliFlagsComponent flags={flags} onChange={setFlags} />
+                    </div>
+                  )}
                 </div>
-                <pre className="bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border border-gray-200 max-h-96">
-                  {jsonConfig}
-                </pre>
-                <p className="text-xs text-gray-500 mt-1">
-                  This is the raw configuration that will be saved. Use the form above to make changes.
-                </p>
-              </div>
-            ) : (
-              <div className="border border-gray-200 rounded-md p-4 max-h-96 overflow-y-auto">
-                <CliFlagsComponent flags={flags} onChange={setFlags} />
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">

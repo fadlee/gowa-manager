@@ -11,8 +11,9 @@ import {
 } from './ui/dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Loader2, Eye, EyeOff, Code } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Code, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 import { CliFlagsComponent } from './CliFlags/index'
+import { VersionSelector } from './VersionSelector'
 import type { CliFlags, InstanceConfig } from '../types'
 
 interface CreateInstanceDialogProps {
@@ -22,17 +23,19 @@ interface CreateInstanceDialogProps {
 
 export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialogProps) {
   const [name, setName] = useState('')
+  const [version, setVersion] = useState('latest')
   const [flags, setFlags] = useState<CliFlags>({
     accountValidation: true,
     os: 'GowaManager'
   })
   const [errors, setErrors] = useState<{name?: string}>({})
   const [showJsonView, setShowJsonView] = useState(false)
+  const [showConfiguration, setShowConfiguration] = useState(false)
   const [jsonConfig, setJsonConfig] = useState('')
   const queryClient = useQueryClient()
 
   const createMutation = useMutation({
-    mutationFn: (data: { name?: string; config?: string }) => 
+    mutationFn: (data: { name?: string; config?: string; gowa_version?: string }) => 
       apiClient.createInstance(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['instances'] })
@@ -45,12 +48,14 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
 
   const handleClose = () => {
     setName('')
+    setVersion('latest')
     setFlags({
       accountValidation: true,
       os: 'GowaManager'
     })
     setErrors({})
     setShowJsonView(false)
+    setShowConfiguration(false)
     onOpenChange(false)
   }
 
@@ -81,11 +86,13 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
       return
     }
 
-    const data: { name?: string; config?: string } = {}
+    const data: { name?: string; config?: string; gowa_version?: string } = {}
     
     if (name.trim()) {
       data.name = name.trim()
     }
+    
+    data.gowa_version = version
     
     // Build configuration
     let finalConfig: InstanceConfig = {
@@ -128,50 +135,84 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
             )}
           </div>
 
+          <VersionSelector
+            value={version}
+            onChange={setVersion}
+            disabled={createMutation.isPending}
+          />
+
+          {/* Collapsible Configuration Section */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">
-                Configuration
-              </label>
+            <div className="border border-gray-200 rounded-md">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowJsonView(!showJsonView)}
-                className="flex items-center gap-1 h-7 px-2 text-xs"
+                onClick={() => setShowConfiguration(!showConfiguration)}
+                className="w-full flex items-center justify-between p-3 h-auto font-medium text-gray-700 hover:bg-gray-50"
               >
-                {showJsonView ? (
-                  <>
-                    <EyeOff className="h-3 w-3" />
-                    Hide JSON
-                  </>
+                <div className="flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  <span>Configuration</span>
+                  <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500">
+                    Optional
+                  </span>
+                </div>
+                {showConfiguration ? (
+                  <ChevronUp className="h-4 w-4" />
                 ) : (
-                  <>
-                    <Eye className="h-3 w-3" />
-                    View JSON
-                  </>
+                  <ChevronDown className="h-4 w-4" />
                 )}
               </Button>
-            </div>
-            
-            {showJsonView ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Code className="h-4 w-4 text-gray-500" />
-                  <span className="text-xs text-gray-500">JSON Configuration (Read-only)</span>
+              
+              {showConfiguration && (
+                <div className="border-t border-gray-200 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">
+                      Advanced GOWA settings
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowJsonView(!showJsonView)}
+                      className="flex items-center gap-1 h-7 px-2 text-xs"
+                    >
+                      {showJsonView ? (
+                        <>
+                          <EyeOff className="h-3 w-3" />
+                          Hide JSON
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-3 w-3" />
+                          View JSON
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {showJsonView ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Code className="h-4 w-4 text-gray-500" />
+                        <span className="text-xs text-gray-500">JSON Configuration (Read-only)</span>
+                      </div>
+                      <pre className="bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border border-gray-200 max-h-96">
+                        {jsonConfig}
+                      </pre>
+                      <p className="text-xs text-gray-500 mt-1">
+                        This is the raw configuration that will be saved. Use the form above to make changes.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="max-h-96 overflow-y-auto">
+                      <CliFlagsComponent flags={flags} onChange={setFlags} />
+                    </div>
+                  )}
                 </div>
-                <pre className="bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border border-gray-200 max-h-96">
-                  {jsonConfig}
-                </pre>
-                <p className="text-xs text-gray-500 mt-1">
-                  This is the raw configuration that will be saved. Use the form above to make changes.
-                </p>
-              </div>
-            ) : (
-              <div className="border border-gray-200 rounded-md p-4 max-h-96 overflow-y-auto">
-                <CliFlagsComponent flags={flags} onChange={setFlags} />
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <DialogFooter>

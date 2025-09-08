@@ -1,8 +1,10 @@
 import { Elysia, t } from 'elysia'
 import { SystemService } from './service'
 import { SystemModel } from './model'
+import { versionsModule } from './versions'
 
 export const systemModule = new Elysia({ prefix: '/api/system' })
+  .use(versionsModule)
   // Get system status
   .get('/status', () => {
     return SystemService.getSystemStatus()

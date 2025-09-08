@@ -5,14 +5,16 @@ export namespace InstanceModel {
   // Create instance request
   export const createBody = t.Object({
     name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
-    config: t.Optional(t.String())
+    config: t.Optional(t.String()),
+    gowa_version: t.Optional(t.String({ default: 'latest' }))
   })
   export type createBody = Instance.CreateRequest
 
   // Update instance request
   export const updateBody = t.Object({
     name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
-    config: t.Optional(t.String())
+    config: t.Optional(t.String()),
+    gowa_version: t.Optional(t.String())
   })
   export type updateBody = Instance.UpdateRequest
 
@@ -24,6 +26,7 @@ export namespace InstanceModel {
     port: t.Union([t.Number(), t.Null()]),
     status: t.String(),
     config: t.String(),
+    gowa_version: t.String(),
     created_at: t.String(),
     updated_at: t.String()
   })

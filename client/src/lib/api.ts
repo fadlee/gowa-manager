@@ -4,7 +4,8 @@ import type {
   UpdateInstanceRequest,
   InstanceStatus,
   ApiSuccess,
-  SystemStatus
+  SystemStatus,
+  VersionInfo,
 } from '../types';
 
 const API_BASE = '/api';
@@ -87,6 +88,32 @@ class ApiClient {
   // System management
   async getSystemStatus(): Promise<SystemStatus> {
     return this.request<SystemStatus>('/system/status');
+  }
+
+  // Version management
+  async getInstalledVersions(): Promise<VersionInfo[]> {
+    return this.request<VersionInfo[]>('/system/versions/installed');
+  }
+
+  async getAvailableVersions(limit: number = 10): Promise<VersionInfo[]> {
+    return this.request<VersionInfo[]>(`/system/versions/available?limit=${limit}`);
+  }
+
+  async installVersion(version: string): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>('/system/versions/install', {
+      method: 'POST',
+      body: JSON.stringify({ version }),
+    });
+  }
+
+  async removeVersion(version: string): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>(`/system/versions/${version}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async isVersionAvailable(version: string): Promise<{ version: string; available: boolean; path: string }> {
+    return this.request(`/system/versions/${version}/available`);
   }
 
   // Proxy utilities
