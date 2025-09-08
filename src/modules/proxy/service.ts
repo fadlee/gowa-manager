@@ -181,7 +181,7 @@ export abstract class ProxyService {
       .replace(/(const\s+basePath\s*=\s*["`'])([\s]*)(["`'])/g, `$1/${ProxyModel.prefix}/${instanceKey}$3`)
 
     // Inject html base tag
-    modified = modified.replace(/<head>/, `<head><base href="/${ProxyModel.prefix}/${instanceKey}" target="_blank">`)
+    modified = modified.replace(/<head>/, `<head><base href="/${ProxyModel.prefix}/${instanceKey}/" target="_blank">`)
 
     // Handle module imports in script tags with type="module"
     modified = this.processModuleScripts(modified, instanceKey)
