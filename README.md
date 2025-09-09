@@ -177,3 +177,213 @@ bun run src/index.ts --port 8080
 # Authentication
 bun run src/index.ts --admin-username admin --admin-password pass
 ```
+
+## API Reference
+
+### Instance Management
+```bash
+# List all instances
+GET /api/instances
+
+# Create new instance
+POST /api/instances
+{
+  "name": "my-instance",
+  "gowa_version": "latest",
+  "config": "{...}"
+}
+
+# Update instance
+PUT /api/instances/{id}
+{
+  "name": "updated-name",
+  "gowa_version": "v7.5.1",
+  "config": "{...}"
+}
+
+# Instance actions
+POST /api/instances/{id}/start
+POST /api/instances/{id}/stop
+POST /api/instances/{id}/restart
+
+# Get instance status
+GET /api/instances/{id}/status
+```
+
+### Version Management
+```bash
+# List installed versions
+GET /api/system/versions/installed
+
+# List available versions
+GET /api/system/versions/available?limit=10
+
+# Install version
+POST /api/system/versions/install
+{"version": "v7.5.1"}
+
+# Remove version
+DELETE /api/system/versions/{version}
+
+# Check version availability
+GET /api/system/versions/{version}/available
+
+# Get disk usage
+GET /api/system/versions/usage
+
+# Cleanup old versions
+POST /api/system/versions/cleanup
+{"keepCount": 3}
+```
+
+### System Information
+```bash
+# System status
+GET /api/system/status
+
+# Configuration
+GET /api/system/config
+
+# Port management
+GET /api/system/ports/next
+GET /api/system/ports/{port}/available
+```
+
+## Architecture
+
+### Modular Backend Structure
+```
+src/
+├── modules/
+│   ├── instances/        # Instance lifecycle management
+│   │   ├── service.ts   # Business logic
+│   │   ├── model.ts     # API schemas
+│   │   └── utils/       # Process, directory, config management
+│   ├── system/          # System status, ports, versions
+│   │   ├── service.ts   # System operations
+│   │   ├── versions.ts  # Version management API
+│   │   └── version-manager.ts  # Version business logic
+│   ├── proxy/           # Request proxying with WebSocket support
+│   └── auth/            # Authentication middleware
+├── middlewares/         # Reusable middleware
+├── types/              # TypeScript definitions
+├── db.ts               # SQLite database with prepared statements
+└── binary-download.ts  # Auto-download service
+```
+
+### Frontend Architecture
+```
+client/src/
+├── components/
+│   ├── VersionSelector.tsx    # Version management UI
+│   ├── CreateInstanceDialog.tsx
+│   ├── EditInstanceDialog.tsx
+│   ├── InstanceCard.tsx
+│   └── ui/                    # UI components
+├── lib/
+│   ├── api.ts                # API client
+│   └── auth.tsx              # Authentication context
+└── types/                    # TypeScript definitions
+```
+
+### Data Flow
+1. **SQLite Database** stores instance metadata and configuration
+2. **Elysia Modules** handle API operations and process management
+3. **React Frontend** communicates via REST API with real-time updates
+4. **Version Manager** handles multiple GOWA binary versions
+5. **Proxy Module** forwards requests to running instances
+6. **Auto-restart Service** maintains instance state across server restarts
+
+## Troubleshooting
+
+### Common Issues
+
+**🔧 Instance Won't Start**
+```bash
+# Check if version is installed
+GET /api/system/versions/{version}/available
+
+# Install missing version
+POST /api/system/versions/install {"version": "v7.5.1"}
+
+# Check port availability
+GET /api/system/ports/{port}/available
+```
+
+**📦 Version Installation Fails**
+- Check internet connection
+- Verify GitHub access (not behind firewall)
+- Ensure sufficient disk space
+- Check file permissions in data directory
+
+**🔄 Version Change Not Applied**
+- Version changes require instance restart
+- Stop and start the instance after changing version
+- Check instance logs for errors
+
+**🗃️ Database Issues**
+```bash
+# Reset database (⚠️ deletes all data)
+bun run reset-db
+
+# Or manually delete
+rm data/gowa.db
+```
+
+**🌐 Proxy/Web UI Issues**
+- Ensure instance is running and healthy
+- Check proxy path: `/app/{instanceKey}/`
+- Verify instance port allocation
+
+### Logs and Debugging
+```bash
+# Enable debug mode
+DEBUG=1 bun run dev
+
+# Check server logs
+bun run dev:server
+
+# Test API endpoints
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/instances
+```
+
+### File Permissions
+```bash
+# Fix binary permissions
+chmod +x data/bin/versions/*/gowa
+
+# Fix data directory permissions
+chmod -R 755 data/
+```
+
+## Contributing
+
+1. **Fork the repository**
+2. **Create feature branch**: `git checkout -b feature/amazing-feature`
+3. **Follow existing code patterns** and use TypeScript
+4. **Test your changes**: `bun run test`
+5. **Update documentation** if needed
+6. **Submit pull request**
+
+### Development Guidelines
+- Use **prepared statements** for database queries
+- Follow **modular architecture** patterns
+- Add **comprehensive error handling**
+- Include **TypeScript types** for all APIs
+- Test both **frontend and backend** changes
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- **Issues**: Report bugs and feature requests via GitHub Issues
+- **Documentation**: See `/docs` directory for detailed guides
+- **API**: Full OpenAPI documentation available at `/api/docs` (when running)
+
+---
+
+**Built with**: [Bun](https://bun.sh) • [Elysia](https://elysiajs.com) • [React](https://react.dev) • [TypeScript](https://typescriptlang.org) • [TailwindCSS](https://tailwindcss.com)
+```
