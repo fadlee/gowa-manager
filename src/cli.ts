@@ -19,7 +19,7 @@ USAGE:
 OPTIONS:
   -p, --port <port>              Server port (default: 3000)
   -u, --admin-username <user>    Admin username (default: admin)
-  -P, --admin-password <pass>    Admin password (default: password)  
+  -P, --admin-password <pass>    Admin password (default: password)
   -d, --data-dir <path>          Data directory (default: ./data)
   -h, --help                     Show this help message
   -v, --version                  Show version information
@@ -32,13 +32,13 @@ EXAMPLES:
 
 ENVIRONMENT VARIABLES:
   PORT              Server port
-  ADMIN_USERNAME    Admin username  
+  ADMIN_USERNAME    Admin username
   ADMIN_PASSWORD    Admin password
   DATA_DIR          Data directory
 
 Note: Command line arguments take precedence over environment variables.
 
-For more information, visit: https://github.com/username/gowa-manager
+For more information, visit: https://github.com/fadlee/gowa-manager
 `
   console.log(helpText)
 }
@@ -184,6 +184,18 @@ export function parseCliArgs(args: string[]): CliConfig {
 
 export function getConfig(): CliConfig {
   // Get command line arguments (skip node/bun and script name)
-  const args = process.argv.slice(2)
+  let args = process.argv.slice(2)
+
+  // Fix for Linux/Windows: If the first argument is the binary path itself, remove it
+  if (args.length > 0 && (
+      args[0].endsWith('gowa-manager') ||
+      args[0].endsWith('.exe') ||
+      args[0].includes('/gowa-manager-') ||
+      args[0].includes('\\gowa-manager-')
+    )) {
+    console.log(`Detected binary path as first argument, removing: ${args[0]}`)
+    args = args.slice(1)
+  }
+
   return parseCliArgs(args)
 }

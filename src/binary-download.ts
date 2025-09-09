@@ -2,6 +2,7 @@ import { mkdir, exists, rm, readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { promisify } from 'node:util'
+import AdmZip from 'adm-zip'
 
 const execAsync = promisify(spawn)
 
@@ -73,65 +74,100 @@ async function downloadFile(url: string, outputPath: string): Promise<void> {
 async function extractBinary(zipPath: string, extractDir: string, targetBinaryPath: string): Promise<void> {
   console.log(`📦 Extracting: ${zipPath}`)
 
-  // Create extraction directory
-  await mkdir(extractDir, { recursive: true })
+  try {
+    // Create extraction directory
+    await mkdir(extractDir, { recursive: true })
 
-  // Extract zip file using unzip command
-  return new Promise((resolve, reject) => {
-    const unzipProcess = spawn('unzip', ['-o', zipPath, '-d', extractDir], {
-      stdio: 'pipe'
-    })
+    // Use adm-zip for cross-platform extraction
+    console.log(`Using adm-zip for cross-platform extraction`)
+    const zip = new AdmZip(zipPath)
+    
+    // Extract all files
+    zip.extractAllTo(extractDir, true) // true = overwrite
+    
+    // Process the extracted files
+    await findAndCopyBinary(extractDir, targetBinaryPath)
+    
+    console.log(`✅ Binary extracted and installed: ${targetBinaryPath}`)
+  } catch (error) {
+    console.error(`❌ Extraction failed:`, error)
+    throw error
+  }
+}
 
-    unzipProcess.on('close', async (code) => {
-      if (code !== 0) {
-        reject(new Error(`Unzip failed with code: ${code}`))
-        return
-      }
-
+// Helper function to find and copy the binary
+async function findAndCopyBinary(extractDir: string, targetBinaryPath: string): Promise<void> {
+  // Find the main binary file (should be the largest file or follow naming pattern)
+  const fs = require('node:fs')
+  const files = fs.readdirSync(extractDir)
+  
+  // Debug: List all extracted files
+  console.log(`Found ${files.length} files in extraction directory`)
+  
+  // Look for files that might be the binary (exclude readme, etc.)
+  let binaryFile = files.find((file: string) =>
+    file.toLowerCase() !== 'readme.md' &&
+    file.toLowerCase() !== 'license' &&
+    !file.includes('.')
+  )
+  
+  // If not found with first criteria, try alternative patterns
+  if (!binaryFile) {
+    binaryFile = files.find((file: string) =>
+      file.toLowerCase().includes('whatsapp') ||
+      file.toLowerCase().includes('main') ||
+      file.toLowerCase().includes('app') ||
+      file.toLowerCase().endsWith('.exe')
+    )
+  }
+  
+  // If still not found, look for the largest file
+  if (!binaryFile && files.length > 0) {
+    console.log(`Binary not found by name pattern, looking for largest file`)
+    let largestSize = 0
+    let largestFile = null
+    
+    for (const file of files) {
+      const filePath = join(extractDir, file)
       try {
-        // Find the main binary file (should be the largest file or follow naming pattern)
-        const fs = require('node:fs')
-        const files = fs.readdirSync(extractDir)
-
-        // Look for files that might be the binary (exclude readme, etc.)
-        const binaryFile = files.find((file: string) =>
-          file.toLowerCase() !== 'readme.md' &&
-          file.toLowerCase() !== 'license' &&
-          !file.includes('.')
-        ) || files.find((file: string) =>
-          file.includes('whatsapp') ||
-          file.includes('main') ||
-          file.includes('app')
-        )
-
-        if (!binaryFile) {
-          throw new Error('Could not find binary file in extracted archive')
+        const stats = fs.statSync(filePath)
+        if (stats.isFile() && stats.size > largestSize) {
+          largestSize = stats.size
+          largestFile = file
         }
-
-        const sourceBinaryPath = join(extractDir, binaryFile)
-
-        // Copy and rename the binary to target location
-        await Bun.write(targetBinaryPath, Bun.file(sourceBinaryPath))
-
-        // Make binary executable on Unix systems
-        if (process.platform !== 'win32') {
-          const chmodProcess = spawn('chmod', ['+x', targetBinaryPath])
-          await new Promise((resolve) => chmodProcess.on('close', resolve))
-        }
-
-        console.log(`✅ Binary extracted and installed: ${targetBinaryPath}`)
-        resolve()
       } catch (error) {
-        reject(error)
+        console.warn(`Error checking file ${file}:`, error)
       }
-    })
+    }
+    
+    if (largestFile) {
+      binaryFile = largestFile
+      console.log(`Selected largest file as binary: ${binaryFile} (${largestSize} bytes)`)
+    }
+  }
 
-    unzipProcess.on('error', reject)
-  })
+  if (!binaryFile) {
+    throw new Error('Could not find binary file in extracted archive')
+  }
+
+  const sourceBinaryPath = join(extractDir, binaryFile)
+  console.log(`Found binary: ${sourceBinaryPath}`)
+
+  // Copy and rename the binary to target location
+  await Bun.write(targetBinaryPath, Bun.file(sourceBinaryPath))
+
+  // Make binary executable on Unix systems
+  if (process.platform !== 'win32') {
+    const chmodProcess = spawn('chmod', ['+x', targetBinaryPath])
+    await new Promise((resolve) => chmodProcess.on('close', resolve))
+  }
 }
 
 // Download a specific version to the versions directory
 export async function downloadSpecificVersion(version: string): Promise<void> {
+  // Declare actualVersion at the beginning of the function so it's available in the catch block
+  let actualVersion = version;
+  
   try {
     console.log(`🚀 Downloading GOWA version ${version}...`)
 
@@ -149,7 +185,7 @@ export async function downloadSpecificVersion(version: string): Promise<void> {
     }
 
     const release = await response.json() as GitHubRelease
-    const actualVersion = release.tag_name
+    actualVersion = release.tag_name
     console.log(`🏷️  Actual version: ${actualVersion}`)
     
     // Use the actual version for directory naming
@@ -202,7 +238,7 @@ export async function downloadSpecificVersion(version: string): Promise<void> {
     }
 
   } catch (error) {
-    console.error(`❌ Failed to download GOWA version ${actualVersion}:`, error)
+    console.error(`❌ Failed to download GOWA version ${actualVersion || version}:`, error)
     throw error
   }
 }
