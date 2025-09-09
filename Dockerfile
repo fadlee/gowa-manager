@@ -11,13 +11,15 @@ COPY client/package.json ./client/
 RUN bun install && cd client && bun install
 
 # Copy source code
-COPY . .
+COPY src ./src
+COPY scripts ./scripts
+COPY client ./client
 
 # Compile to binary
 RUN bun run compile
 
-# Final stage using Alpine 3.20
-FROM alpine:3.20
+# Final stage using Alpine with glibc
+FROM frolvlad/alpine-glibc:latest
 
 # Install ffmpeg and ca-certificates
 RUN apk add --no-cache ffmpeg ca-certificates
