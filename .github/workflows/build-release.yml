@@ -106,14 +106,44 @@ jobs:
           
           ## Usage
           
-          1. Run the binary
-          2. Open http://localhost:3000 in your browser
-          3. Default login: admin/password
+          **Basic usage:**
+          ```bash
+          ./gowa-manager-linux-x64
+          ```
+          
+          **Custom port and credentials:**
+          ```bash
+          ./gowa-manager-linux-x64 --port 8080 --admin-username myuser --admin-password mypass
+          ```
+          
+          **Custom data directory:**
+          ```bash
+          ./gowa-manager-linux-x64 --data-dir /path/to/data
+          ```
+          
+          **Show help:**
+          ```bash
+          ./gowa-manager-linux-x64 --help
+          ```
+          
+          Then open http://localhost:3000 in your browser (or custom port)
+          
+          ## Command Line Options
+          
+          - `-p, --port <port>`: Server port (default: 3000)
+          - `-u, --admin-username <user>`: Admin username (default: admin)
+          - `-P, --admin-password <pass>`: Admin password (default: password)
+          - `-d, --data-dir <path>`: Data directory (default: ./data)
+          - `-h, --help`: Show help message
+          - `-v, --version`: Show version
           
           ## Environment Variables
           
-          - `ADMIN_USERNAME`: Admin username (default: admin)
-          - `ADMIN_PASSWORD`: Admin password (default: password)
-          - `PORT`: Server port (default: 3000)
+          - `PORT`: Server port
+          - `ADMIN_USERNAME`: Admin username
+          - `ADMIN_PASSWORD`: Admin password
+          - `DATA_DIR`: Data directory
+          
+          Note: Command line arguments take precedence over environment variables.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
