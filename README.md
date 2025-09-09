@@ -16,8 +16,22 @@
 
 ## Quick Start
 
-### Installation
+### One-Line Installation (Recommended)
 ```bash
+curl -fsSL https://raw.githubusercontent.com/fadlee/gowa-manager/main/install.sh | bash
+```
+This will automatically:
+- Detect your platform (Linux/macOS/Windows)
+- Download the latest release from GitHub
+- Install to `~/.local/bin/gowa-manager`
+- Add to PATH if needed
+
+### Manual Installation
+```bash
+# Clone the repository
+git clone https://github.com/fadlee/gowa-manager.git
+cd gowa-manager
+
 # Install dependencies for both server and client
 bun install
 cd client && bun install

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # GOWA Manager Installer Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/username/gowa-manager/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/fadlee/gowa-manager/main/install.sh | bash
 
 set -e
 
@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO="username/gowa-manager" # Replace with your GitHub repo
+REPO="fadlee/gowa-manager" # Replace with your GitHub repo
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 BINARY_NAME="gowa-manager"
 
@@ -56,7 +56,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-TAG_NAME=$(echo "$RELEASE_DATA" | grep '"tag_name":' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')
+if command -v jq >/dev/null 2>&1; then
+    TAG_NAME=$(echo "$RELEASE_DATA" | jq -r '.tag_name')
+else
+    TAG_NAME=$(echo "$RELEASE_DATA" | grep '"tag_name":' | sed -E 's/.*"tag_name":\s*"([^"]+)",?/\1/')
+fi
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG_NAME}/${BINARY_NAME}"
 
 if [ -z "$TAG_NAME" ]; then
