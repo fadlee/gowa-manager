@@ -69,6 +69,13 @@ export function InstanceCard({ instance }: InstanceCardProps) {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: () => apiClient.deleteInstance(instance.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['instances'] })
+    },
+  })
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'running':
@@ -136,10 +143,16 @@ export function InstanceCard({ instance }: InstanceCardProps) {
     }
   }
 
+  const handleDelete = () => {
+    if (window.confirm(`Are you sure you want to delete instance "${instance.name}"? This action cannot be undone.`)) {
+      deleteMutation.mutate()
+    }
+  }
+
   const isRunning = status?.status?.toLowerCase() === 'running'
   const isStopped = status?.status?.toLowerCase() === 'stopped'
   const isError = status?.status?.toLowerCase() === 'error'
-  const isLoading = startMutation.isPending || stopMutation.isPending || restartMutation.isPending
+  const isLoading = startMutation.isPending || stopMutation.isPending || restartMutation.isPending || deleteMutation.isPending
 
   return (
     <>
@@ -161,7 +174,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
               <span>PID: {status?.pid || '--'}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+              <span className="px-2 py-1 text-xs bg-gray-100 rounded">
                 {instance.gowa_version || 'latest'}
               </span>
               {instance.gowa_version === 'latest' && (
@@ -312,6 +325,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={handleDelete}
                       className="p-0 w-8 h-8 text-gray-500"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -345,6 +359,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={handleDelete}
                       className="p-0 w-8 h-8 text-gray-500"
                     >
                       <Trash2 className="w-3 h-3" />
