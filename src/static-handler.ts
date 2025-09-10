@@ -16,9 +16,13 @@ try {
 export function getStaticFile(path: string): { content: string | Buffer, contentType: string } | null {
   // Normalize path
   const normalizedPath = path.startsWith('/') ? path : '/' + path
-  
-  // Try embedded files first (production)
-  if (embeddedFiles && getEmbeddedFileContent) {
+
+  // Check if we're in development mode (NODE_ENV !== 'production')
+  const isDevelopment = process.env.NODE_ENV !== 'production'
+
+  // In development mode, always use real files
+  // In production, try embedded files first
+  if (!isDevelopment && embeddedFiles && getEmbeddedFileContent) {
     const embeddedFile = embeddedFiles[normalizedPath]
     if (embeddedFile) {
       const content = getEmbeddedFileContent(normalizedPath)
@@ -27,7 +31,7 @@ export function getStaticFile(path: string): { content: string | Buffer, content
         contentType: embeddedFile.contentType
       }
     }
-    
+
     // Also try /index.html for SPA routing
     if (normalizedPath === '/' || normalizedPath === '/index.html') {
       const indexFile = embeddedFiles['/index.html']
@@ -39,20 +43,20 @@ export function getStaticFile(path: string): { content: string | Buffer, content
         }
       }
     }
-    
-    return null
+
+    // In production, if not found in embedded files, try filesystem as fallback
   }
-  
+
   // Fallback to filesystem (development)
   const publicDir = join(process.cwd(), 'public')
   let filePath: string
-  
+
   if (normalizedPath === '/') {
     filePath = join(publicDir, 'index.html')
   } else {
     filePath = join(publicDir, normalizedPath.substring(1))
   }
-  
+
   if (!existsSync(filePath)) {
     // Try index.html for SPA routing
     const indexPath = join(publicDir, 'index.html')
@@ -62,11 +66,11 @@ export function getStaticFile(path: string): { content: string | Buffer, content
       return null
     }
   }
-  
+
   try {
     const content = readFileSync(filePath)
     const contentType = getContentType(filePath)
-    
+
     return { content, contentType }
   } catch {
     return null
@@ -75,7 +79,7 @@ export function getStaticFile(path: string): { content: string | Buffer, content
 
 function getContentType(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase()
-  
+
   const mimeTypes: Record<string, string> = {
     'html': 'text/html; charset=utf-8',
     'css': 'text/css; charset=utf-8',
@@ -91,6 +95,6 @@ function getContentType(filePath: string): string {
     'woff2': 'font/woff2',
     'ttf': 'font/ttf'
   }
-  
+
   return mimeTypes[ext || ''] || 'application/octet-stream'
 }

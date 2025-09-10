@@ -16,6 +16,10 @@ import type { ApiResponse } from './types'
 // Parse CLI configuration
 const config = getConfig()
 
+if (process.env.NODE_ENV === 'production') {
+  console.log('Running in PRODUCTION mode')
+}
+
 // Set environment variables from CLI config
 if (config.dataDir) {
   process.env.DATA_DIR = config.dataDir

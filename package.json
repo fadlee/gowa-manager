@@ -14,7 +14,8 @@
     "dev:client": "cd client && bun run dev",
     "dev": "cd client && bun run build:watch & bun --watch run src/index.ts",
     "start": "bun run src/index.ts",
-    "compile": "bun run build:production && bun build --compile --target bun --outfile gowa-manager src/index.ts"
+    "compile": "bun run build:production && bun build --compile --define 'process.env.NODE_ENV=\"production\"' --target bun --outfile gowa-manager src/index.ts",
+    "compile:optimized": "bun run build:production && bun build --compile --minify --bytecode --define 'process.env.NODE_ENV=\"production\"' --target bun --outfile gowa-manager-opt src/index.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^0.8.0",
