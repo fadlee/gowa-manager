@@ -193,7 +193,6 @@ export function getConfig(): CliConfig {
       args[0].includes('/gowa-manager-') ||
       args[0].includes('\\gowa-manager-')
     )) {
-    console.log(`Detected binary path as first argument, removing: ${args[0]}`)
     args = args.slice(1)
   }
 
