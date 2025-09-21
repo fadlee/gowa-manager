@@ -36,6 +36,7 @@ export namespace Instance {
     status: string;
     config: string;
     gowa_version: string;
+    error_message?: string | null;
     created_at: string;
     updated_at: string;
   }
@@ -53,6 +54,7 @@ export namespace Instance {
     port: number | null;
     pid: number | null;
     uptime: number | null;
+    error_message?: string | null;
     resources?: {
       cpuPercent: number;
       memoryMB: number;

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import type { Instance } from '../types'
@@ -28,6 +28,7 @@ interface InstanceCardProps {
 export function InstanceCard({ instance }: InstanceCardProps) {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [openWithJsonView, setOpenWithJsonView] = useState(false)
+  const [lastError, setLastError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   // Get real-time status
@@ -45,28 +46,47 @@ export function InstanceCard({ instance }: InstanceCardProps) {
     }
   })
 
+  // Clear error when status changes away from error
+  useEffect(() => {
+    if (status?.status && status.status.toLowerCase() !== 'error' && !status.error_message && !instance.error_message) {
+      setLastError(null)
+    }
+  }, [status?.status, status?.error_message, instance.error_message])
+
   const startMutation = useMutation({
     mutationFn: () => apiClient.startInstance(instance.id),
     onSuccess: () => {
+      setLastError(null) // Clear any previous error
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
     },
+    onError: (error) => {
+      setLastError(error.message)
+    }
   })
 
   const stopMutation = useMutation({
     mutationFn: () => apiClient.stopInstance(instance.id),
     onSuccess: () => {
+      setLastError(null) // Clear any previous error
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
     },
+    onError: (error) => {
+      setLastError(error.message)
+    }
   })
 
   const restartMutation = useMutation({
     mutationFn: () => apiClient.restartInstance(instance.id),
     onSuccess: () => {
+      setLastError(null) // Clear any previous error
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
     },
+    onError: (error) => {
+      setLastError(error.message)
+    }
   })
 
   const deleteMutation = useMutation({
@@ -197,11 +217,11 @@ export function InstanceCard({ instance }: InstanceCardProps) {
             </div>
           )}
 
-          {isError && (
+          {(isError || lastError || status?.error_message || instance.error_message) && (
             <div className="flex items-center p-3 mb-4 bg-yellow-100 rounded-lg">
               <AlertTriangle className="mr-2 w-4 h-4 text-yellow-600" />
               <span className="text-sm text-yellow-800">
-                Failed to start - Port already in use
+                {status?.error_message || instance.error_message || lastError || 'Instance encountered an error'}
               </span>
             </div>
           )}
@@ -334,7 +354,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                 )}
 
                 {/* Error state buttons */}
-                {isError && (
+                {(isError || lastError || status?.error_message || instance.error_message) && (
                   <>
                     <Button
                       variant="default"

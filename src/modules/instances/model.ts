@@ -27,6 +27,7 @@ export namespace InstanceModel {
     status: t.String(),
     config: t.String(),
     gowa_version: t.String(),
+    error_message: t.Optional(t.Union([t.String(), t.Null()])),
     created_at: t.String(),
     updated_at: t.String()
   })
@@ -50,6 +51,7 @@ export namespace InstanceModel {
     port: t.Union([t.Number(), t.Null()]),
     pid: t.Union([t.Number(), t.Null()]),
     uptime: t.Union([t.Number(), t.Null()]),
+    error_message: t.Optional(t.Union([t.String(), t.Null()])),
     resources: t.Optional(t.Object({
       cpuPercent: t.Number(),
       memoryMB: t.Number(),

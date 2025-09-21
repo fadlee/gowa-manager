@@ -54,6 +54,17 @@ function initializeDatabase() {
     }
   }
 
+  // Migration: Add error_message column if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE instances ADD COLUMN error_message TEXT DEFAULT NULL`)
+    console.log('Added error_message column to existing instances table')
+  } catch (error) {
+    // Column already exists, which is fine
+    if (!error.message.includes('duplicate column name')) {
+      console.warn('Migration warning:', error.message)
+    }
+  }
+
   console.log('Database initialized successfully')
   return db
 }
@@ -82,6 +93,18 @@ export const queries = {
   updateInstanceStatus: db.prepare(`
     UPDATE instances
     SET status = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+    RETURNING *
+  `),
+  updateInstanceStatusWithError: db.prepare(`
+    UPDATE instances
+    SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+    RETURNING *
+  `),
+  clearInstanceError: db.prepare(`
+    UPDATE instances
+    SET error_message = NULL, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
     RETURNING *
   `),

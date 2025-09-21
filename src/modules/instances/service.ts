@@ -195,14 +195,16 @@ export abstract class InstanceService {
         ProcessManager.removeProcess(id)
       })
 
-      // Update status in database
+      // Update status in database and clear any previous error
       queries.updateInstanceStatus.run('running', id)
+      queries.clearInstanceError.run(id)
 
       return await this.getInstanceStatus(id)
     } catch (error) {
       console.error(`Failed to start instance ${id}:`, error)
-      queries.updateInstanceStatus.run('error', id)
-      throw new Error(`Failed to start instance: ${error}`)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      queries.updateInstanceStatusWithError.run('error', errorMessage, id)
+      throw error instanceof Error ? error : new Error(`Failed to start instance: ${error}`)
     }
   }
 
@@ -215,6 +217,7 @@ export abstract class InstanceService {
     // Clear resource history when stopping
     ResourceMonitor.clearHistory(id)
     queries.updateInstanceStatus.run('stopped', id)
+    queries.clearInstanceError.run(id)
     return await this.getInstanceStatus(id)
   }
 
@@ -227,6 +230,7 @@ export abstract class InstanceService {
     // Clear resource history when killing
     ResourceMonitor.clearHistory(id)
     queries.updateInstanceStatus.run('stopped', id)
+    queries.clearInstanceError.run(id)
     return await this.getInstanceStatus(id)
   }
 
@@ -264,6 +268,7 @@ export abstract class InstanceService {
       port: instance.port,
       pid: processInfo?.pid || null,
       uptime,
+      error_message: instance.error_message || undefined,
       resources: resources || undefined
     }
   }
