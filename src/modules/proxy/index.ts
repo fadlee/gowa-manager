@@ -146,8 +146,27 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
           return
         }
 
-        // Create proxy WebSocket connection
-        const proxyWs = await WebSocketProxyService.createWebSocketConnection(instanceKey)
+        // Create proxy WebSocket connection using the full proxied path including query string
+        const query = (ws.data as any)?.query as Record<string, string> | undefined
+        const qs = query ? new URLSearchParams(query) : undefined
+        const queryStr = qs && qs.toString().length > 0 ? `?${qs.toString()}` : ''
+        const wsPath = `/${ProxyModel.prefix}/${instanceKey}/ws${queryStr}`
+
+        // Forward incoming headers (auth, cookies, protocols) if available
+        const incomingHeaders: Record<string, string> = {}
+        const hdrs = (ws.data as any)?.headers as Record<string, string | string[]> | undefined
+        if (hdrs) {
+          for (const [k, v] of Object.entries(hdrs)) {
+            if (Array.isArray(v)) incomingHeaders[k] = v.join(', ')
+            else if (typeof v === 'string') incomingHeaders[k] = v
+          }
+        }
+
+        const proxyWs = await WebSocketProxyService.createWebSocketConnection(
+          instanceKey,
+          wsPath,
+          incomingHeaders
+        )
         if (!proxyWs) {
           console.log(`Failed to create proxy WebSocket for instance ${instanceKey}`)
           ws.close()
