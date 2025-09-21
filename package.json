@@ -12,7 +12,7 @@
     "build:production": "bun run prebuild:production && bun run build",
     "dev:server": "bun --watch run src/index.ts",
     "dev:client": "cd client && bun run dev",
-    "dev": "cd client && bun run build:watch & bun --watch run src/index.ts",
+    "dev": "cd client && bun run build:watch & bun run scripts/dev-watch.ts",
     "start": "bun run src/index.ts",
     "compile": "bun run build:production && bun build --compile --define 'process.env.NODE_ENV=\"production\"' --target bun --outfile gowa-manager src/index.ts",
     "compile:optimized": "bun run build:production && bun build --compile --minify --bytecode --define 'process.env.NODE_ENV=\"production\"' --target bun --outfile gowa-manager-opt src/index.ts"
