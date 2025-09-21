@@ -6,8 +6,8 @@ import { DirectoryManager } from './utils/directory-manager'
 import { ConfigParser } from './utils/config-parser'
 import { NameGenerator } from './utils/name-generator'
 import { ResourceMonitor } from './utils/resource-monitor'
-import { join, resolve } from 'node:path'
 import { VersionManager } from '../system/version-manager'
+import { Proxy } from '../../types'
 
 // Get GOWA binary path for a specific version (respects DATA_DIR env var or CLI config)
 function getGowaBinaryPath(version: string = 'latest'): string {
@@ -56,8 +56,16 @@ export abstract class InstanceService {
       }
     }
 
+    // Auto-generate basePath using proxy prefix and instance key
+    if (!config.flags) {
+      config.flags = {}
+    }
+
     // Generate a unique key for the instance
     const key = generateInstanceKey()
+
+    // Set basePath as /{proxy prefix}/{instance key}
+    config.flags.basePath = `/${Proxy.PREFIX}/${key}`
 
     const instance = queries.createInstance.get(
       key,
@@ -102,7 +110,7 @@ export abstract class InstanceService {
 
     // Clean up instance directory
     DirectoryManager.cleanupInstanceDirectory(id)
-    
+
     // Clear resource history
     ResourceMonitor.clearHistory(id)
 
@@ -239,7 +247,7 @@ export abstract class InstanceService {
     const uptime = processInfo ? Date.now() - processInfo.startTime : null
 
     let resources = undefined
-    
+
     // Get resource usage if process is running
     if (processInfo?.pid && instance.status === 'running') {
       try {

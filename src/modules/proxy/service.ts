@@ -71,54 +71,6 @@ export abstract class ProxyService {
       if (this.isBinaryContent(contentType)) {
         responseBody = await response.arrayBuffer()
       }
-      // Handle HTML content transformation
-      else if (contentType.includes('text/html')) {
-        const text = await response.text()
-        responseBody = this.modifyHtmlUrls(text, instanceKey)
-      }
-      // Handle CSS content transformation
-      else if (contentType.includes('text/css')) {
-        const text = await response.text()
-        responseBody = this.modifyCssUrls(text, instanceKey)
-      }
-      // Handle JavaScript content transformation
-      else if (contentType.includes('application/javascript') || contentType.includes('text/javascript')) {
-        const text = await response.text()
-        // Transform window.http API calls
-        let modifiedText = text.replace(
-          /(window\.http\.(get|post|put|delete|patch)\s*\(\s*[`'"])\/?(.*)([`'"])/g,
-          `$1/${ProxyModel.prefix}/${instanceKey}/$3$4`
-        )
-
-        // Transform ES module imports with absolute paths
-        modifiedText = modifiedText.replace(
-          /(import\s+[\w\s{},*]+\s+from\s+["`'])\/((?!proxy\/).+?)(["`'])/g,
-          `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`
-        )
-
-        // Transform dynamic imports with absolute paths
-        modifiedText = modifiedText.replace(
-          /(import\s*\(\s*["`'])\/((?!proxy\/).+?)(["`']\s*\))/g,
-          `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`
-        )
-
-        // Transform require statements
-        modifiedText = modifiedText.replace(
-          /(require\s*\(\s*["`'])\/((?!proxy\/).+?)(["`']\s*\))/g,
-          `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`
-        )
-
-        responseBody = modifiedText
-      }
-      // Handle JSON content transformation
-      else if (contentType.includes('application/json')) {
-        try {
-          const data = await response.json()
-          responseBody = this.modifyJsonUrls(data, instanceKey, hostHeader)
-        } catch {
-          responseBody = await response.text()
-        }
-      }
       // Handle other content types
       else {
         responseBody = await response.text()
@@ -163,63 +115,6 @@ export abstract class ProxyService {
     }
 
     return result
-  }
-
-  // Modify URLs in HTML content to include proxy prefix
-  private static modifyHtmlUrls(html: string, instanceKey: string): string {
-    // First handle regular attributes
-    let modified = html
-      // Handle src attributes (img, script, etc.)
-      .replace(/(src=["'])\/(?!proxy\/)(.*?)(["'])/g, `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`)
-      // Handle href attributes (link, a tags)
-      .replace(/(href=["'])\/(?!proxy\/)(.*?)(["'])/g, `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`)
-      // Handle action attributes (forms)
-      .replace(/(action=["'])\/(?!proxy\/)(.*?)(["'])/g, `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`)
-      // Handle url() in inline styles
-      .replace(/(url\(["']?)\/(?!proxy\/)(.*?)(["']?\))/g, `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`)
-      // Handle WebSocket URL construction
-      .replace(/(const\s+basePath\s*=\s*["`'])([\s]*)(["`'])/g, `$1/${ProxyModel.prefix}/${instanceKey}$3`)
-
-    // Inject html base tag
-    modified = modified.replace(/<head>/, `<head><base href="/${ProxyModel.prefix}/${instanceKey}/" target="_blank">`)
-
-    // Handle module imports in script tags with type="module"
-    modified = this.processModuleScripts(modified, instanceKey)
-
-    return modified
-  }
-
-  // Process script tags with type="module" to modify import paths
-  private static processModuleScripts(html: string, instanceKey: string): string {
-    // Regular expression to find script tags with type="module"
-    const scriptTagRegex = /<script\s+type=["']module["'][^>]*>([\s\S]*?)<\/script>/g
-
-    return html.replace(scriptTagRegex, (match, scriptContent) => {
-      // Process the content inside the script tag
-      const processedContent = scriptContent
-        // Transform regular imports
-        .replace(
-          /(import\s+[\w\s{},*]+\s+from\s+["'])\/((?!proxy\/).+?)(["'])/g,
-          `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`
-        )
-        // Transform dynamic imports
-        .replace(
-          /(import\s*\(\s*["'])\/((?!proxy\/).+?)(["']\s*\))/g,
-          `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`
-        )
-
-      // Return the script tag with processed content
-      return match.replace(scriptContent, processedContent)
-    })
-  }
-
-  // Modify URLs in CSS content to include proxy prefix
-  private static modifyCssUrls(css: string, instanceKey: string): string {
-    return css
-      // Handle url() in CSS
-      .replace(/(url\(["']?)\/(?!proxy\/)(.*?)(["']?\))/g, `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`)
-      // Handle @import statements
-      .replace(/(@import\s+["'])\/(?!proxy\/)(.*?)(["'])/g, `$1/${ProxyModel.prefix}/${instanceKey}/$2$3`)
   }
 
   // Check if content type is binary

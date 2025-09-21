@@ -91,13 +91,14 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
   .all('/:instanceKey/*', async ({ params: { instanceKey }, request, set, headers }) => {
     const url = new URL(request.url)
     const pathSegments = url.pathname.split('/')
-    const proxyPath = '/' + pathSegments.slice(3).join('/') + url.search
-    return handleProxyRequest(instanceKey, proxyPath, request, set, headers)
+    const proxyPath = pathSegments.join('/') + url.search
+    return handleProxyRequest(instanceKey, url.pathname, request, set, headers)
   })
 
   // Fallback route for instance root
   .all('/:instanceKey', async ({ params: { instanceKey }, request, set, headers }) => {
-    return handleProxyRequest(instanceKey, '/', request, set, headers)
+    const url = new URL(request.url)
+    return handleProxyRequest(instanceKey, url.pathname, request, set, headers)
   })
 
   // Get proxy status for specific instance
