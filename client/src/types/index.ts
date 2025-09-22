@@ -38,6 +38,7 @@ export interface InstanceStatus {
     memoryPercent: number;
     avgCpu?: number;
     avgMemory?: number;
+    diskMB?: number;
   };
 }
 

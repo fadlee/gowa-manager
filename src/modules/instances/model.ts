@@ -57,7 +57,8 @@ export namespace InstanceModel {
       memoryMB: t.Number(),
       memoryPercent: t.Number(),
       avgCpu: t.Optional(t.Number()),
-      avgMemory: t.Optional(t.Number())
+      avgMemory: t.Optional(t.Number()),
+      diskMB: t.Optional(t.Number())
     }))
   })
   export type statusResponse = Instance.StatusResponse

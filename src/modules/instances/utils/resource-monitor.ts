@@ -1,4 +1,7 @@
 import pidusage from 'pidusage'
+import { promises as fsp } from 'node:fs'
+import { join } from 'node:path'
+import { DirectoryManager } from './directory-manager'
 
 export interface ResourceUsage {
   cpuPercent: number
@@ -6,6 +9,7 @@ export interface ResourceUsage {
   memoryPercent: number
   avgCpu?: number
   avgMemory?: number
+  diskMB?: number
 }
 
 interface ResourceHistory {
@@ -16,6 +20,9 @@ interface ResourceHistory {
 
 // Track resource history for each instance (for averages)
 const resourceHistory = new Map<number, ResourceHistory>()
+// Cache disk usage per instance to avoid expensive recalculation every poll
+const diskSizeCache = new Map<number, { bytes: number; at: number }>()
+const DISK_CACHE_TTL_MS = 30_000
 
 export class ResourceMonitor {
   
@@ -54,6 +61,22 @@ export class ResourceMonitor {
         // Calculate averages
         resourceUsage.avgCpu = this.calculateAverage(history.cpuHistory)
         resourceUsage.avgMemory = this.calculateAverage(history.memoryHistory)
+
+        // Additionally, compute disk usage for the instance data folder
+        try {
+          const cached = diskSizeCache.get(instanceId)
+          const now = Date.now()
+          if (cached && now - cached.at < DISK_CACHE_TTL_MS) {
+            resourceUsage.diskMB = cached.bytes / (1024 * 1024)
+          } else {
+            const instanceDir = DirectoryManager.getInstanceDirectory(instanceId)
+            const bytes = await ResourceMonitor.calculateDirectorySize(instanceDir)
+            diskSizeCache.set(instanceId, { bytes, at: now })
+            resourceUsage.diskMB = bytes / (1024 * 1024)
+          }
+        } catch (e) {
+          // Non-fatal if disk size fails
+        }
       }
 
       return resourceUsage
@@ -102,6 +125,7 @@ export class ResourceMonitor {
    */
   static clearHistory(instanceId: number): void {
     resourceHistory.delete(instanceId)
+    diskSizeCache.delete(instanceId)
   }
 
   /**
@@ -109,6 +133,7 @@ export class ResourceMonitor {
    */
   static clearAllHistory(): void {
     resourceHistory.clear()
+    diskSizeCache.clear()
   }
 
   /**
@@ -141,5 +166,30 @@ export class ResourceMonitor {
       console.error('pidusage test failed:', error)
       return false
     }
+  }
+}
+
+// Helper methods
+export namespace ResourceMonitor {
+  /**
+   * Recursively calculate total size (in bytes) of a directory
+   */
+  export async function calculateDirectorySize(dirPath: string): Promise<number> {
+    let total = 0
+    try {
+      const entries = await fsp.readdir(dirPath, { withFileTypes: true })
+      for (const entry of entries) {
+        const fullPath = join(dirPath, entry.name)
+        try {
+          if (entry.isDirectory()) {
+            total += await calculateDirectorySize(fullPath)
+          } else if (entry.isFile()) {
+            const stat = await fsp.stat(fullPath)
+            total += stat.size
+          }
+        } catch {}
+      }
+    } catch {}
+    return total
   }
 }

@@ -13,12 +13,12 @@ import {
   Edit,
   Loader2,
   Clock,
-  Hash,
   Cpu,
   MemoryStick,
   Trash2,
   AlertTriangle
 } from 'lucide-react'
+import { HardDrive } from 'lucide-react'
 import { EditInstanceDialog } from './EditInstanceDialog'
 
 interface InstanceCardProps {
@@ -143,19 +143,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
     return `${memoryMB.toFixed(1)} MB`
   }
 
-  const getCpuColor = (cpuPercent: number) => {
-    if (cpuPercent >= 80) return 'text-red-500'
-    if (cpuPercent >= 60) return 'text-orange-500'
-    if (cpuPercent >= 40) return 'text-yellow-500'
-    return 'text-green-500'
-  }
-
-  const getMemoryColor = (memoryPercent: number) => {
-    if (memoryPercent >= 80) return 'text-red-500'
-    if (memoryPercent >= 60) return 'text-orange-500'
-    if (memoryPercent >= 40) return 'text-yellow-500'
-    return 'text-blue-500'
-  }
+  // reserved for future color-coded thresholds if needed
 
   const handleOpenProxy = () => {
     if (status?.port) {
@@ -235,12 +223,13 @@ export function InstanceCard({ instance }: InstanceCardProps) {
           )}
 
           {/* Resource monitoring */}
-          <div className="grid grid-cols-2 gap-6">
+          <div className="mt-2 grid grid-cols-3 gap-6">
             <div>
               <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
                 CPU USAGE
               </div>
-              <div className="text-lg font-semibold text-gray-900">
+              <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                <Cpu className="w-4 h-4 text-gray-500" />
                 {isRunning && status?.resources ? `${status.resources.cpuPercent.toFixed(1)}%` : '--'}
               </div>
               <div className="mt-2 w-full h-1 bg-gray-200 rounded-full">
@@ -255,15 +244,31 @@ export function InstanceCard({ instance }: InstanceCardProps) {
               <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
                 MEMORY
               </div>
-              <div className="text-lg font-semibold text-gray-900">
+              <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                <MemoryStick className="w-4 h-4 text-gray-500" />
                 {isRunning && status?.resources ? formatMemory(status.resources.memoryMB) : '--'}
-            </div>
+              </div>
               <div className="mt-2 w-full h-1 bg-gray-200 rounded-full">
                 <div
                   className="h-1 bg-blue-500 rounded-full transition-all duration-300"
                   style={{ width: `${Math.min(status?.resources?.memoryPercent || 0, 100)}%` }}
                 />
               </div>
+            </div>
+
+            {/* Disk usage */}
+            <div>
+              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
+                DISK
+              </div>
+              <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                <HardDrive className="w-4 h-4 text-gray-500" />
+                {isRunning && status?.resources?.diskMB !== undefined
+                  ? formatMemory(status.resources.diskMB)
+                  : '--'}
+              </div>
+              {/* Static bottom bar for visual consistency */}
+              <div className="mt-2 w-full h-1 bg-gray-200 rounded-full" />
             </div>
           </div>
         </CardContent>
