@@ -32,6 +32,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
   const [showJsonView, setShowJsonView] = useState(showJsonViewInitial)
   const [showConfiguration, setShowConfiguration] = useState(true) // Expanded by default for edit
   const [jsonConfig, setJsonConfig] = useState('')
+  const [jsonError, setJsonError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   // Initialize form with instance data
@@ -60,6 +61,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
         setJsonConfig('{}')
       }
       setErrors({})
+      setJsonError(null)
       setShowDeleteConfirm(false)
       setShowJsonView(false)
     }
@@ -124,14 +126,28 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
     }
     
     // Build configuration
-    let finalConfig: InstanceConfig = {
-      args: ['rest', '--port=PORT'],
-      flags: flags
+    let finalConfig: InstanceConfig
+
+    if (showJsonView) {
+      // Use manually edited JSON
+      try {
+        setJsonError(null)
+        const parsed = JSON.parse(jsonConfig) as InstanceConfig
+        finalConfig = parsed
+      } catch (err) {
+        setJsonError('Invalid JSON. Please fix the syntax and try again.')
+        return
+      }
+    } else {
+      // Use values from the form-driven flags
+      finalConfig = {
+        args: ['rest', '--port=PORT'],
+        flags: flags
+      }
+      // Sync JSON preview to reflect current form state
+      setJsonConfig(JSON.stringify(finalConfig, null, 2))
     }
-    
-    // Update the JSON view
-    setJsonConfig(JSON.stringify(finalConfig, null, 2))
-    
+
     const normalizedConfig = JSON.stringify(finalConfig)
     if (normalizedConfig !== instance.config) {
       data.config = normalizedConfig
@@ -282,13 +298,19 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 mb-2">
                         <Code className="h-4 w-4 text-gray-500" />
-                        <span className="text-xs text-gray-500">JSON Configuration (Read-only)</span>
+                        <span className="text-xs text-gray-500">JSON Configuration (Editable)</span>
                       </div>
-                      <pre className="bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border border-gray-200 max-h-96">
-                        {jsonConfig}
-                      </pre>
+                      <textarea
+                        value={jsonConfig}
+                        onChange={(e) => setJsonConfig(e.target.value)}
+                        className={`w-full bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border max-h-96 h-56 ${jsonError ? 'border-red-300' : 'border-gray-200'}`}
+                        spellCheck={false}
+                      />
+                      {jsonError && (
+                        <p className="text-xs text-red-600 mt-1">{jsonError}</p>
+                      )}
                       <p className="text-xs text-gray-500 mt-1">
-                        This is the raw configuration that will be saved. Use the form above to make changes.
+                        You can edit the raw JSON configuration directly. It should match the expected shape of InstanceConfig.
                       </p>
                     </div>
                   ) : (
