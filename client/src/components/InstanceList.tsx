@@ -2,12 +2,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import { InstanceCard } from './InstanceCard'
 import { CreateInstanceDialog } from './CreateInstanceDialog'
+import { EditInstanceDialog } from './EditInstanceDialog'
 import { Button } from './ui/button'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { Segmented } from 'antd'
+import type { Instance } from '../types'
+import { InstanceTable } from './InstanceTable'
 
 export function InstanceList() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [editingInstance, setEditingInstance] = useState<Instance | null>(null)
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
   const queryClient = useQueryClient()
 
   const { data: instances, isLoading, error, refetch } = useQuery({
@@ -60,21 +66,31 @@ export function InstanceList() {
               Refresh
             </Button>
           </div>
-          
-          {instances && (
-            <p className="text-sm text-gray-600 sm:text-right">
-              {instances.length} instance{instances.length !== 1 ? 's' : ''}
-            </p>
-          )}
+          <div className="flex items-center gap-4">
+            {instances && (
+              <span className="inline-flex items-center h-8 text-sm text-gray-600 sm:text-right m-0">
+                {instances.length} instance{instances.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            <Segmented
+              options={[{ label: 'Cards', value: 'cards' }, { label: 'Table', value: 'table' }]}
+              value={viewMode}
+              onChange={(val) => setViewMode(val as 'cards' | 'table')}
+            />
+          </div>
         </div>
       </div>
 
       {instances && instances.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {instances.map((instance) => (
-            <InstanceCard key={instance.id} instance={instance} />
-          ))}
-        </div>
+        viewMode === 'cards' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {instances.map((instance) => (
+              <InstanceCard key={instance.id} instance={instance} />
+            ))}
+          </div>
+        ) : (
+          <InstanceTable instances={instances as Instance[]} onEdit={setEditingInstance} />
+        )
       ) : (
         <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
           <p className="text-gray-600 mb-4">No instances found</p>
@@ -89,6 +105,15 @@ export function InstanceList() {
         open={showCreateDialog} 
         onOpenChange={setShowCreateDialog}
       />
+      {editingInstance && (
+        <EditInstanceDialog
+          instance={editingInstance}
+          open={!!editingInstance}
+          onOpenChange={(open) => {
+            if (!open) setEditingInstance(null)
+          }}
+        />
+      )}
     </div>
   )
 }

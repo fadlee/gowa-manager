@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { AuthProvider } from './lib/auth'
 import './index.css'
+import 'antd/dist/reset.css'
 
 // Set up default authorization header for all requests
 const setupAuthInterceptor = () => {
