@@ -43,7 +43,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
       try {
         const configObj: InstanceConfig = JSON.parse(instance.config)
         setJsonConfig(JSON.stringify(configObj, null, 2))
-        
+
         // Extract flags from config if they exist
         if (configObj.flags) {
           setFlags(configObj.flags)
@@ -68,7 +68,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
   }, [open, instance])
 
   const updateMutation = useMutation({
-    mutationFn: (data: { name?: string; config?: string; gowa_version?: string }) => 
+    mutationFn: (data: { name?: string; config?: string; gowa_version?: string }) =>
       apiClient.updateInstance(instance.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['instances'] })
@@ -99,32 +99,32 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
 
   const validateForm = () => {
     const newErrors: {name?: string} = {}
-    
+
     if (name.trim().length < 1 || name.trim().length > 100) {
       newErrors.name = 'Name must be between 1 and 100 characters'
     }
-    
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!validateForm()) {
       return
     }
 
     const data: { name?: string; config?: string; gowa_version?: string } = {}
-    
+
     if (name.trim() !== instance.name) {
       data.name = name.trim()
     }
-    
+
     if (version !== (instance.gowa_version || 'latest')) {
       data.gowa_version = version
     }
-    
+
     // Build configuration
     let finalConfig: InstanceConfig
 
@@ -175,23 +175,23 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
               Are you sure you want to delete "{instance.name}"? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          
+
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => setShowDeleteConfirm(false)}
             >
               Cancel
             </Button>
-            <Button 
-              type="button" 
+            <Button
+              type="button"
               variant="destructive"
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending && (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
               )}
               Delete Instance
             </Button>
@@ -203,154 +203,157 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Instance</DialogTitle>
-          <DialogDescription>
-            Modify the instance name, GOWA version, and configuration parameters.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="edit-name" className="text-sm font-medium text-gray-700">
-              Name
-            </label>
-            <Input
-              id="edit-name"
-              placeholder="Enter instance name..."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={errors.name ? 'border-red-500' : ''}
-              required
-            />
-            {errors.name && (
-              <p className="text-sm text-red-600">{errors.name}</p>
-            )}
-          </div>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
+        <div className="overflow-y-auto flex-1">
+          <DialogHeader>
+            <DialogTitle>Edit Instance</DialogTitle>
+            <DialogDescription>
+              Modify the instance name, GOWA version, and configuration parameters.
+            </DialogDescription>
+          </DialogHeader>
 
-          <VersionSelector
-            value={version}
-            onChange={setVersion}
-            disabled={updateMutation.isPending}
-          />
-          
-          {version !== (instance.gowa_version || 'latest') && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-              <div className="flex items-center gap-2 text-sm text-yellow-800">
-                <AlertCircle className="h-4 w-4" />
-                <span>
-                  <strong>Version Change:</strong> Changing the GOWA version will require restarting the instance to take effect.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Collapsible Configuration Section */}
-          <div className="space-y-3">
-            <div className="border border-gray-200 rounded-md">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowConfiguration(!showConfiguration)}
-                className="w-full flex items-center justify-between p-3 h-auto font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-2">
-                  <Settings className="h-4 w-4" />
-                  <span>Configuration</span>
-                </div>
-                {showConfiguration ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </Button>
-              
-              {showConfiguration && (
-                <div className="border-t border-gray-200 p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">
-                      GOWA settings for this instance
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowJsonView(!showJsonView)}
-                      className="flex items-center gap-1 h-7 px-2 text-xs"
-                    >
-                      {showJsonView ? (
-                        <>
-                          <EyeOff className="h-3 w-3" />
-                          Hide JSON
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="h-3 w-3" />
-                          View JSON
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  
-                  {showJsonView ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Code className="h-4 w-4 text-gray-500" />
-                        <span className="text-xs text-gray-500">JSON Configuration (Editable)</span>
-                      </div>
-                      <textarea
-                        value={jsonConfig}
-                        onChange={(e) => setJsonConfig(e.target.value)}
-                        className={`w-full bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border max-h-96 h-56 ${jsonError ? 'border-red-300' : 'border-gray-200'}`}
-                        spellCheck={false}
-                      />
-                      {jsonError && (
-                        <p className="text-xs text-red-600 mt-1">{jsonError}</p>
-                      )}
-                      <p className="text-xs text-gray-500 mt-1">
-                        You can edit the raw JSON configuration directly. It should match the expected shape of InstanceConfig.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="max-h-96 overflow-y-auto">
-                      <CliFlagsComponent flags={flags} onChange={setFlags} />
-                    </div>
-                  )}
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-4" id="editForm">
+            <div className="space-y-2">
+              <label htmlFor="edit-name" className="text-sm font-medium text-gray-700">
+                Name
+              </label>
+              <Input
+                id="edit-name"
+                placeholder="Enter instance name..."
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className={errors.name ? 'border-red-500' : ''}
+                required
+              />
+              {errors.name && (
+                <p className="text-sm text-red-600">{errors.name}</p>
               )}
             </div>
-          </div>
 
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <div className="flex gap-2 flex-1">
-              <Button 
-                type="button" 
-                variant="destructive" 
-                onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={handleClose}>
-                Cancel
-              </Button>
-              <Button 
-                type="submit" 
-                disabled={updateMutation.isPending}
-              >
-                {updateMutation.isPending && (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            <VersionSelector
+              value={version}
+              onChange={setVersion}
+              disabled={updateMutation.isPending}
+            />
+
+            {version !== (instance.gowa_version || 'latest') && (
+              <div className="p-3 bg-yellow-50 rounded-md border border-yellow-200">
+                <div className="flex gap-2 items-center text-sm text-yellow-800">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>
+                    <strong>Version Change:</strong> Changing the GOWA version will require restarting the instance to take effect.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Collapsible Configuration Section */}
+            <div className="space-y-3">
+              <div className="rounded-md border border-gray-200">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowConfiguration(!showConfiguration)}
+                  className="flex justify-between items-center p-3 w-full h-auto font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <div className="flex gap-2 items-center">
+                    <Settings className="w-4 h-4" />
+                    <span>Configuration</span>
+                  </div>
+                  {showConfiguration ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </Button>
+
+                {showConfiguration && (
+                  <div className="p-4 space-y-4 border-t border-gray-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">
+                        GOWA settings for this instance
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowJsonView(!showJsonView)}
+                        className="flex gap-1 items-center px-2 h-7 text-xs"
+                      >
+                        {showJsonView ? (
+                          <>
+                            <EyeOff className="w-3 h-3" />
+                            Hide JSON
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-3 h-3" />
+                            View JSON
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {showJsonView ? (
+                      <div className="space-y-2">
+                        <div className="flex gap-2 items-center mb-2">
+                          <Code className="w-4 h-4 text-gray-500" />
+                          <span className="text-xs text-gray-500">JSON Configuration (Editable)</span>
+                        </div>
+                        <textarea
+                          value={jsonConfig}
+                          onChange={(e) => setJsonConfig(e.target.value)}
+                          className={`w-full bg-gray-50 p-3 rounded-md overflow-x-auto text-xs font-mono border ${jsonError ? 'border-red-300' : 'border-gray-200'}`}
+                          spellCheck={false}
+                        />
+                        {jsonError && (
+                          <p className="mt-1 text-xs text-red-600">{jsonError}</p>
+                        )}
+                        <p className="mt-1 text-xs text-gray-500">
+                          You can edit the raw JSON configuration directly. It should match the expected shape of InstanceConfig.
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <CliFlagsComponent flags={flags} onChange={setFlags} />
+                      </div>
+                    )}
+                  </div>
                 )}
-                Save Changes
-              </Button>
+              </div>
             </div>
-          </DialogFooter>
-        </form>
+
+          </form>
+        </div>
+        <DialogFooter className="flex-col gap-2 border-t sm:flex-row">
+          <div className="flex flex-1 gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex gap-2 items-center"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button
+              form="editForm"
+              type="submit"
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending && (
+                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+              )}
+              Save Changes
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
