@@ -16,10 +16,12 @@ import {
   Cpu,
   MemoryStick,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+Info
 } from 'lucide-react'
 import { HardDrive } from 'lucide-react'
 import { EditInstanceDialog } from './EditInstanceDialog'
+import { ApiInfoModal } from './ApiInfoModal'
 
 interface InstanceCardProps {
   instance: Instance
@@ -28,6 +30,7 @@ interface InstanceCardProps {
 export function InstanceCard({ instance }: InstanceCardProps) {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [openWithJsonView, setOpenWithJsonView] = useState(false)
+  const [showInfoModal, setShowInfoModal] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
@@ -223,12 +226,12 @@ export function InstanceCard({ instance }: InstanceCardProps) {
           )}
 
           {/* Resource monitoring */}
-          <div className="mt-2 grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-3 gap-6 mt-2">
             <div>
               <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
                 CPU USAGE
               </div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900">
                 <Cpu className="w-4 h-4 text-gray-500" />
                 {isRunning && status?.resources ? `${status.resources.cpuPercent.toFixed(1)}%` : '--'}
               </div>
@@ -244,7 +247,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
               <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
                 MEMORY
               </div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900">
                 <MemoryStick className="w-4 h-4 text-gray-500" />
                 {isRunning && status?.resources ? formatMemory(status.resources.memoryMB) : '--'}
               </div>
@@ -261,7 +264,7 @@ export function InstanceCard({ instance }: InstanceCardProps) {
               <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
                 DISK
               </div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900">
                 <HardDrive className="w-4 h-4 text-gray-500" />
                 {isRunning && status?.resources?.diskMB !== undefined
                   ? formatMemory(status.resources.diskMB)
@@ -316,6 +319,14 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => setShowInfoModal(true)}
+                      className="p-0 w-8 h-8"
+                    >
+                      <Info className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => stopMutation.mutate()}
                       className="p-0 w-8 h-8 text-red-600 bg-red-50 border-red-200 hover:bg-red-100"
                     >
@@ -346,6 +357,14 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                       className="p-0 w-8 h-8"
                     >
                       <Edit className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowInfoModal(true)}
+                      className="p-0 w-8 h-8"
+                    >
+                      <Info className="w-3 h-3" />
                     </Button>
                     <Button
                       variant="outline"
@@ -384,6 +403,14 @@ export function InstanceCard({ instance }: InstanceCardProps) {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => setShowInfoModal(true)}
+                      className="p-0 w-8 h-8"
+                    >
+                      <Info className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={handleDelete}
                       className="p-0 w-8 h-8 text-gray-500"
                     >
@@ -405,6 +432,11 @@ export function InstanceCard({ instance }: InstanceCardProps) {
           if (!open) setOpenWithJsonView(false)
         }}
         showJsonViewInitial={openWithJsonView}
+      />
+      <ApiInfoModal
+        open={showInfoModal}
+        onOpenChange={setShowInfoModal}
+        instance={instance}
       />
     </>
   )

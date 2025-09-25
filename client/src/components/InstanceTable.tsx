@@ -3,14 +3,15 @@ import { Table, Tag, Tooltip, Progress } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { apiClient } from '../lib/api'
 import type { Instance, InstanceStatus } from '../types'
-import { ExternalLink, Square, Play, RotateCw, Pencil, Trash2 } from 'lucide-react'
+import { ExternalLink, Square, Play, RotateCw, Pencil, Trash2, Info } from 'lucide-react'
 
 interface InstanceTableProps {
   instances: Instance[]
   onEdit: (instance: Instance) => void
+  onInfo?: (instance: Instance) => void
 }
 
-export function InstanceTable({ instances, onEdit }: InstanceTableProps) {
+export function InstanceTable({ instances, onEdit, onInfo }: InstanceTableProps) {
   const queryClient = useQueryClient()
 
   // Actions
@@ -74,7 +75,7 @@ export function InstanceTable({ instances, onEdit }: InstanceTableProps) {
       key: 'name',
       width: 220,
       render: (text, record) => (
-        <div className="flex flex-col items-start gap-1">
+        <div className="flex flex-col gap-1 items-start">
           <span className="font-medium text-gray-900">{text}</span>
           <Tag color={record.status.toLowerCase() === 'running' ? 'green' : record.status.toLowerCase() === 'error' ? 'red' : 'default'}>
             {record.status}
@@ -210,6 +211,15 @@ export function InstanceTable({ instances, onEdit }: InstanceTableProps) {
                 aria-label="Edit"
               >
                 <Pencil className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip title="API Info">
+              <button
+                className="inline-flex justify-center items-center w-8 h-8 text-gray-700 rounded border hover:bg-gray-50"
+                onClick={() => onInfo?.(record)}
+                aria-label="API Info"
+              >
+                <Info className="w-4 h-4" />
               </button>
             </Tooltip>
             <Tooltip title="Delete">

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Input, Select } from 'antd'
 import { apiClient } from '../lib/api'
+import { ApiInfoModal } from './ApiInfoModal'
 import { InstanceCard } from './InstanceCard'
 import { CreateInstanceDialog } from './CreateInstanceDialog'
 import { EditInstanceDialog } from './EditInstanceDialog'
@@ -14,6 +15,7 @@ import { InstanceTable } from './InstanceTable'
 export function InstanceList() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingInstance, setEditingInstance] = useState<Instance | null>(null)
+  const [infoInstance, setInfoInstance] = useState<Instance | null>(null)
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -151,7 +153,7 @@ export function InstanceList() {
             ))}
           </div>
         ) : (
-          <InstanceTable instances={filteredInstances as Instance[]} onEdit={setEditingInstance} />
+          <InstanceTable instances={filteredInstances as Instance[]} onEdit={setEditingInstance} onInfo={setInfoInstance} />
         )
       ) : (
         <div className="py-12 text-center bg-white rounded-lg border border-gray-200">
@@ -179,6 +181,15 @@ export function InstanceList() {
           onOpenChange={(open) => {
             if (!open) setEditingInstance(null)
           }}
+        />
+      )}
+      {infoInstance && (
+        <ApiInfoModal
+          open={!!infoInstance}
+          onOpenChange={(open) => {
+            if (!open) setInfoInstance(null)
+          }}
+          instance={infoInstance}
         />
       )}
     </div>
