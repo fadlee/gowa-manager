@@ -6,10 +6,12 @@
   - System-level status and configuration.
   - Port allocation & availability checks.
   - GOWA binary version discovery, installation, cleanup.
+  - Automatic instance media cleanup (JPEG & media file deletion).
 - **Entrypoints**:
   - HTTP: `versionsModule` (e.g. `/api/system/versions/**`) in `versions.ts`.
   - Service: `SystemService` in `service.ts`.
   - Version orchestration: `VersionManager` in `version-manager.ts`.
+  - Scheduled cleanup: `CleanupScheduler` in `cleanup-scheduler.ts` (runs daily at midnight).
 
 ---
 
@@ -78,6 +80,25 @@
   - Capture errors and map to `ErrorModel` (`{ error, success: false }`).
   - Use `t.Object(...)` models for all responses.
 
+### 3.4 Automatic cleanup (`cleanup-scheduler.ts`)
+
+- **CleanupScheduler** runs daily at midnight (UTC `0 0 * * *`):
+  - Automatically deletes `*.jpeg` and `*.jpg` files from each instance's `storages/` directory.
+  - Automatically deletes all files from each instance's `statics/media/` directory.
+  - Iterates through all instances in the database.
+  - Logs results: count of deleted files, errors, and total duration.
+  - Runs independently of instance lifecycle (doesn't require instances to be running).
+
+- **Starting the scheduler**:
+  - Automatically started in `src/index.ts` during app initialization via `CleanupScheduler.start()`.
+  - Gracefully stopped on process shutdown via `SIGINT` handler.
+
+- **Implementation details**:
+  - Uses `node-cron` for cron scheduling.
+  - Handles missing directories gracefully (returns 0 deletions if path doesn't exist).
+  - Logs each instance's cleanup with instance name and file counts.
+  - Catches and logs errors per-instance to avoid stopping cleanup for other instances.
+
 ---
 
 ## 4. Touch Points / Key Files
@@ -85,6 +106,7 @@
 - `service.ts` – system status, port allocation, data directory info.
 - `version-manager.ts` – core version management and disk usage.
 - `versions.ts` – Elysia routes and request/response schemas.
+- `cleanup-scheduler.ts` – automatic daily cleanup of instance media and storage files.
 - `../../binary-download.ts` – used internally by `VersionManager.installVersion`.
 
 ---
@@ -105,6 +127,10 @@ rg -n "versionsModule" src/modules/system
 # Find GitHub-related logic
 rg -n "GitHubRelease" src/modules/system/version-manager.ts
 rg -n "api.github.com" src/modules/system/version-manager.ts
+
+# Find cleanup scheduler logic
+rg -n "CleanupScheduler" src/modules/system/cleanup-scheduler.ts
+rg -n "runCleanup\|cleanupInstanceStorageJpegs\|cleanupInstanceMediaFiles" src/modules/system/cleanup-scheduler.ts
 ```
 
 ---
@@ -118,6 +144,10 @@ rg -n "api.github.com" src/modules/system/version-manager.ts
   - You cannot remove `latest` via `DELETE /:version`.
 - **GitHub API failures**:
   - `getAvailableVersions()` returns `[]` on errors; handle gracefully on the frontend (show fallback or warning).
+- **Cleanup scheduler**:
+  - Runs automatically at midnight UTC; no manual API endpoint exists yet.
+  - Missing directories are handled gracefully and don't cause errors.
+  - If instances are being used during cleanup, in-flight operations should not be affected (files are only deleted, not accessed).
 
 ---
 

@@ -5,6 +5,7 @@ import { getConfig } from './cli' // Import CLI configuration
 import './db' // Import to initialize database
 import './restart' // Import to auto-restart instances
 import { downloadGowaBinary } from './binary-download' // Import binary auto-download
+import { CleanupScheduler } from './modules/system/cleanup-scheduler' // Import cleanup scheduler
 import { getStaticFile } from './static-handler' // Import embedded static handler
 import { instancesModule } from './modules/instances'
 import { systemModule } from './modules/system'
@@ -43,6 +44,16 @@ if (config.adminPassword) {
   } else {
     console.warn('⚠️  Resource monitoring (pidusage) test failed - CPU/memory stats may not be available')
   }
+
+  // Start cleanup scheduler
+  CleanupScheduler.start()
+
+  // Graceful shutdown
+  process.on('SIGINT', () => {
+    console.log('\n🛑 Shutting down...')
+    CleanupScheduler.stop()
+    process.exit(0)
+  })
 })()
 
 // Configuration from CLI args (takes precedence over env vars)
