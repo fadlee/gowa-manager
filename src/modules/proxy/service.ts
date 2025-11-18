@@ -71,6 +71,17 @@ export abstract class ProxyService {
       if (this.isBinaryContent(contentType)) {
         responseBody = await response.arrayBuffer()
       }
+      // Handle JSON content - transform absolute URLs to relative paths
+      else if (contentType.includes('application/json')) {
+        const text = await response.text()
+        try {
+          const jsonData = JSON.parse(text)
+          const transformedData = this.stripAbsoluteUrls(jsonData)
+          responseBody = transformedData
+        } catch {
+          responseBody = text
+        }
+      }
       // Handle other content types
       else {
         responseBody = await response.text()
@@ -85,6 +96,39 @@ export abstract class ProxyService {
     } catch (error) {
       throw new Error(`Proxy request failed: ${error}`)
     }
+  }
+
+  // Strip absolute URLs to relative paths
+  private static stripAbsoluteUrls(obj: any): any {
+    if (typeof obj !== 'object' || obj === null) return obj
+
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.stripAbsoluteUrls(item))
+    }
+
+    const result: any = {}
+
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'string') {
+        // Convert absolute URLs to relative paths
+        if (value.startsWith('http://') || value.startsWith('https://')) {
+          try {
+            const url = new URL(value)
+            result[key] = url.pathname + url.search + url.hash
+          } catch {
+            result[key] = value
+          }
+        } else {
+          result[key] = value
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        result[key] = this.stripAbsoluteUrls(value)
+      } else {
+        result[key] = value
+      }
+    }
+
+    return result
   }
 
   // Modify URLs in JSON responses to include proxy prefix
