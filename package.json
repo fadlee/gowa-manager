@@ -1,8 +1,14 @@
 {
   "name": "gowa-manager",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "gowa-manager": "./bin/npx-cli.js"
+  },
+  "files": [
+    "bin/npx-cli.js"
+  ],
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "build:tsc": "tsc --noEmit",
@@ -17,16 +23,14 @@
     "compile": "bun run build:production && bun build --compile --define 'process.env.NODE_ENV=\"production\"' --target bun --outfile gowa-manager src/index.ts",
     "compile:optimized": "bun run build:production && bun build --compile --minify --bytecode --define 'process.env.NODE_ENV=\"production\"' --target bun --outfile gowa-manager-opt src/index.ts"
   },
-  "dependencies": {
+  "devDependencies": {
     "@elysiajs/cors": "^0.8.0",
     "@elysiajs/static": "^1.3.0",
     "adm-zip": "^0.5.16",
     "elysia": "^1.3.21",
     "node-cron": "^3.0.3",
     "pidusage": "^4.0.1",
-    "ws": "^8.18.3"
-  },
-  "devDependencies": {
+    "ws": "^8.18.3",
     "@faker-js/faker": "^9.9.0",
     "@types/bun": "latest",
     "typescript": "^5.9.2"
