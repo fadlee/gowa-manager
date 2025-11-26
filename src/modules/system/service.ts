@@ -1,7 +1,7 @@
 import { queries, db } from '../../db'
 import { join, resolve } from 'path'
 import type { SystemModel } from './model'
-import { createServer } from 'net'
+import { createConnection } from 'net'
 
 export abstract class SystemService {
   // Get system status
@@ -77,7 +77,9 @@ export abstract class SystemService {
     }
   }
 
-  // Check if port is available by checking instances table and actual network port
+  // Check if port is available by trying to connect to it
+  // If connection succeeds, something is listening = port NOT available
+  // If connection fails (ECONNREFUSED), nothing listening = port available
   static isPortAvailable(port: number): Promise<boolean> {
     // Special case: port 3000 is used by the server itself
     if (port === 3000) {
@@ -89,31 +91,30 @@ export abstract class SystemService {
       return Promise.resolve(false)
     }
     
-    // Only check database for ports assigned to OTHER instances (not during restart)
-    // Skip database check during restart scenarios - rely on actual network test
-    
-    // Check actual network port availability
     return new Promise((resolve) => {
-      const server = createServer()
+      const socket = createConnection({ port, host: '127.0.0.1' })
       
-      server.once('error', (err: any) => {
-        // Port is in use if we get EADDRINUSE error
-        if (err.code === 'EADDRINUSE') {
-          resolve(false)
-        } else {
-          // For any other error, we'll assume the port is available
-          resolve(true)
-        }
-        server.close()
+      // Set a short timeout for the connection attempt
+      socket.setTimeout(1000)
+      
+      socket.once('connect', () => {
+        // Connection succeeded = something is listening = port NOT available
+        socket.destroy()
+        resolve(false)
       })
       
-      server.once('listening', () => {
-        // Port is available
-        server.close()
+      socket.once('error', (err: any) => {
+        // ECONNREFUSED = nothing listening = port available
+        // Other errors (like ETIMEDOUT) = treat as available
+        socket.destroy()
         resolve(true)
       })
       
-      server.listen(port, '127.0.0.1')
+      socket.once('timeout', () => {
+        // Timeout = probably nothing listening = port available
+        socket.destroy()
+        resolve(true)
+      })
     })
   }
 }

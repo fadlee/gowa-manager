@@ -142,13 +142,22 @@ export abstract class InstanceService {
         throw new Error(`GOWA version '${version}' is not installed. Please install it first.`)
       }
 
+      // Check if stored port is still available, allocate new if not
+      let port = instance.port
+      if (port === null || !(await SystemService.isPortAvailable(port))) {
+        console.log(`Port ${port} not available for instance ${id}, allocating new port...`)
+        port = await SystemService.getNextAvailablePort()
+        queries.updateInstancePort.run(port, id)
+        console.log(`Instance ${id} now using port ${port}`)
+      }
+
       // Ensure instance directory exists
       const instanceDir = DirectoryManager.createInstanceDirectory(id)
 
       // Parse configuration
       const config = ConfigParser.parseConfig(instance.config)
-      const processedArgs = ConfigParser.processArgs(config, instance.port || 8080)
-      const env = ConfigParser.parseEnvironmentVars(config, instance.port || 8080)
+      const processedArgs = ConfigParser.processArgs(config, port)
+      const env = ConfigParser.parseEnvironmentVars(config, port)
 
       const gowaBinaryPath = getGowaBinaryPath(version)
       console.log(`Starting instance ${id}:`, {
@@ -156,7 +165,7 @@ export abstract class InstanceService {
         args: processedArgs,
         workingDir: instanceDir,
         envKeys: Object.keys(env).filter(k => k !== 'PORT' && !k.startsWith('SYSTEM_')),
-        port: instance.port
+        port
       })
 
       // Spawn process using Bun.spawn

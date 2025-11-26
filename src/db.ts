@@ -108,6 +108,11 @@ export const queries = {
     WHERE id = ?
     RETURNING *
   `),
+  updateInstancePort: db.prepare(`
+    UPDATE instances
+    SET port = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `),
   deleteInstance: db.prepare('DELETE FROM instances WHERE id = ?'),
 
 }
