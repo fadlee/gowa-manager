@@ -6,6 +6,7 @@
 */
 
 import { watch, FSWatcher } from "fs";
+import treeKill from "tree-kill";
 
 const DEBOUNCE_MS = 3000;
 
@@ -28,14 +29,14 @@ function startServer() {
   console.log(`[dev-watch] Server started (pid=${server.pid}).`);
 }
 
-function stopServer(signal: number = 2 /* SIGINT */) {
+function stopServer(signal: "SIGINT" | "SIGTERM" | "SIGKILL" = "SIGINT") {
   if (server !== null) {
-    try {
-      console.log(`[dev-watch] Stopping server (pid=${server.pid}) ...`);
-      server.kill(signal);
-    } catch (e) {
-      // ignore
-    }
+    console.log(`[dev-watch] Stopping server (pid=${server.pid}) ...`);
+    treeKill(server.pid, signal, (err) => {
+      if (err) {
+        console.warn(`[dev-watch] Failed to tree-kill server:`, err);
+      }
+    });
     server = null;
   }
 }
@@ -72,7 +73,7 @@ function cleanupAndExit(code = 0) {
   try {
     if (watcher) watcher.close();
   } catch {}
-  stopServer(2);
+  stopServer("SIGINT");
   // Small delay to allow child process to terminate
   setTimeout(() => process.exit(code), 50);
 }

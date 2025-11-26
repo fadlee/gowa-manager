@@ -1,4 +1,6 @@
 // Process management utilities
+import treeKill from 'tree-kill'
+
 interface ProcessInfo {
   process: Bun.Subprocess;
   pid: number;
@@ -46,18 +48,17 @@ export class ProcessManager {
     for (const [instanceId, processInfo] of runningProcesses) {
       cleanupPromises.push(
         new Promise<void>((resolve) => {
-          try {
-            console.log(`Killing instance ${instanceId} (PID: ${processInfo.pid})`)
+          console.log(`Tree-killing instance ${instanceId} (PID: ${processInfo.pid})`)
 
-            // Force kill immediately - no graceful shutdown needed for crash/restart scenarios
-            processInfo.process.kill('SIGKILL')
-            console.log(`Force killed instance ${instanceId}`)
+          // Use tree-kill to kill the process and all its children
+          treeKill(processInfo.pid, 'SIGKILL', (err) => {
+            if (err) {
+              console.warn(`Failed to tree-kill instance ${instanceId}:`, err)
+            } else {
+              console.log(`Tree-killed instance ${instanceId}`)
+            }
             resolve()
-
-          } catch (error) {
-            console.warn(`Failed to kill instance ${instanceId}:`, error)
-            resolve()
-          }
+          })
         })
       )
     }
@@ -67,41 +68,41 @@ export class ProcessManager {
     console.log('All instances cleaned up')
   }
 
-  // Stop a specific process gracefully
+  // Stop a specific process gracefully (async due to tree-kill)
   static stopProcess(instanceId: number): boolean {
     const processInfo = runningProcesses.get(instanceId)
     if (processInfo) {
-      try {
-        // Graceful shutdown with SIGTERM
-        processInfo.process.kill('SIGTERM')
-        runningProcesses.delete(instanceId)
-        return true
-      } catch (error) {
-        console.error(`Failed to stop process ${processInfo.pid}:`, error)
-        return false
-      }
+      // Use tree-kill with SIGTERM for graceful shutdown of process tree
+      treeKill(processInfo.pid, 'SIGTERM', (err) => {
+        if (err) {
+          console.error(`Failed to tree-kill (SIGTERM) process ${processInfo.pid}:`, err)
+        } else {
+          console.log(`Gracefully tree-killed instance ${instanceId} with PID ${processInfo.pid}`)
+        }
+      })
+      runningProcesses.delete(instanceId)
+      return true
     }
     return false
   }
 
-  // Kill a specific process forcefully
+  // Kill a specific process forcefully (async due to tree-kill)
   static killProcess(instanceId: number): boolean {
     const processInfo = runningProcesses.get(instanceId)
     if (processInfo) {
-      try {
-        // Forceful kill with SIGKILL
-        processInfo.process.kill('SIGKILL')
-        runningProcesses.delete(instanceId)
-        console.log(`Forcefully killed instance ${instanceId} with PID ${processInfo.pid}`)
-        return true
-      } catch (error) {
-        console.error(`Failed to kill process ${processInfo.pid}:`, error)
-        // If process doesn't exist anymore, that's fine
-        if (error instanceof Error && (error as any).code !== 'ESRCH') {
-          throw error
+      // Use tree-kill with SIGKILL to forcefully kill process tree
+      treeKill(processInfo.pid, 'SIGKILL', (err) => {
+        if (err) {
+          // ESRCH means process doesn't exist anymore, that's fine
+          if ((err as any).code !== 'ESRCH') {
+            console.error(`Failed to tree-kill (SIGKILL) process ${processInfo.pid}:`, err)
+          }
+        } else {
+          console.log(`Forcefully tree-killed instance ${instanceId} with PID ${processInfo.pid}`)
         }
-        return false
-      }
+      })
+      runningProcesses.delete(instanceId)
+      return true
     }
     return false
   }
