@@ -40,25 +40,25 @@ export abstract class SystemService {
       .filter(i => i.port !== null)
       .map(i => i.port)
       .sort((a, b) => a - b)
-    
+
     // Start from 8000 and find first available port
     let port = 8000
     let isAvailable = false
-    
+
     while (!isAvailable) {
       // Skip ports that are already in the database
       if (usedPorts.includes(port)) {
         port++
         continue
       }
-      
+
       // Check if the port is actually available on the network
       isAvailable = await this.isPortAvailable(port)
       if (!isAvailable) {
         port++
       }
     }
-    
+
     return port
   }
 
@@ -80,41 +80,51 @@ export abstract class SystemService {
   // Check if port is available by trying to connect to it
   // If connection succeeds, something is listening = port NOT available
   // If connection fails (ECONNREFUSED), nothing listening = port available
-  static isPortAvailable(port: number): Promise<boolean> {
-    // Special case: port 3000 is used by the server itself
-    if (port === 3000) {
-      return Promise.resolve(false)
-    }
-    
-    // Check reserved system ports (0-1023)
-    if (port < 1024) {
-      return Promise.resolve(false)
-    }
-    
+  private static checkPortAvailability(port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const socket = createConnection({ port, host: '127.0.0.1' })
-      
+
       // Set a short timeout for the connection attempt
       socket.setTimeout(1000)
-      
+
       socket.once('connect', () => {
         // Connection succeeded = something is listening = port NOT available
         socket.destroy()
         resolve(false)
       })
-      
+
       socket.once('error', (err: any) => {
         // ECONNREFUSED = nothing listening = port available
         // Other errors (like ETIMEDOUT) = treat as available
         socket.destroy()
         resolve(true)
       })
-      
+
       socket.once('timeout', () => {
         // Timeout = probably nothing listening = port available
         socket.destroy()
         resolve(true)
       })
     })
+  }
+
+  // Check if port is available for instances (respects reserved ranges)
+  static isPortAvailable(port: number): Promise<boolean> {
+    // Special case: port 3000 is used by the server itself
+    if (port === 3000) {
+      return Promise.resolve(false)
+    }
+
+    // Check reserved system ports (0-1023)
+    if (port < 1024) {
+      return Promise.resolve(false)
+    }
+
+    return this.checkPortAvailability(port)
+  }
+
+  // Check if port is available for the HTTP server (no special-case for 3000)
+  static isHttpPortAvailable(port: number): Promise<boolean> {
+    return this.checkPortAvailability(port)
   }
 }

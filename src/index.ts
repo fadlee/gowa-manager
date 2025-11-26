@@ -12,10 +12,26 @@ import { systemModule } from './modules/system'
 import { proxyModule } from './modules/proxy'
 import { authModule } from './modules/auth'
 import { basicAuth } from './middlewares/auth'
+import { SystemService } from './modules/system/service'
 import type { ApiResponse } from './types'
 
 // Parse CLI configuration
 const config = getConfig()
+
+// Find the first available HTTP port starting from the desired port
+async function findAvailableHttpPort(startPort: number, maxAttempts: number = 100): Promise<number> {
+  let port = startPort
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const available = await SystemService.isHttpPortAvailable(port)
+    if (available) {
+      return port
+    }
+    port++
+  }
+
+  throw new Error(`No available HTTP port found starting from ${startPort} (checked ${maxAttempts} ports)`)
+}
 
 if (process.env.NODE_ENV === 'production') {
   console.log('Running in PRODUCTION mode')
@@ -59,7 +75,8 @@ if (config.adminPassword) {
 // Configuration from CLI args (takes precedence over env vars)
 const ADMIN_USERNAME = config.adminUsername
 const ADMIN_PASSWORD = config.adminPassword
-const PORT = config.port
+const DESIRED_PORT = config.port
+const PORT = await findAvailableHttpPort(DESIRED_PORT)
 
 const app = new Elysia()
   .use(cors({
@@ -173,6 +190,10 @@ const app = new Elysia()
   })
 
   .listen(PORT)
+
+if (PORT !== DESIRED_PORT) {
+  console.warn(`⚠️  Port ${DESIRED_PORT} is already in use. Using fallback port ${PORT} instead.`)
+}
 
 console.log(`🚀 GOWA Manager server is running on ${app.server?.hostname}:${app.server?.port}`)
 console.log(`👤 Admin credentials: ${ADMIN_USERNAME}/${ADMIN_PASSWORD}`)
