@@ -140,7 +140,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
       {/* Version */}
       <div className="space-y-2">
         <label className="text-sm font-medium text-gray-300">GOWA Version</label>
-        <div className="[&_.ant-select]:bg-gray-800 [&_.ant-select-selector]:!bg-gray-800 [&_.ant-select-selector]:!border-gray-700 [&_.ant-select-selection-item]:!text-white">
+        <div>
           <VersionSelector
             value={version}
             onChange={setVersion}
@@ -161,9 +161,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
       <div className="space-y-4">
         <label className="text-sm font-medium text-gray-300">Configuration</label>
         <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
-          <div className="[&_label]:text-gray-300 [&_input]:bg-gray-700 [&_input]:border-gray-600 [&_input]:text-white [&_.ant-switch]:bg-gray-600">
-            <CliFlagsComponent flags={flags} onChange={setFlags} />
-          </div>
+          <CliFlagsComponent flags={flags} onChange={setFlags} />
         </div>
       </div>
     </div>

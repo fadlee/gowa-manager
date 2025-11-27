@@ -100,7 +100,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
 
         <form onSubmit={handleSubmit} className="space-y-4" id="createForm">
           <div className="space-y-2">
-            <label htmlFor="name" className="text-sm font-medium text-gray-700">
+            <label htmlFor="name" className="text-sm font-medium text-gray-300">
               Name (optional)
             </label>
             <Input
@@ -108,10 +108,10 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
               placeholder="Enter instance name..."
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className={errors.name ? 'border-red-500' : ''}
+              className={`bg-gray-800 border-gray-700 text-white ${errors.name ? 'border-red-500' : ''}`}
             />
             {errors.name && (
-              <p className="text-sm text-red-600">{errors.name}</p>
+              <p className="text-sm text-red-400">{errors.name}</p>
             )}
           </div>
 

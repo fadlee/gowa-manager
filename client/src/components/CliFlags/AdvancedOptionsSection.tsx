@@ -19,7 +19,7 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
         type="button"
         variant="ghost"
         onClick={() => setShowAdvanced(!showAdvanced)}
-        className="flex gap-2 items-center p-0 h-auto text-sm font-medium hover:bg-transparent"
+        className="flex gap-2 items-center p-0 h-auto text-sm font-medium text-gray-300 hover:bg-transparent hover:text-white"
       >
         {showAdvanced ? (
           <ChevronDown className="w-4 h-4" />
@@ -28,7 +28,7 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
         )}
         Advanced Options
       </Button>
-      <p className="mt-1 ml-6 text-xs text-gray-500">
+      <p className="mt-1 ml-6 text-xs text-gray-400">
         Additional configuration options
       </p>
 
@@ -37,8 +37,8 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
           {/* Account Validation */}
           <div className="flex justify-between items-center">
             <div className="space-y-0.5">
-              <label className="text-sm font-medium">Account Validation</label>
-              <p className="text-xs text-gray-500">Enable or disable account validation</p>
+              <label className="text-sm font-medium text-gray-300">Account Validation</label>
+              <p className="text-xs text-gray-400">Enable or disable account validation</p>
             </div>
             <Switch
               checked={flags.accountValidation ?? true}
@@ -48,20 +48,21 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
 
           {/* OS Name */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">OS Name</label>
+            <label className="text-sm font-medium text-gray-300">OS Name</label>
             <Input
               placeholder="e.g., Chrome, GowaManager"
               value={flags.os || ''}
               onChange={(e) => updateFlag('os', e.target.value)}
+              className="bg-gray-700 border-gray-600 text-white"
             />
-            <p className="text-xs text-gray-500">Custom OS name for the instance</p>
+            <p className="text-xs text-gray-400">Custom OS name for the instance</p>
           </div>
 
           {/* Auto Mark Read */}
           <div className="flex justify-between items-center">
             <div className="space-y-0.5">
-              <label className="text-sm font-medium">Auto Mark Read</label>
-              <p className="text-xs text-gray-500">Automatically mark incoming messages as read</p>
+              <label className="text-sm font-medium text-gray-300">Auto Mark Read</label>
+              <p className="text-xs text-gray-400">Automatically mark incoming messages as read</p>
             </div>
             <Switch
               checked={flags.autoMarkRead ?? false}
@@ -83,13 +84,14 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
 
           {/* Auto Reply */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Auto Reply Message</label>
+            <label className="text-sm font-medium text-gray-300">Auto Reply Message</label>
             <Input
               placeholder="Don't reply this message"
               value={flags.autoReply || ''}
               onChange={(e) => updateFlag('autoReply', e.target.value)}
+              className="bg-gray-700 border-gray-600 text-white"
             />
-            <p className="text-xs text-gray-500">Automatic reply for incoming messages</p>
+            <p className="text-xs text-gray-400">Automatic reply for incoming messages</p>
           </div>
 
           {/* Base Path */}
@@ -105,14 +107,15 @@ export function AdvancedOptionsSection({ flags, updateFlag }: AdvancedOptionsSec
 
           {/* Webhook Secret */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Webhook Secret</label>
+            <label className="text-sm font-medium text-gray-300">Webhook Secret</label>
             <Input
               type="password"
               placeholder="super-secret-key"
               value={flags.webhookSecret || ''}
               onChange={(e) => updateFlag('webhookSecret', e.target.value)}
+              className="bg-gray-700 border-gray-600 text-white"
             />
-            <p className="text-xs text-gray-500">Secret key to secure webhook requests</p>
+            <p className="text-xs text-gray-400">Secret key to secure webhook requests</p>
           </div>
         </div>
       )}

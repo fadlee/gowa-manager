@@ -44,15 +44,15 @@ export function WebhooksSection({ flags, updateFlag }: WebhooksSectionProps) {
 
   return (
     <div className="space-y-3">
-      <label className="text-sm font-medium">Webhooks</label>
-      <p className="text-xs text-gray-500">Forward events to webhook URLs</p>
+      <label className="text-sm font-medium text-gray-300">Webhooks</label>
+      <p className="text-xs text-gray-400">Forward events to webhook URLs</p>
 
       {/* Existing Webhooks */}
       {flags.webhooks && flags.webhooks.length > 0 && (
         <div className="space-y-2">
           {flags.webhooks.map((webhook, index) => (
-            <div key={index} className="flex gap-2 items-center p-2 bg-gray-50 rounded-md">
-              <span className="flex-1 font-mono text-sm truncate">{webhook}</span>
+            <div key={index} className="flex gap-2 items-center p-2 bg-gray-700 rounded-md">
+              <span className="flex-1 font-mono text-sm text-white truncate">{webhook}</span>
               <Button
                 type="button"
                 variant="ghost"
@@ -75,7 +75,7 @@ export function WebhooksSection({ flags, updateFlag }: WebhooksSectionProps) {
           onChange={(e) => setNewWebhook(e.target.value)}
           onKeyDown={handleWebhookKeyDown}
           onBlur={handleWebhookBlur}
-          className="flex-1"
+          className="flex-1 bg-gray-700 border-gray-600 text-white"
         />
         {flags.webhooks && flags.webhooks.length > 0 && (
           <Button
