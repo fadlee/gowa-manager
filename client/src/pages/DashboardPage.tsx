@@ -217,6 +217,8 @@ interface InstanceCardSimpleProps {
 }
 
 function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
+  const queryClient = useQueryClient()
+  
   const { data: status } = useQuery({
     queryKey: ['instance-status', instance.id],
     queryFn: () => apiClient.getInstanceStatus(instance.id),
@@ -229,6 +231,22 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
       pid: null,
       uptime: null,
     }
+  })
+
+  const startMutation = useMutation({
+    mutationFn: () => apiClient.startInstance(instance.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
+      queryClient.invalidateQueries({ queryKey: ['instances'] })
+    },
+  })
+
+  const stopMutation = useMutation({
+    mutationFn: () => apiClient.stopInstance(instance.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
+      queryClient.invalidateQueries({ queryKey: ['instances'] })
+    },
   })
 
   const isRunning = status?.status?.toLowerCase() === 'running'
@@ -268,16 +286,27 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
             </div>
           </div>
           <div className="flex gap-2 items-center">
-            {/* Power toggle indicator */}
-            <div className={cn(
-              'flex items-center px-1 w-12 h-6 rounded-full transition-colors',
-              isRunning ? 'bg-green-600' : 'bg-gray-600'
-            )}>
+            {/* Power toggle button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (isRunning) {
+                  stopMutation.mutate()
+                } else {
+                  startMutation.mutate()
+                }
+              }}
+              disabled={startMutation.isPending || stopMutation.isPending}
+              className={cn(
+                'flex items-center px-1 w-12 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
+                isRunning ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-400 dark:bg-gray-600 hover:bg-gray-500'
+              )}
+            >
               <div className={cn(
                 'w-4 h-4 bg-white rounded-full shadow transition-transform',
                 isRunning ? 'translate-x-6' : 'translate-x-0'
               )} />
-            </div>
+            </button>
           </div>
         </div>
       </CardContent>
