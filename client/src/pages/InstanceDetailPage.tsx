@@ -17,6 +17,7 @@ import { cn } from '../lib/utils'
 import { OverviewSection } from '../components/instance-detail/OverviewSection'
 import { SettingsSection } from '../components/instance-detail/SettingsSection'
 import { DangerZoneSection } from '../components/instance-detail/DangerZoneSection'
+import { toast } from '../components/ui/use-toast'
 
 type TabType = 'overview' | 'settings' | 'danger'
 
@@ -63,8 +64,12 @@ export function InstanceDetailPage() {
       setLastError(null)
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', Number(id)] })
+      toast({ title: 'Instance started', description: 'The instance is now running.', variant: 'success' })
     },
-    onError: (error) => setLastError(error.message)
+    onError: (error) => {
+      setLastError(error.message)
+      toast({ title: 'Failed to start instance', description: error.message, variant: 'error' })
+    }
   })
 
   const stopMutation = useMutation({
@@ -73,8 +78,12 @@ export function InstanceDetailPage() {
       setLastError(null)
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', Number(id)] })
+      toast({ title: 'Instance stopped', description: 'The instance has been stopped.', variant: 'default' })
     },
-    onError: (error) => setLastError(error.message)
+    onError: (error) => {
+      setLastError(error.message)
+      toast({ title: 'Failed to stop instance', description: error.message, variant: 'error' })
+    }
   })
 
   const restartMutation = useMutation({
@@ -83,8 +92,12 @@ export function InstanceDetailPage() {
       setLastError(null)
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', Number(id)] })
+      toast({ title: 'Instance restarted', description: 'The instance is now running.', variant: 'success' })
     },
-    onError: (error) => setLastError(error.message)
+    onError: (error) => {
+      setLastError(error.message)
+      toast({ title: 'Failed to restart instance', description: error.message, variant: 'error' })
+    }
   })
 
   if (!instance) {
@@ -116,63 +129,81 @@ export function InstanceDetailPage() {
   ]
 
   return (
-    <div className="flex">
-      {/* Instance header bar - below topbar */}
-      <div className="w-full">
-        <div className="bg-gray-800 border-b border-gray-700 px-4 py-4">
-          <div className="mx-auto max-w-7xl sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navigate('/')}
-                  className="text-gray-400 hover:text-white"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <div>
-                  <h1 className="text-2xl font-bold text-white">{instance.name}</h1>
-                  <div className="flex gap-2 items-center mt-1">
-                    <Badge variant="secondary" className="text-xs">
-                      {instance.gowa_version || 'latest'}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              {/* Power toggle */}
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-400">
-                  {isRunning ? 'ON' : 'OFF'}
-                </span>
-                <button
-                  onClick={() => isRunning ? stopMutation.mutate() : startMutation.mutate()}
-                  disabled={isLoading}
-                  className={cn(
-                    'w-14 h-7 rounded-full flex items-center px-1 transition-colors cursor-pointer',
-                    isRunning ? 'bg-green-500' : 'bg-gray-600',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                >
-                  {isLoading ? (
-                    <Loader2 className="w-5 h-5 text-white animate-spin mx-auto" />
-                  ) : (
-                    <div className={cn(
-                      'w-5 h-5 rounded-full bg-white shadow transition-transform',
-                      isRunning ? 'translate-x-7' : 'translate-x-0'
-                    )} />
-                  )}
-                </button>
-              </div>
+    <div className="min-h-[calc(100vh-64px)]">
+      <div className="mx-auto max-w-7xl sm:px-6 lg:px-8">
+      {/* Instance header bar */}
+      <div className="bg-gray-800 border-b border-gray-700 sm:border-x sm:border-gray-700">
+        <div className="flex justify-between items-center px-4 h-16">
+          {/* Left: Back + Name + Version */}
+          <div className="flex gap-3 items-center min-w-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/')}
+                className="text-gray-400 hover:text-white shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+              <h1 className="mb-0 text-lg font-semibold text-white truncate sm:text-xl">{instance.name}</h1>
+              <Badge variant="secondary" className="hidden text-xs shrink-0 sm:inline-flex">
+                {instance.gowa_version || 'latest'}
+              </Badge>
             </div>
-          </div>
+
+            {/* Right: Power toggle */}
+            <div className="flex gap-2 items-center sm:gap-3 shrink-0">
+              <span className="hidden text-xs text-gray-400 sm:text-sm sm:inline">
+                {isRunning ? 'ON' : 'OFF'}
+              </span>
+              <button
+                onClick={() => isRunning ? stopMutation.mutate() : startMutation.mutate()}
+                disabled={isLoading}
+                className={cn(
+                  'w-12 sm:w-14 h-6 sm:h-7 rounded-full flex items-center px-1 transition-colors cursor-pointer',
+                  isRunning ? 'bg-green-500' : 'bg-gray-600',
+                  isLoading && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {isLoading ? (
+                  <Loader2 className="mx-auto w-4 h-4 text-white animate-spin sm:w-5 sm:h-5" />
+                ) : (
+                  <div className={cn(
+                    'w-4 h-4 bg-white rounded-full shadow transition-transform sm:w-5 sm:h-5',
+                    isRunning ? 'translate-x-5 sm:translate-x-7' : 'translate-x-0'
+                  )} />
+                )}
+              </button>
+            </div>
         </div>
 
-        <div className="flex mx-auto max-w-7xl">
-        {/* Sidebar */}
-        <aside className="w-56 min-h-[calc(100vh-80px)] bg-gray-800 border-r border-gray-700">
-          <nav className="p-4 space-y-1">
+        {/* Mobile tabs */}
+        <div className="flex overflow-x-auto border-t border-gray-700 sm:hidden">
+          {sidebarItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-medium whitespace-nowrap transition-colors',
+                activeTab === item.id
+                  ? item.danger
+                    ? 'text-red-400 border-b-2 border-red-400'
+                    : 'text-white border-b-2 border-white'
+                  : item.danger
+                    ? 'text-red-400/70'
+                    : 'text-gray-400'
+              )}
+            >
+              <item.icon className="w-4 h-4" />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex">
+        {/* Sidebar - hidden on mobile */}
+        <aside className="hidden sm:block w-48 lg:w-56 shrink-0 bg-gray-800 border-r border-gray-700 min-h-[calc(100vh-120px)]">
+          <nav className="p-3 space-y-1">
             {sidebarItems.map((item) => (
               <button
                 key={item.id}
@@ -209,10 +240,10 @@ export function InstanceDetailPage() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 p-6 bg-gray-900">
+        <main className="flex-1 p-4 sm:p-6 bg-gray-900 min-h-[calc(100vh-120px)] overflow-hidden">
           {/* Error banner */}
           {(isError || lastError || status?.error_message || instance.error_message) && (
-            <div className="flex items-center gap-3 p-4 mb-6 bg-yellow-900/30 rounded-lg border border-yellow-700">
+            <div className="flex gap-3 items-center p-4 mb-6 rounded-lg border border-yellow-700 bg-yellow-900/30">
               <AlertTriangle className="w-5 h-5 text-yellow-500" />
               <span className="text-yellow-200">
                 {status?.error_message || instance.error_message || lastError || 'Instance encountered an error'}
@@ -250,7 +281,7 @@ export function InstanceDetailPage() {
             />
           )}
         </main>
-        </div>
+      </div>
       </div>
     </div>
   )

@@ -50,16 +50,16 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h2 className="text-xl font-semibold text-white">Overview</h2>
         {isRunning && (
           <Button
             onClick={onOpenProxy}
             variant="outline"
-            className="text-blue-400 border-blue-600 hover:bg-blue-900/30"
+            className="text-blue-400 border-blue-600 hover:bg-blue-900/30 w-full sm:w-auto"
           >
             <ExternalLink className="mr-2 w-4 h-4" />
-            Full documentation
+            Open Admin Panel
           </Button>
         )}
       </div>
@@ -117,7 +117,7 @@ const response = await fetch('${proxyUrl}/app/devices', {
       {isRunning && (
         <div className="space-y-3">
           <h3 className="text-sm font-medium text-gray-400">Resource Usage</h3>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {/* Uptime */}
             <div className="p-4 bg-gray-800 rounded-lg">
               <div className="flex gap-2 items-center mb-2 text-xs text-gray-400 uppercase">

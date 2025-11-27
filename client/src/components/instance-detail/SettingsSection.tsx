@@ -6,6 +6,7 @@ import { Input } from '../ui/input'
 import { Loader2, Save, AlertCircle } from 'lucide-react'
 import { CliFlagsComponent } from '../CliFlags/index'
 import { VersionSelector } from '../VersionSelector'
+import { toast } from '../ui/use-toast'
 import type { Instance, CliFlags, InstanceConfig } from '../../types'
 
 interface SettingsSectionProps {
@@ -59,9 +60,11 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
       setHasChanges(false)
+      toast({ title: 'Settings saved', description: 'Your changes have been saved successfully.', variant: 'success' })
     },
     onError: (error) => {
       console.error('Failed to update instance:', error)
+      toast({ title: 'Failed to save settings', description: error.message, variant: 'error' })
     },
   })
 

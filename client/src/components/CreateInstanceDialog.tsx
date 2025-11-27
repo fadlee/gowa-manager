@@ -13,6 +13,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Loader2 } from 'lucide-react'
 import { VersionSelector } from './VersionSelector'
+import { toast } from './ui/use-toast'
 import type { InstanceConfig } from '../types'
 
 interface CreateInstanceDialogProps {
@@ -29,12 +30,14 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
   const createMutation = useMutation({
     mutationFn: (data: { name?: string; config?: string; gowa_version?: string }) =>
       apiClient.createInstance(data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['instances'] })
+      toast({ title: 'Instance created', description: `${data.name} has been created successfully.`, variant: 'success' })
       handleClose()
     },
     onError: (error) => {
       console.error('Failed to create instance:', error)
+      toast({ title: 'Failed to create instance', description: error.message, variant: 'error' })
     },
   })
 

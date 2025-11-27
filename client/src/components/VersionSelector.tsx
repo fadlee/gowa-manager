@@ -63,10 +63,6 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-gray-700">
-        GOWA Version
-      </label>
-      
       <div className="flex gap-2 items-center">
         <select
           value={value}

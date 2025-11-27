@@ -150,7 +150,8 @@ const app = new Elysia()
       throw new Error('Favicon not found')
     }
 
-    return new Response(file.content, {
+    const body = Buffer.isBuffer(file.content) ? new Uint8Array(file.content) : file.content
+    return new Response(body, {
       headers: {
         'Content-Type': file.contentType,
         'Cache-Control': 'public, max-age=31536000' // 1 year cache for favicon
@@ -166,7 +167,8 @@ const app = new Elysia()
       throw new Error('File not found')
     }
 
-    return new Response(file.content, {
+    const body = Buffer.isBuffer(file.content) ? new Uint8Array(file.content) : file.content
+    return new Response(body, {
       headers: {
         'Content-Type': file.contentType,
         'Cache-Control': 'public, max-age=31536000' // 1 year cache for assets
@@ -181,10 +183,29 @@ const app = new Elysia()
       return new Response('Web UI not found', { status: 404 })
     }
 
-    return new Response(file.content, {
+    const body = Buffer.isBuffer(file.content) ? new Uint8Array(file.content) : file.content
+    return new Response(body, {
       headers: {
         'Content-Type': file.contentType,
         'Cache-Control': 'no-cache' // No cache for index.html
+      }
+    })
+  })
+
+  // SPA catch-all route - serve index.html for client-side routing
+  // This must be after all API routes but handles paths like /instances/:id
+  .get('/instances/*', () => {
+    const file = getStaticFile('/index.html')
+
+    if (!file) {
+      return new Response('Web UI not found', { status: 404 })
+    }
+
+    const body = Buffer.isBuffer(file.content) ? new Uint8Array(file.content) : file.content
+    return new Response(body, {
+      headers: {
+        'Content-Type': file.contentType,
+        'Cache-Control': 'no-cache'
       }
     })
   })

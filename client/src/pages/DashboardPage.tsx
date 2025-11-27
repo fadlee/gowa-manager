@@ -54,20 +54,42 @@ export function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center py-12">
-        <div className="w-8 h-8 rounded-full border-b-2 border-gray-900 animate-spin"></div>
+      <div className="px-4 py-8 mx-auto space-y-6 max-w-7xl sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center">
+          <div className="h-9 w-40 bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-36 bg-gray-800 rounded-md animate-pulse" />
+        </div>
+        <div className="flex gap-3">
+          <div className="flex-1 h-10 bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-[150px] bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-[150px] bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-10 bg-gray-800 rounded-md animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-24 bg-gray-800 rounded-lg border border-gray-700 animate-pulse" />
+          ))}
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="py-12 text-center">
-        <p className="mb-4 text-red-600">Failed to load instances</p>
-        <Button onClick={() => refetch()} variant="outline">
-          <RefreshCw className="mr-2 w-4 h-4" />
-          Retry
-        </Button>
+      <div className="px-4 py-12 mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-center py-16 bg-gray-800 rounded-lg border border-gray-700">
+          <div className="w-16 h-16 mb-4 rounded-full bg-red-900/30 flex items-center justify-center">
+            <RefreshCw className="w-8 h-8 text-red-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-white mb-2">Failed to load instances</h3>
+          <p className="text-gray-400 mb-6 text-center max-w-md">
+            There was an error loading your instances. Please check your connection and try again.
+          </p>
+          <Button onClick={() => refetch()} variant="outline" className="border-gray-600 hover:bg-gray-700">
+            <RefreshCw className="mr-2 w-4 h-4" />
+            Try Again
+          </Button>
+        </div>
       </div>
     )
   }
@@ -140,17 +162,43 @@ export function DashboardPage() {
           ))}
         </div>
       ) : (
-        <div className="py-12 text-center bg-gray-800 rounded-lg border border-gray-700">
-          <p className="mb-4 text-gray-400">
-            {searchTerm || statusFilter !== 'all' || versionFilter !== 'all'
-              ? 'No instances match the current filters'
-              : 'No instances found'
-            }
-          </p>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="mr-2 w-4 h-4" />
-            Create your first instance
-          </Button>
+        <div className="flex flex-col items-center justify-center py-16 bg-gray-800 rounded-lg border border-gray-700">
+          {searchTerm || statusFilter !== 'all' || versionFilter !== 'all' ? (
+            <>
+              <div className="w-16 h-16 mb-4 rounded-full bg-gray-700 flex items-center justify-center">
+                <Search className="w-8 h-8 text-gray-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-2">No matches found</h3>
+              <p className="text-gray-400 mb-6 text-center max-w-md">
+                No instances match your current filters. Try adjusting your search or filter criteria.
+              </p>
+              <Button
+                variant="outline"
+                className="border-gray-600 hover:bg-gray-700"
+                onClick={() => {
+                  setSearchTerm('')
+                  setStatusFilter('all')
+                  setVersionFilter('all')
+                }}
+              >
+                Clear Filters
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 mb-4 rounded-full bg-indigo-900/30 flex items-center justify-center">
+                <Plus className="w-8 h-8 text-indigo-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-2">No instances yet</h3>
+              <p className="text-gray-400 mb-6 text-center max-w-md">
+                Get started by creating your first GOWA instance. It only takes a few seconds.
+              </p>
+              <Button onClick={() => setShowCreateDialog(true)} className="bg-indigo-600 hover:bg-indigo-500">
+                <Plus className="mr-2 w-4 h-4" />
+                Create your first instance
+              </Button>
+            </>
+          )}
         </div>
       )}
 
@@ -184,20 +232,39 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
   })
 
   const isRunning = status?.status?.toLowerCase() === 'running'
+  const isError = status?.status?.toLowerCase() === 'error'
+  const isStopped = status?.status?.toLowerCase() === 'stopped'
+
+  const getStatusConfig = () => {
+    if (isRunning) return { label: 'Running', color: 'text-green-400', bg: 'bg-green-500', dotBg: 'bg-green-400' }
+    if (isError) return { label: 'Error', color: 'text-red-400', bg: 'bg-red-500', dotBg: 'bg-red-400' }
+    if (isStopped) return { label: 'Stopped', color: 'text-gray-400', bg: 'bg-gray-500', dotBg: 'bg-gray-400' }
+    return { label: status?.status || 'Unknown', color: 'text-yellow-400', bg: 'bg-yellow-500', dotBg: 'bg-yellow-400' }
+  }
+
+  const statusConfig = getStatusConfig()
 
   return (
     <Card
-      className="bg-gray-800 border-gray-700 transition-all cursor-pointer hover:shadow-md hover:border-gray-600"
+      className={cn(
+        'bg-gray-800 border-gray-700 transition-all cursor-pointer hover:shadow-lg hover:border-gray-500 hover:scale-[1.02]',
+        isError && 'border-red-800 hover:border-red-700'
+      )}
       onClick={onClick}
     >
       <CardContent className="p-4">
         <div className="flex justify-between items-start">
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-white truncate">{instance.name}</h3>
-            <div className="flex gap-2 items-center mt-1">
+            <div className="flex gap-2 items-center mt-2">
               <Badge variant="secondary" className="text-xs text-gray-300 bg-gray-700 hover:bg-gray-600">
                 {instance.gowa_version || 'latest'}
               </Badge>
+              {/* Status indicator with label */}
+              <div className="flex items-center gap-1.5">
+                <span className={cn('w-2 h-2 rounded-full animate-pulse', statusConfig.dotBg)} />
+                <span className={cn('text-xs font-medium', statusConfig.color)}>{statusConfig.label}</span>
+              </div>
             </div>
           </div>
           <div className="flex gap-2 items-center">

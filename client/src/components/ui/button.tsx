@@ -3,19 +3,19 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "../../lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 bg-gray-900 text-white hover:bg-gray-800",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90 bg-gray-900 text-white hover:bg-gray-800 shadow-sm hover:shadow",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90 bg-red-600 text-white hover:bg-red-700",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 bg-red-600 text-white hover:bg-red-500 shadow-sm hover:shadow",
         outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground border-gray-300 hover:bg-gray-50",
+          "border border-input bg-background hover:bg-accent hover:text-accent-foreground border-gray-600 bg-transparent text-gray-200 hover:bg-gray-800 hover:border-gray-500",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 bg-gray-100 text-gray-900 hover:bg-gray-200",
-        ghost: "hover:bg-accent hover:text-accent-foreground hover:bg-gray-100",
-        link: "text-primary underline-offset-4 hover:underline text-blue-600",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80 bg-gray-700 text-gray-100 hover:bg-gray-600",
+        ghost: "hover:bg-accent hover:text-accent-foreground hover:bg-gray-800 text-gray-300",
+        link: "text-primary underline-offset-4 hover:underline text-blue-400 hover:text-blue-300",
       },
       size: {
         default: "h-10 px-4 py-2",
