@@ -56,18 +56,18 @@ export function DashboardPage() {
     return (
       <div className="px-4 py-8 mx-auto space-y-6 max-w-7xl sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
-          <div className="h-9 w-40 bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-36 bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-9 w-40 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-36 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
         </div>
         <div className="flex gap-3">
-          <div className="flex-1 h-10 bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-[150px] bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-[150px] bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-10 bg-gray-800 rounded-md animate-pulse" />
+          <div className="flex-1 h-10 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-[150px] bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-[150px] bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-10 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-gray-800 rounded-lg border border-gray-700 animate-pulse" />
+            <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-700 animate-pulse" />
           ))}
         </div>
       </div>
@@ -77,15 +77,15 @@ export function DashboardPage() {
   if (error) {
     return (
       <div className="px-4 py-12 mx-auto max-w-7xl sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-center py-16 bg-gray-800 rounded-lg border border-gray-700">
-          <div className="w-16 h-16 mb-4 rounded-full bg-red-900/30 flex items-center justify-center">
-            <RefreshCw className="w-8 h-8 text-red-400" />
+        <div className="flex flex-col items-center justify-center py-16 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="w-16 h-16 mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+            <RefreshCw className="w-8 h-8 text-red-500 dark:text-red-400" />
           </div>
-          <h3 className="text-lg font-semibold text-white mb-2">Failed to load instances</h3>
-          <p className="text-gray-400 mb-6 text-center max-w-md">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Failed to load instances</h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-6 text-center max-w-md">
             There was an error loading your instances. Please check your connection and try again.
           </p>
-          <Button onClick={() => refetch()} variant="outline" className="border-gray-600 hover:bg-gray-700">
+          <Button onClick={() => refetch()} variant="outline" className="border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700">
             <RefreshCw className="mr-2 w-4 h-4" />
             Try Again
           </Button>
@@ -98,7 +98,7 @@ export function DashboardPage() {
     <div className="px-4 py-8 mx-auto space-y-6 max-w-7xl sm:px-6 lg:px-8">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-white">Dashboard</h1>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
         <Button onClick={() => setShowCreateDialog(true)}>
           <Plus className="mr-2 w-4 h-4" />
           New Instance
@@ -113,13 +113,13 @@ export function DashboardPage() {
             placeholder="Search by name or key..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 text-white bg-gray-800 border-gray-700 placeholder:text-gray-400"
+            className="pl-10"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 w-[150px] rounded-md border border-gray-700 bg-gray-800 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="px-3 py-2 w-[150px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         >
           <option value="all">All Status</option>
           <option value="running">Running</option>
@@ -129,7 +129,7 @@ export function DashboardPage() {
         <select
           value={versionFilter}
           onChange={(e) => setVersionFilter(e.target.value)}
-          className="px-3 py-2 w-[150px] rounded-md border border-gray-700 bg-gray-800 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="px-3 py-2 w-[150px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         >
           <option value="all">All Versions</option>
           {uniqueVersions.map(version => (
@@ -146,7 +146,7 @@ export function DashboardPage() {
       </div>
 
       {/* Instance count */}
-      <div className="text-sm text-gray-400">
+      <div className="text-sm text-gray-600 dark:text-gray-400">
         {filteredCount} instance{filteredCount !== 1 ? 's' : ''}
       </div>
 
@@ -162,19 +162,19 @@ export function DashboardPage() {
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-16 bg-gray-800 rounded-lg border border-gray-700">
+        <div className="flex flex-col items-center justify-center py-16 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
           {searchTerm || statusFilter !== 'all' || versionFilter !== 'all' ? (
             <>
-              <div className="w-16 h-16 mb-4 rounded-full bg-gray-700 flex items-center justify-center">
-                <Search className="w-8 h-8 text-gray-500" />
+              <div className="w-16 h-16 mb-4 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                <Search className="w-8 h-8 text-gray-400 dark:text-gray-500" />
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">No matches found</h3>
-              <p className="text-gray-400 mb-6 text-center max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No matches found</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6 text-center max-w-md">
                 No instances match your current filters. Try adjusting your search or filter criteria.
               </p>
               <Button
                 variant="outline"
-                className="border-gray-600 hover:bg-gray-700"
+                className="border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700"
                 onClick={() => {
                   setSearchTerm('')
                   setStatusFilter('all')
@@ -186,11 +186,11 @@ export function DashboardPage() {
             </>
           ) : (
             <>
-              <div className="w-16 h-16 mb-4 rounded-full bg-indigo-900/30 flex items-center justify-center">
-                <Plus className="w-8 h-8 text-indigo-400" />
+              <div className="w-16 h-16 mb-4 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                <Plus className="w-8 h-8 text-indigo-500 dark:text-indigo-400" />
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">No instances yet</h3>
-              <p className="text-gray-400 mb-6 text-center max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No instances yet</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6 text-center max-w-md">
                 Get started by creating your first GOWA instance. It only takes a few seconds.
               </p>
               <Button onClick={() => setShowCreateDialog(true)} className="bg-indigo-600 hover:bg-indigo-500">
@@ -247,17 +247,17 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
   return (
     <Card
       className={cn(
-        'bg-gray-800 border-gray-700 transition-all cursor-pointer hover:shadow-lg hover:border-gray-500 hover:scale-[1.02]',
-        isError && 'border-red-800 hover:border-red-700'
+        'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 transition-all cursor-pointer hover:shadow-lg hover:border-gray-300 dark:hover:border-gray-500 hover:scale-[1.02]',
+        isError && 'border-red-300 dark:border-red-800 hover:border-red-400 dark:hover:border-red-700'
       )}
       onClick={onClick}
     >
       <CardContent className="p-4">
         <div className="flex justify-between items-start">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-white truncate">{instance.name}</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white truncate">{instance.name}</h3>
             <div className="flex gap-2 items-center mt-2">
-              <Badge variant="secondary" className="text-xs text-gray-300 bg-gray-700 hover:bg-gray-600">
+              <Badge variant="secondary" className="text-xs text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
                 {instance.gowa_version || 'latest'}
               </Badge>
               {/* Status indicator with label */}

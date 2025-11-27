@@ -68,7 +68,7 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
-          className="flex-1 px-3 py-2 border border-gray-700 rounded-md bg-gray-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         >
           {allVersions.map((version) => (
             <option key={version.version} value={version.version}>
@@ -95,12 +95,12 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
       {/* Status indicators */}
       <div className="flex items-center gap-2 text-sm">
         {selectedVersion?.installed ? (
-          <div className="flex items-center gap-1 text-green-400">
+          <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
             <CheckCircle2 className="h-4 w-4" />
             <span>Installed</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1 text-yellow-400">
+          <div className="flex items-center gap-1 text-yellow-600 dark:text-yellow-400">
             <AlertCircle className="h-4 w-4" />
             <span>Not installed</span>
           </div>
@@ -113,7 +113,7 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
       </div>
 
       {!selectedVersion?.installed && (
-        <p className="text-xs text-yellow-400 flex items-center gap-1">
+        <p className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
           <AlertCircle className="h-3 w-3" />
           This version needs to be installed before creating an instance
         </p>

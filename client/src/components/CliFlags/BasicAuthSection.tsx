@@ -65,15 +65,15 @@ export function BasicAuthSection({ flags, updateFlag }: BasicAuthSectionProps) {
 
   return (
     <div className="space-y-3">
-      <label className="text-sm font-medium text-gray-300">Basic Authentication</label>
-      <p className="text-xs text-gray-400">Add username:password pairs for basic auth</p>
+      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Basic Authentication</label>
+      <p className="text-xs text-gray-500 dark:text-gray-400">Add username:password pairs for basic auth</p>
 
       {/* Existing Auth Pairs */}
       {flags.basicAuth && flags.basicAuth.length > 0 && (
         <div className="space-y-2">
           {flags.basicAuth.map((auth, index) => (
-            <div key={index} className="flex gap-2 items-center p-2 bg-gray-700 rounded-md">
-              <span className="flex-1 font-mono text-sm text-white">
+            <div key={index} className="flex gap-2 items-center p-2 bg-gray-200 dark:bg-gray-700 rounded-md">
+              <span className="flex-1 font-mono text-sm text-gray-900 dark:text-white">
                 {auth.username}:
                 <span className="ml-1">
                   {visiblePasswords[index] ? auth.password : "*".repeat(auth.password.length)}
@@ -157,7 +157,7 @@ export function BasicAuthSection({ flags, updateFlag }: BasicAuthSectionProps) {
           value={newAuth.username}
           onChange={(e) => setNewAuth({ ...newAuth, username: e.target.value })}
           onKeyDown={(e) => handleAuthKeyDown(e, 'username')}
-          className="flex-1 bg-gray-700 border-gray-600 text-white"
+          className="flex-1"
         />
         <Input
           type="password"
@@ -166,7 +166,7 @@ export function BasicAuthSection({ flags, updateFlag }: BasicAuthSectionProps) {
           onChange={(e) => setNewAuth({ ...newAuth, password: e.target.value })}
           onKeyDown={(e) => handleAuthKeyDown(e, 'password')}
           onBlur={() => handleAuthBlur('password')}
-          className="flex-1 bg-gray-700 border-gray-600 text-white"
+          className="flex-1"
         />
         {flags.basicAuth && flags.basicAuth.length > 0 && (
           <Button

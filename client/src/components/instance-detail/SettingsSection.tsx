@@ -108,7 +108,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-white">Settings</h2>
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Settings</h2>
         <Button
           onClick={handleSave}
           disabled={!hasChanges || updateMutation.isPending}
@@ -125,11 +125,11 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
 
       {/* Name */}
       <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-300">Instance Name</label>
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Instance Name</label>
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className={`bg-gray-800 border-gray-700 text-white ${errors.name ? 'border-red-500' : ''}`}
+          className={errors.name ? 'border-red-500' : ''}
           placeholder="Enter instance name..."
         />
         {errors.name && (
@@ -139,7 +139,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
 
       {/* Version */}
       <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-300">GOWA Version</label>
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">GOWA Version</label>
         <div>
           <VersionSelector
             value={version}
@@ -148,9 +148,9 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
           />
         </div>
         {version !== (instance.gowa_version || 'latest') && (
-          <div className="flex gap-2 items-center p-3 mt-2 bg-yellow-900/30 rounded-lg border border-yellow-700">
-            <AlertCircle className="w-4 h-4 text-yellow-500" />
-            <span className="text-sm text-yellow-200">
+          <div className="flex gap-2 items-center p-3 mt-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg border border-yellow-300 dark:border-yellow-700">
+            <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-500" />
+            <span className="text-sm text-yellow-800 dark:text-yellow-200">
               Changing version will require restarting the instance to take effect.
             </span>
           </div>
@@ -159,8 +159,8 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
 
       {/* Configuration */}
       <div className="space-y-4">
-        <label className="text-sm font-medium text-gray-300">Configuration</label>
-        <div className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Configuration</label>
+        <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
           <CliFlagsComponent flags={flags} onChange={setFlags} />
         </div>
       </div>

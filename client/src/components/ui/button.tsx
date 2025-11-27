@@ -7,15 +7,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 bg-gray-900 text-white hover:bg-gray-800 shadow-sm hover:shadow",
+        default: "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200 shadow-sm hover:shadow",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90 bg-red-600 text-white hover:bg-red-500 shadow-sm hover:shadow",
+          "bg-red-600 text-white hover:bg-red-500 shadow-sm hover:shadow",
         outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground border-gray-600 bg-transparent text-gray-200 hover:bg-gray-800 hover:border-gray-500",
+          "border border-gray-300 dark:border-gray-600 bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 bg-gray-700 text-gray-100 hover:bg-gray-600",
-        ghost: "hover:bg-accent hover:text-accent-foreground hover:bg-gray-800 text-gray-300",
-        link: "text-primary underline-offset-4 hover:underline text-blue-400 hover:text-blue-300",
+          "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-600",
+        ghost: "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white",
+        link: "text-blue-600 dark:text-blue-400 underline-offset-4 hover:underline hover:text-blue-500 dark:hover:text-blue-300",
       },
       size: {
         default: "h-10 px-4 py-2",
