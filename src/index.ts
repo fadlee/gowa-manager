@@ -6,6 +6,7 @@ import './db' // Import to initialize database
 import './restart' // Import to auto-restart instances
 import { downloadGowaBinary } from './binary-download' // Import binary auto-download
 import { CleanupScheduler } from './modules/system/cleanup-scheduler' // Import cleanup scheduler
+import { AutoUpdater } from './modules/system/auto-updater' // Import auto-updater
 import { getStaticFile } from './static-handler' // Import embedded static handler
 import { instancesModule } from './modules/instances'
 import { systemModule } from './modules/system'
@@ -64,10 +65,14 @@ if (config.adminPassword) {
   // Start cleanup scheduler
   CleanupScheduler.start()
 
+  // Start auto-updater (check every 1 hour)
+  AutoUpdater.start(60 * 60 * 1000)
+
   // Graceful shutdown
   process.on('SIGINT', () => {
     console.log('\n🛑 Shutting down...')
     CleanupScheduler.stop()
+    AutoUpdater.stop()
     process.exit(0)
   })
 })()

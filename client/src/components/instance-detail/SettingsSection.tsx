@@ -3,7 +3,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../lib/api'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
-import { Loader2, Save, AlertCircle } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog'
+import { Loader2, Save, AlertCircle, RotateCcw } from 'lucide-react'
 import { CliFlagsComponent } from '../CliFlags/index'
 import { VersionSelector } from '../VersionSelector'
 import { toast } from '../ui/use-toast'
@@ -19,6 +27,8 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
   const [flags, setFlags] = useState<CliFlags>({})
   const [errors, setErrors] = useState<{ name?: string }>({})
   const [hasChanges, setHasChanges] = useState(false)
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false)
+  const [pendingSaveData, setPendingSaveData] = useState<{ name?: string; config?: string; gowa_version?: string } | null>(null)
   const queryClient = useQueryClient()
 
   // Initialize form with instance data
@@ -68,6 +78,19 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
     },
   })
 
+  const restartMutation = useMutation({
+    mutationFn: () => apiClient.restartInstance(instance.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['instances'] })
+      queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
+      toast({ title: 'Instance restarted', description: 'The instance has been restarted with the new version.', variant: 'success' })
+    },
+    onError: (error) => {
+      console.error('Failed to restart instance:', error)
+      toast({ title: 'Failed to restart instance', description: error.message, variant: 'error' })
+    },
+  })
+
   const validateForm = () => {
     const newErrors: { name?: string } = {}
     if (name.trim().length < 1 || name.trim().length > 100) {
@@ -77,9 +100,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSave = () => {
-    if (!validateForm()) return
-
+  const buildSaveData = () => {
     const data: { name?: string; config?: string; gowa_version?: string } = {}
 
     if (name.trim() !== instance.name) {
@@ -100,9 +121,47 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
       data.config = normalizedConfig
     }
 
-    if (Object.keys(data).length > 0) {
-      updateMutation.mutate(data)
+    return data
+  }
+
+  const handleSave = () => {
+    if (!validateForm()) return
+
+    const data = buildSaveData()
+    if (Object.keys(data).length === 0) return
+
+    // If version changed and instance is running, show confirmation
+    const versionChanged = version !== (instance.gowa_version || 'latest')
+    if (versionChanged && instance.status === 'running') {
+      setPendingSaveData(data)
+      setShowRestartConfirm(true)
+      return
     }
+
+    // Otherwise just save
+    updateMutation.mutate(data)
+  }
+
+  const handleSaveOnly = () => {
+    if (pendingSaveData) {
+      updateMutation.mutate(pendingSaveData)
+    }
+    setShowRestartConfirm(false)
+    setPendingSaveData(null)
+  }
+
+  const handleSaveAndRestart = async () => {
+    if (pendingSaveData) {
+      await updateMutation.mutateAsync(pendingSaveData)
+      restartMutation.mutate()
+    }
+    setShowRestartConfirm(false)
+    setPendingSaveData(null)
+  }
+
+  const handleCancelRestart = () => {
+    setShowRestartConfirm(false)
+    setPendingSaveData(null)
   }
 
   return (
@@ -165,6 +224,57 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
           <CliFlagsComponent flags={flags} onChange={setFlags} />
         </div>
       </div>
+
+      {/* Restart Confirmation Dialog */}
+      <Dialog open={showRestartConfirm} onOpenChange={setShowRestartConfirm}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Restart Instance?</DialogTitle>
+            <DialogDescription>
+              Changing the version requires restarting the instance for the changes to take effect.
+              Do you want to restart now?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCancelRestart}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleSaveOnly}
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending ? (
+                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 w-4 h-4" />
+              )}
+              Save Only
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveAndRestart}
+              disabled={updateMutation.isPending || restartMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {(updateMutation.isPending || restartMutation.isPending) ? (
+                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-2 w-4 h-4" />
+              )}
+              Save & Restart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

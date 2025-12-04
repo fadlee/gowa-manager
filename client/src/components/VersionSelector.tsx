@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
-import { Download, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Download, AlertCircle, CheckCircle2, Info } from 'lucide-react'
 
 interface VersionSelectorProps {
   value: string
@@ -122,6 +122,13 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
         <p className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
           <AlertCircle className="h-3 w-3" />
           This version needs to be installed before creating an instance
+        </p>
+      )}
+
+      {value === 'latest' && (
+        <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+          <Info className="h-3 w-3" />
+          "latest" will auto-update and restart when a new version is available
         </p>
       )}
     </div>

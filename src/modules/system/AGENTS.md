@@ -7,11 +7,13 @@
   - Port allocation & availability checks.
   - GOWA binary version discovery, installation, cleanup.
   - Automatic instance media cleanup (JPEG & media file deletion).
+  - Automatic version updates and instance restarts.
 - **Entrypoints**:
   - HTTP: `versionsModule` (e.g. `/api/system/versions/**`) in `versions.ts`.
   - Service: `SystemService` in `service.ts`.
   - Version orchestration: `VersionManager` in `version-manager.ts`.
   - Scheduled cleanup: `CleanupScheduler` in `cleanup-scheduler.ts` (runs daily at midnight).
+  - Auto-updater: `AutoUpdater` in `auto-updater.ts` (checks hourly for new versions).
 
 ---
 
