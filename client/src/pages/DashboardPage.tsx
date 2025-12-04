@@ -122,7 +122,7 @@ export function DashboardPage() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-        <Button onClick={() => setShowCreateDialog(true)}>
+        <Button onClick={() => setShowCreateDialog(true)} size="sm">
           <Plus className="mr-2 w-4 h-4" />
           New Instance
         </Button>

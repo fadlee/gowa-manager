@@ -113,6 +113,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
           onClick={handleSave}
           disabled={!hasChanges || updateMutation.isPending}
           className="bg-blue-600 hover:bg-blue-700"
+          size="sm"
         >
           {updateMutation.isPending ? (
             <Loader2 className="mr-2 w-4 h-4 animate-spin" />

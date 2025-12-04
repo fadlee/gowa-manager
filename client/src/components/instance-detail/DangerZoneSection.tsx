@@ -54,6 +54,7 @@ export function DangerZoneSection({ instance, onDeleted }: DangerZoneSectionProp
               variant="destructive"
               onClick={() => setShowDeleteConfirm(true)}
               className="bg-red-600 hover:bg-red-700"
+              size="sm"
             >
               <Trash2 className="mr-2 w-4 h-4" />
               Delete
