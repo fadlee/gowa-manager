@@ -7,6 +7,7 @@ import { apiClient } from '../lib/api'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Card, CardContent } from '../components/ui/card'
+import { Switch } from '../components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -358,36 +359,20 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
               </div>
             </div>
           </div>
-          <div className="flex gap-2 items-center">
-            {/* Power toggle button with motion */}
-            <motion.button
-              onClick={(e) => {
-                e.stopPropagation()
-                if (isRunning) {
-                  stopMutation.mutate()
-                } else {
+          <div className="flex gap-2 items-center" onClick={(e) => e.stopPropagation()}>
+            {/* Power toggle switch */}
+            <Switch
+              checked={isRunning}
+              onCheckedChange={(checked) => {
+                if (checked) {
                   startMutation.mutate()
+                } else {
+                  stopMutation.mutate()
                 }
               }}
               disabled={startMutation.isPending || stopMutation.isPending}
-              className={cn(
-                'flex items-center px-1 w-12 h-6 rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
-                isRunning ? 'bg-green-600' : 'bg-gray-400 dark:bg-gray-600'
-              )}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              animate={{ 
-                backgroundColor: isRunning ? 'rgb(22, 163, 74)' : 'rgb(156, 163, 175)',
-                boxShadow: isRunning ? '0 0 12px rgba(34, 197, 94, 0.4)' : 'none'
-              }}
-              transition={{ duration: 0.2 }}
-            >
-              <motion.div
-                className="w-4 h-4 bg-white rounded-full shadow-md"
-                animate={{ x: isRunning ? 24 : 0 }}
-                transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              />
-            </motion.button>
+              className="data-[state=checked]:bg-green-600 data-[state=checked]:shadow-[0_0_12px_rgba(34,197,94,0.4)]"
+            />
           </div>
         </div>
       </CardContent>

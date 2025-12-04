@@ -4,10 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
+import { Switch } from '../components/ui/switch'
 import {
   ArrowLeft,
   ExternalLink,
-  Loader2,
   Eye,
   Settings,
   AlertTriangle,
@@ -155,24 +155,18 @@ export function InstanceDetailPage() {
               <span className="hidden text-xs text-gray-600 dark:text-gray-400 sm:text-sm sm:inline">
                 {isRunning ? 'ON' : 'OFF'}
               </span>
-              <button
-                onClick={() => isRunning ? stopMutation.mutate() : startMutation.mutate()}
+              <Switch
+                checked={isRunning}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    startMutation.mutate()
+                  } else {
+                    stopMutation.mutate()
+                  }
+                }}
                 disabled={isLoading}
-                className={cn(
-                  'w-12 sm:w-14 h-6 sm:h-7 rounded-full flex items-center px-1 transition-colors cursor-pointer',
-                  isRunning ? 'bg-green-500' : 'bg-gray-600',
-                  isLoading && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                {isLoading ? (
-                  <Loader2 className="mx-auto w-4 h-4 text-white animate-spin sm:w-5 sm:h-5" />
-                ) : (
-                  <div className={cn(
-                    'w-4 h-4 bg-white rounded-full shadow transition-transform sm:w-5 sm:h-5',
-                    isRunning ? 'translate-x-5 sm:translate-x-7' : 'translate-x-0'
-                  )} />
-                )}
-              </button>
+                className="data-[state=checked]:bg-green-600 data-[state=checked]:shadow-[0_0_12px_rgba(34,197,94,0.4)]"
+              />
             </div>
         </div>
 
