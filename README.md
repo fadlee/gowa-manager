@@ -16,35 +16,56 @@
 
 ## Quick Start
 
-### One-Line Installation (Recommended)
+### Using npx (Recommended)
+```bash
+npx gowa-manager
+```
+Automatically downloads the correct binary for your platform and runs it.
+
+### Using Install Script
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fadlee/gowa-manager/main/install.sh | bash
 ```
-This will automatically:
-- Detect your platform (Linux/macOS/Windows)
-- Download the latest release from GitHub
-- Install to `~/.local/bin/gowa-manager`
-- Add to PATH if needed
+Installs to `~/.local/bin/gowa-manager` and adds to PATH.
 
-### Manual Installation
+### Access the Application
+Open http://localhost:3000 in your browser (default credentials: `admin` / `password`)
+
+<details>
+<summary>Manual Binary Download</summary>
+
+Download from [Releases](https://github.com/fadlee/gowa-manager/releases):
+
+| Platform | Binary |
+|----------|--------|
+| Linux x64 | `gowa-manager-linux-x64` |
+| Linux ARM64 | `gowa-manager-linux-arm64` |
+| macOS Intel | `gowa-manager-macos-x64` |
+| macOS Apple Silicon | `gowa-manager-macos-arm64` |
+| Windows x64 | `gowa-manager-windows-x64.exe` |
+
+```bash
+chmod +x gowa-manager-*
+./gowa-manager-linux-x64
+```
+</details>
+
+<details>
+<summary>Development Setup</summary>
+
 ```bash
 # Clone the repository
 git clone https://github.com/fadlee/gowa-manager.git
 cd gowa-manager
 
-# Install dependencies for both server and client
+# Install dependencies
 bun install
 cd client && bun install
-```
 
-### Development Mode (Recommended)
-```bash
-# Integrated development - client builds to public/, server serves everything on :3000
+# Run in development mode
 bun run dev
 ```
-
-### Access the Application
-Open http://localhost:3000 in your browser
+</details>
 
 ## Version Management
 

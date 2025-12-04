@@ -57,6 +57,17 @@ jobs:
           dist/gowa-manager-*
           dist/checksums.txt
 
+    - name: Get tag message
+      if: startsWith(github.ref, 'refs/tags/')
+      id: tag_message
+      run: |
+        # Get the annotated tag message (excludes the tag name line)
+        TAG_MESSAGE=$(git tag -l --format='%(contents)' ${{ github.ref_name }})
+        # Handle multi-line message for GitHub Actions
+        echo "message<<EOF" >> $GITHUB_OUTPUT
+        echo "$TAG_MESSAGE" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
@@ -70,83 +81,30 @@ jobs:
           dist/checksums.txt
         draft: false
         prerelease: false
-        generate_release_notes: true
         body: |
-          ## Installation
+          ${{ steps.tag_message.outputs.message }}
 
-          Download the appropriate binary for your platform:
+          ---
 
-          **Linux (x64)**:
+          ## Quick Start
+
           ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/gowa-manager-linux-x64
-          chmod +x gowa-manager-linux-x64
-          ./gowa-manager-linux-x64
+          npx gowa-manager
           ```
 
-          **Linux (ARM64)**:
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/gowa-manager-linux-arm64
-          chmod +x gowa-manager-linux-arm64
-          ./gowa-manager-linux-arm64
-          ```
+          Automatically downloads the correct binary for your platform and runs it.
 
-          **macOS (Intel)**:
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/gowa-manager-macos-x64
-          chmod +x gowa-manager-macos-x64
-          ./gowa-manager-macos-x64
-          ```
+          <details>
+          <summary>Manual Download (Alternative)</summary>
 
-          **macOS (Apple Silicon)**:
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/gowa-manager-macos-arm64
-          chmod +x gowa-manager-macos-arm64
-          ./gowa-manager-macos-arm64
-          ```
+          | Platform | Binary |
+          |----------|--------|
+          | Linux x64 | `gowa-manager-linux-x64` |
+          | Linux ARM64 | `gowa-manager-linux-arm64` |
+          | macOS Intel | `gowa-manager-macos-x64` |
+          | macOS Apple Silicon | `gowa-manager-macos-arm64` |
+          | Windows x64 | `gowa-manager-windows-x64.exe` |
 
-          **Windows (x64)**:
-          Download `gowa-manager-windows-x64.exe` and run it.
-
-          ## Usage
-
-          **Basic usage:**
-          ```bash
-          ./gowa-manager-linux-x64
-          ```
-
-          **Custom port and credentials:**
-          ```bash
-          ./gowa-manager-linux-x64 --port 8080 --admin-username myuser --admin-password mypass
-          ```
-
-          **Custom data directory:**
-          ```bash
-          ./gowa-manager-linux-x64 --data-dir /path/to/data
-          ```
-
-          **Show help:**
-          ```bash
-          ./gowa-manager-linux-x64 --help
-          ```
-
-          Then open http://localhost:3000 in your browser (or custom port)
-
-          ## Command Line Options
-
-          - `-p, --port <port>`: Server port (default: 3000)
-          - `-u, --admin-username <user>`: Admin username (default: admin)
-          - `-P, --admin-password <pass>`: Admin password (default: password)
-          - `-d, --data-dir <path>`: Data directory (default: ./data)
-          - `-h, --help`: Show help message
-          - `-v, --version`: Show version
-
-          ## Environment Variables
-
-          - `PORT`: Server port
-          - `ADMIN_USERNAME`: Admin username
-          - `ADMIN_PASSWORD`: Admin password
-          - `DATA_DIR`: Data directory
-
-          Note: Command line arguments take precedence over environment variables.
+          </details>
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
