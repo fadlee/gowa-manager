@@ -56,6 +56,7 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
           <Button
             onClick={onOpenProxy}
             variant="outline"
+            size="sm"
             className="text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 w-full sm:w-auto"
           >
             <ExternalLink className="mr-2 w-4 h-4" />
@@ -63,55 +64,6 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
           </Button>
         )}
       </div>
-
-      {/* API URL */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Your Gowa URL is</h3>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 px-4 py-3 font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg">
-            {proxyUrl}
-          </code>
-          <CopyButton
-            content={proxyUrl}
-            variant="ghost"
-            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          />
-        </div>
-      </div>
-
-      {/* Connection info */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Connecting to Your Instance</h3>
-        <div className="p-4 font-mono text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-lg">
-          <pre className="whitespace-pre-wrap">
-{`// Using fetch
-const response = await fetch('${proxyUrl}/app/devices', {
-  headers: {${basicAuthPairs.length > 0 ? `
-    'Authorization': '${generateToken(basicAuthPairs[0])}'` : ''}
-  }
-});`}
-          </pre>
-        </div>
-      </div>
-
-      {/* Auth tokens */}
-      {basicAuthPairs.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Authentication Token</h3>
-          {basicAuthPairs.map((pair, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <code className="flex-1 px-4 py-3 font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg truncate">
-                {generateToken(pair)}
-              </code>
-              <CopyButton
-                content={generateToken(pair)}
-                variant="ghost"
-                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              />
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Resource monitoring - only when running */}
       {isRunning && (
@@ -138,9 +90,9 @@ const response = await fetch('${proxyUrl}/app/devices', {
               <div className="text-lg font-semibold text-gray-900 dark:text-white">
                 {status?.resources ? `${status.resources.cpuPercent.toFixed(1)}%` : '--'}
               </div>
-              <div className="mt-2 w-full h-1 bg-gray-300 dark:bg-gray-700 rounded-full">
+              <div className="mt-2 w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-1 bg-blue-500 rounded-full transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${Math.min(status?.resources?.cpuPercent || 0, 100)}%` }}
                 />
               </div>
@@ -155,9 +107,9 @@ const response = await fetch('${proxyUrl}/app/devices', {
               <div className="text-lg font-semibold text-gray-900 dark:text-white">
                 {status?.resources ? formatMemory(status.resources.memoryMB) : '--'}
               </div>
-              <div className="mt-2 w-full h-1 bg-gray-300 dark:bg-gray-700 rounded-full">
+              <div className="mt-2 w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-1 bg-blue-500 rounded-full transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-purple-500 to-pink-400 rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${Math.min(status?.resources?.memoryPercent || 0, 100)}%` }}
                 />
               </div>
@@ -172,11 +124,62 @@ const response = await fetch('${proxyUrl}/app/devices', {
               <div className="text-lg font-semibold text-gray-900 dark:text-white">
                 {status?.resources?.diskMB !== undefined ? formatMemory(status.resources.diskMB) : '--'}
               </div>
-              <div className="mt-2 w-full h-1 bg-gray-300 dark:bg-gray-700 rounded-full" />
+              <div className="mt-2 w-full h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full w-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full opacity-20" />
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* API URL */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Your Gowa URL is</h3>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 px-4 py-3 font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg">
+            {proxyUrl}
+          </code>
+          <CopyButton
+            content={proxyUrl}
+            variant="ghost"
+            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+          />
+        </div>
+      </div>
+
+      {/* Auth tokens */}
+      {basicAuthPairs.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Authentication Token</h3>
+          {basicAuthPairs.map((pair, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <code className="flex-1 px-4 py-3 font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg truncate">
+                {generateToken(pair)}
+              </code>
+              <CopyButton
+                content={generateToken(pair)}
+                variant="ghost"
+                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Connection info */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Connecting to Your Instance</h3>
+        <div className="p-4 font-mono text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-lg">
+          <pre className="whitespace-pre-wrap">
+{`// Using fetch
+const response = await fetch('${proxyUrl}/app/devices', {
+  headers: {${basicAuthPairs.length > 0 ? `
+    'Authorization': '${generateToken(basicAuthPairs[0])}'` : ''}
+  }
+});`}
+          </pre>
+        </div>
+      </div>
     </div>
   )
 }

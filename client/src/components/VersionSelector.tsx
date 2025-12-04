@@ -3,6 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select'
 import { Download, AlertCircle, CheckCircle2 } from 'lucide-react'
 
 interface VersionSelectorProps {
@@ -64,18 +71,22 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
   return (
     <div className="space-y-2">
       <div className="flex gap-2 items-center">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        >
-          {allVersions.map((version) => (
-            <option key={version.version} value={version.version}>
-              {version.version} {version.isLatest ? '(Latest)' : ''} {!version.installed ? '(Not Installed)' : ''}
-            </option>
-          ))}
-        </select>
+        <Select value={value} onValueChange={onChange} disabled={disabled}>
+          <SelectTrigger className="flex-1">
+            <SelectValue placeholder="Select version" />
+          </SelectTrigger>
+          <SelectContent>
+            {allVersions.map((version) => (
+              <SelectItem key={version.version} value={version.version}>
+                <span className="flex items-center gap-2">
+                  {version.version}
+                  {version.isLatest && <Badge variant="secondary" className="text-xs py-0">Latest</Badge>}
+                  {!version.installed && <span className="text-yellow-500 text-xs">(Not Installed)</span>}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {!selectedVersion?.installed && (
           <Button

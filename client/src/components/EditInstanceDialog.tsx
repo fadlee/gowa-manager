@@ -180,6 +180,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setShowDeleteConfirm(false)}
             >
               Cancel
@@ -187,6 +188,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
             <Button
               type="button"
               variant="destructive"
+              size="sm"
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
             >
@@ -331,6 +333,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
             <Button
               type="button"
               variant="destructive"
+              size="sm"
               onClick={() => setShowDeleteConfirm(true)}
               className="flex gap-2 items-center"
             >
@@ -339,12 +342,13 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
             </Button>
           </div>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={handleClose}>
+            <Button type="button" variant="outline" size="sm" onClick={handleClose}>
               Cancel
             </Button>
             <Button
               form="editForm"
               type="submit"
+              size="sm"
               disabled={updateMutation.isPending}
             >
               {updateMutation.isPending && (

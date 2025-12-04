@@ -1,11 +1,19 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { motion, AnimatePresence } from 'motion/react'
 import { Input } from '../components/ui/input'
 import { apiClient } from '../lib/api'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Card, CardContent } from '../components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select'
 import { CreateInstanceDialog } from '../components/CreateInstanceDialog'
 import { Plus, RefreshCw, Search } from 'lucide-react'
 import type { Instance } from '../types'
@@ -56,18 +64,33 @@ export function DashboardPage() {
     return (
       <div className="px-4 py-8 mx-auto space-y-6 max-w-7xl sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
-          <div className="h-9 w-40 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-36 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
+          <div className="h-9 w-40 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-36 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 rounded-md animate-pulse" />
         </div>
         <div className="flex gap-3">
-          <div className="flex-1 h-10 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-[150px] bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-[150px] bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
-          <div className="h-10 w-10 bg-gray-200 dark:bg-gray-800 rounded-md animate-pulse" />
+          <div className="flex-1 h-10 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-[150px] bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-[150px] bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 rounded-md animate-pulse" />
+          <div className="h-10 w-10 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 rounded-md animate-pulse" />
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-700 animate-pulse" />
+            <motion.div 
+              key={i} 
+              className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div className="h-5 w-32 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 rounded animate-pulse" />
+                <div className="w-2 h-2 bg-gray-300 dark:bg-gray-600 rounded-full" />
+              </div>
+              <div className="flex gap-2 items-center">
+                <div className="h-5 w-16 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 rounded animate-pulse" />
+                <div className="h-5 w-20 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 rounded animate-pulse" />
+              </div>
+            </motion.div>
           ))}
         </div>
       </div>
@@ -116,26 +139,28 @@ export function DashboardPage() {
             className="pl-10"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 w-[150px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        >
-          <option value="all">All Status</option>
-          <option value="running">Running</option>
-          <option value="stopped">Stopped</option>
-          <option value="error">Error</option>
-        </select>
-        <select
-          value={versionFilter}
-          onChange={(e) => setVersionFilter(e.target.value)}
-          className="px-3 py-2 w-[150px] rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        >
-          <option value="all">All Versions</option>
-          {uniqueVersions.map(version => (
-            <option key={version} value={version}>{version}</option>
-          ))}
-        </select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="running">Running</SelectItem>
+            <SelectItem value="stopped">Stopped</SelectItem>
+            <SelectItem value="error">Error</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={versionFilter} onValueChange={setVersionFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="All Versions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Versions</SelectItem>
+            {uniqueVersions.map(version => (
+              <SelectItem key={version} value={version}>{version}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           onClick={() => refreshMutation.mutate()}
@@ -152,15 +177,38 @@ export function DashboardPage() {
 
       {/* Instance Grid */}
       {filteredInstances.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredInstances.map((instance) => (
-            <InstanceCardSimple
-              key={instance.id}
-              instance={instance}
-              onClick={() => navigate(`/instances/${instance.id}`)}
-            />
-          ))}
-        </div>
+        <motion.div 
+          className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.05 }
+            }
+          }}
+        >
+          <AnimatePresence mode="popLayout">
+            {filteredInstances.map((instance) => (
+              <motion.div
+                key={instance.id}
+                variants={{
+                  hidden: { opacity: 0, y: 20, scale: 0.95 },
+                  visible: { opacity: 1, y: 0, scale: 1 }
+                }}
+                exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                layout
+              >
+                <InstanceCardSimple
+                  instance={instance}
+                  onClick={() => navigate(`/instances/${instance.id}`)}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
       ) : (
         <div className="flex flex-col items-center justify-center py-16 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
           {searchTerm || statusFilter !== 'all' || versionFilter !== 'all' ? (
@@ -254,10 +302,30 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
   const isStopped = status?.status?.toLowerCase() === 'stopped'
 
   const getStatusConfig = () => {
-    if (isRunning) return { label: 'Running', color: 'text-green-400', bg: 'bg-green-500', dotBg: 'bg-green-400' }
-    if (isError) return { label: 'Error', color: 'text-red-400', bg: 'bg-red-500', dotBg: 'bg-red-400' }
-    if (isStopped) return { label: 'Stopped', color: 'text-gray-400', bg: 'bg-gray-500', dotBg: 'bg-gray-400' }
-    return { label: status?.status || 'Unknown', color: 'text-yellow-400', bg: 'bg-yellow-500', dotBg: 'bg-yellow-400' }
+    if (isRunning) return { 
+      label: 'Running', 
+      color: 'text-green-500 dark:text-green-400', 
+      dotBg: 'bg-green-500',
+      glow: 'shadow-[0_0_8px_rgba(34,197,94,0.6)]'
+    }
+    if (isError) return { 
+      label: 'Error', 
+      color: 'text-red-500 dark:text-red-400', 
+      dotBg: 'bg-red-500',
+      glow: 'shadow-[0_0_8px_rgba(239,68,68,0.6)]'
+    }
+    if (isStopped) return { 
+      label: 'Stopped', 
+      color: 'text-gray-500 dark:text-gray-400', 
+      dotBg: 'bg-gray-400 dark:bg-gray-500',
+      glow: ''
+    }
+    return { 
+      label: status?.status || 'Unknown', 
+      color: 'text-yellow-500 dark:text-yellow-400', 
+      dotBg: 'bg-yellow-500',
+      glow: 'shadow-[0_0_8px_rgba(234,179,8,0.6)]'
+    }
   }
 
   const statusConfig = getStatusConfig()
@@ -278,16 +346,21 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
               <Badge variant="secondary" className="text-xs text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
                 {instance.gowa_version || 'latest'}
               </Badge>
-              {/* Status indicator with label */}
+              {/* Status indicator with label and glow */}
               <div className="flex items-center gap-1.5">
-                <span className={cn('w-2 h-2 rounded-full animate-pulse', statusConfig.dotBg)} />
+                <span className={cn(
+                  'w-2 h-2 rounded-full transition-shadow duration-300',
+                  statusConfig.dotBg,
+                  statusConfig.glow,
+                  isRunning && 'animate-pulse'
+                )} />
                 <span className={cn('text-xs font-medium', statusConfig.color)}>{statusConfig.label}</span>
               </div>
             </div>
           </div>
           <div className="flex gap-2 items-center">
-            {/* Power toggle button */}
-            <button
+            {/* Power toggle button with motion */}
+            <motion.button
               onClick={(e) => {
                 e.stopPropagation()
                 if (isRunning) {
@@ -298,15 +371,23 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
               }}
               disabled={startMutation.isPending || stopMutation.isPending}
               className={cn(
-                'flex items-center px-1 w-12 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
-                isRunning ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-400 dark:bg-gray-600 hover:bg-gray-500'
+                'flex items-center px-1 w-12 h-6 rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
+                isRunning ? 'bg-green-600' : 'bg-gray-400 dark:bg-gray-600'
               )}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              animate={{ 
+                backgroundColor: isRunning ? 'rgb(22, 163, 74)' : 'rgb(156, 163, 175)',
+                boxShadow: isRunning ? '0 0 12px rgba(34, 197, 94, 0.4)' : 'none'
+              }}
+              transition={{ duration: 0.2 }}
             >
-              <div className={cn(
-                'w-4 h-4 bg-white rounded-full shadow transition-transform',
-                isRunning ? 'translate-x-6' : 'translate-x-0'
-              )} />
-            </button>
+              <motion.div
+                className="w-4 h-4 bg-white rounded-full shadow-md"
+                animate={{ x: isRunning ? 24 : 0 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              />
+            </motion.button>
           </div>
         </div>
       </CardContent>

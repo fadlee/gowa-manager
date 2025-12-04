@@ -102,16 +102,16 @@ export function InstanceCard({ instance }: InstanceCardProps) {
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'running':
-        return 'bg-green-500'
+        return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
       case 'stopped':
-        return 'bg-gray-400'
+        return 'bg-gray-400 dark:bg-gray-500'
       case 'starting':
       case 'stopping':
-        return 'bg-yellow-500'
+        return 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.6)]'
       case 'error':
-        return 'bg-red-500'
+        return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'
       default:
-        return 'bg-gray-300'
+        return 'bg-gray-300 dark:bg-gray-600'
     }
   }
 
@@ -171,10 +171,10 @@ export function InstanceCard({ instance }: InstanceCardProps) {
         <CardHeader className="pb-4">
           {/* Header with status dot */}
           <div className="flex justify-between items-start">
-            <CardTitle className="text-xl font-semibold text-gray-900 truncate">
+            <CardTitle className="text-xl font-semibold text-gray-900 dark:text-white truncate">
               {instance.name}
             </CardTitle>
-            <div className={`w-3 h-3 rounded-full ${getStatusColor(status?.status || 'unknown')}`} />
+            <div className={`w-3 h-3 rounded-full transition-shadow duration-300 ${getStatusColor(status?.status || 'unknown')}`} />
           </div>
 
           {/* Instance details */}
@@ -228,32 +228,32 @@ export function InstanceCard({ instance }: InstanceCardProps) {
           {/* Resource monitoring */}
           <div className="grid grid-cols-3 gap-6 mt-2">
             <div>
-              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
+              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 dark:text-gray-400 uppercase">
                 CPU USAGE
               </div>
-              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900">
-                <Cpu className="w-4 h-4 text-gray-500" />
+              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900 dark:text-white">
+                <Cpu className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 {isRunning && status?.resources ? `${status.resources.cpuPercent.toFixed(1)}%` : '--'}
               </div>
-              <div className="mt-2 w-full h-1 bg-gray-200 rounded-full">
+              <div className="mt-2 w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-1 bg-blue-500 rounded-full transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${Math.min(status?.resources?.cpuPercent || 0, 100)}%` }}
                 />
               </div>
             </div>
 
             <div>
-              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
+              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 dark:text-gray-400 uppercase">
                 MEMORY
               </div>
-              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900">
-                <MemoryStick className="w-4 h-4 text-gray-500" />
+              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900 dark:text-white">
+                <MemoryStick className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 {isRunning && status?.resources ? formatMemory(status.resources.memoryMB) : '--'}
               </div>
-              <div className="mt-2 w-full h-1 bg-gray-200 rounded-full">
+              <div className="mt-2 w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-1 bg-blue-500 rounded-full transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-purple-500 to-pink-400 rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${Math.min(status?.resources?.memoryPercent || 0, 100)}%` }}
                 />
               </div>
@@ -261,17 +261,19 @@ export function InstanceCard({ instance }: InstanceCardProps) {
 
             {/* Disk usage */}
             <div>
-              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 uppercase">
+              <div className="mb-1 text-xs font-medium tracking-wide text-gray-500 dark:text-gray-400 uppercase">
                 DISK
               </div>
-              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900">
-                <HardDrive className="w-4 h-4 text-gray-500" />
+              <div className="flex gap-2 items-center text-lg font-semibold text-gray-900 dark:text-white">
+                <HardDrive className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 {isRunning && status?.resources?.diskMB !== undefined
                   ? formatMemory(status.resources.diskMB)
                   : '--'}
               </div>
-              {/* Static bottom bar for visual consistency */}
-              <div className="mt-2 w-full h-1 bg-gray-200 rounded-full" />
+              {/* Static bottom bar with gradient for visual consistency */}
+              <div className="mt-2 w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full w-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full opacity-20" />
+              </div>
             </div>
           </div>
         </CardContent>
