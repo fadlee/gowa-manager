@@ -116,11 +116,6 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
             <span>Not installed</span>
           </div>
         )}
-        {selectedVersion?.isLatest && (
-          <Badge variant="secondary" className="text-xs">
-            Latest
-          </Badge>
-        )}
       </div>
 
       {!selectedVersion?.installed && (
