@@ -1,4 +1,5 @@
 import { exit } from 'process'
+import { MANAGER_VERSION } from './version'
 
 export interface CliConfig {
   port: number
@@ -44,13 +45,7 @@ For more information, visit: https://github.com/fadlee/gowa-manager
 }
 
 function showVersion() {
-  // Try to read package.json version
-  try {
-    const packageJson = require('../package.json')
-    console.log(`GOWA Manager v${packageJson.version}`)
-  } catch {
-    console.log('GOWA Manager (version unknown)')
-  }
+  console.log(`GOWA Manager v${MANAGER_VERSION}`)
   console.log('Built with Bun and Elysia')
 }
 
