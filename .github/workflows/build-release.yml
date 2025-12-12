@@ -16,6 +16,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v1
@@ -33,6 +35,9 @@ jobs:
 
     - name: Embed static files
       run: bun run embed-static
+
+    - name: Generate version file
+      run: bun run generate-version
 
     - name: Build all platforms
       run: |
