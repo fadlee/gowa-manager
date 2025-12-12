@@ -2,6 +2,7 @@ import { queries, db } from '../../db'
 import { join, resolve } from 'path'
 import type { SystemModel } from './model'
 import { createConnection } from 'net'
+import { MANAGER_VERSION } from '../../version'
 
 export abstract class SystemService {
   // Get system status
@@ -21,6 +22,7 @@ export abstract class SystemService {
     return {
       status: 'running',
       uptime: process.uptime() * 1000, // Convert to milliseconds
+      managerVersion: MANAGER_VERSION,
       instances: {
         total: allInstances.length,
         running: runningInstances.length,

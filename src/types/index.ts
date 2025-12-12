@@ -80,6 +80,7 @@ export namespace System {
   export type StatusResponse = {
     status: string;
     uptime: number;
+    managerVersion: string;
     instances: {
       total: number;
       running: number;

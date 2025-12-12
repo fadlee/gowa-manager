@@ -1,6 +1,8 @@
 import { Routes, Route } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from './lib/auth'
 import { useTheme } from './lib/theme'
+import { apiClient } from './lib/api'
 import { LoginPage } from './components/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { InstanceDetailPage } from './pages/InstanceDetailPage'
@@ -10,6 +12,13 @@ import { Sun, Moon } from 'lucide-react'
 function App() {
   const { isAuthenticated, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  const { data: systemStatus } = useQuery({
+    queryKey: ['systemStatus'],
+    queryFn: () => apiClient.getSystemStatus(),
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
 
   if (!isAuthenticated) {
     return <LoginPage />;
@@ -23,6 +32,11 @@ function App() {
           <div className="flex justify-between items-center h-16">
             <h1 className="mb-0 text-xl font-semibold text-gray-900 dark:text-white">
               Gowa Manager
+              {systemStatus && (
+                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                  v{systemStatus.managerVersion}
+                </span>
+              )}
             </h1>
             <div className="flex items-center gap-2">
               <button

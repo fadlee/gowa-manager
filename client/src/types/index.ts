@@ -57,6 +57,7 @@ export interface ApiSuccess {
 export interface SystemStatus {
   status: string;
   uptime: number;
+  managerVersion: string;
   instances: {
     total: number;
     running: number;

@@ -6,6 +6,7 @@ export namespace SystemModel {
   export const statusResponse = t.Object({
     status: t.String(),
     uptime: t.Number(),
+    managerVersion: t.String(),
     instances: t.Object({
       total: t.Number(),
       running: t.Number(),
