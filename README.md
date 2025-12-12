@@ -2,6 +2,8 @@
 
 **A full-stack web application for managing multiple GOWA (Go WhatsApp Web Multidevice) instances with version control, real-time monitoring, and advanced configuration options.**
 
+This project is built on top of [go-whatsapp-web-multidevice](https://github.com/aldinokemal/go-whatsapp-web-multidevice) by **Aldino Kemal**.
+
 ## Features
 
 - 🚀 **Multiple Instance Management** - Create, configure, and manage multiple GOWA instances
@@ -407,6 +409,10 @@ chmod -R 755 data/
 - Add **comprehensive error handling**
 - Include **TypeScript types** for all APIs
 - Test both **frontend and backend** changes
+
+## Credits
+
+- [go-whatsapp-web-multidevice](https://github.com/aldinokemal/go-whatsapp-web-multidevice) by **Aldino Kemal** - The core WhatsApp Web multidevice binary that powers this manager
 
 ## License
 
