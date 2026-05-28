@@ -32,25 +32,21 @@ Instead of running the client and server on separate ports:
 
 ### Start Integrated Development Mode
 ```bash
-bun run dev:watch
+bun run dev
 ```
-This runs both:
-- `vite build --watch` (auto-rebuilds client on changes)
+This runs a cross-platform dev runner that starts both:
+- `vite build --watch` in `client/` (auto-rebuilds client on changes)
 - `bun --watch run src/index.ts` (auto-restarts server on changes)
+
+This avoids shell-specific backgrounding so the integrated workflow works on Windows too.
 
 ### Alternative Commands
 ```bash
-# Build client once, then start server
-bun run dev:integrated
-
-# Separate development (client on :5173, server on :3000)
-bun run dev:all
-
 # Just client development server
 bun run dev:client
 
 # Just server
-bun run dev
+bun run dev:server
 ```
 
 ## Access Points

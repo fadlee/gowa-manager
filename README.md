@@ -28,7 +28,9 @@ Automatically downloads the correct binary for your platform and runs it.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fadlee/gowa-manager/main/install.sh | bash
 ```
-Installs to `~/.local/bin/gowa-manager` and adds to PATH.
+Installs to `~/.local/bin/gowa-manager` and adds to PATH on Unix-like systems.
+
+Note: for Windows, use `npx gowa-manager` or download the `.exe` release directly.
 
 ### Access the Application
 Open http://localhost:3000 in your browser (default credentials: `admin` / `password`)
@@ -63,6 +65,7 @@ cd gowa-manager
 # Install dependencies
 bun install
 cd client && bun install
+cd ..
 
 # Run in development mode
 bun run dev
@@ -161,15 +164,17 @@ bun run src/index.ts --admin-username admin --admin-password mypassword
 bun run dev
 ```
 
+This starts a cross-platform dev runner that:
+- runs `vite build --watch` inside `client/`
+- runs `bun --watch run src/index.ts` for the server
+- serves the built frontend from `http://localhost:3000`
+
 ### Separate Development
 ```bash
-# Client on :5173, server on :3000
-bun run dev:all
-
 # Server only (with auto-restart)
 bun run dev:server
 
-# Client only (Vite dev server)
+# Client only (Vite dev server on :5173)
 bun run dev:client
 ```
 
@@ -182,13 +187,16 @@ bun run build:production
 bun run compile
 ```
 
-### Database Management
+### Build Helpers
 ```bash
-# Reset database (clears all data)
-bun run reset-db
+# Generate src/version.ts from git metadata
+bun run generate-version
 
-# Run comprehensive test suite
-bun run test
+# Build client only
+bun run build:client
+
+# Embed built client assets into the server source
+bun run embed-static
 ```
 
 ## Configuration

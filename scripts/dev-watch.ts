@@ -1,23 +1,23 @@
 /*
-  Debounced dev server watcher for Bun.
-  - Watches the `src/` directory for changes
-  - Waits 3 seconds after the last change before restarting the server
-  - Cleanly kills child process on restart and on exit
+  Cross-platform integrated dev runner for Bun.
+  - Starts the client in Vite watch mode and the server in Bun watch mode
+  - Avoids shell operators, which break on Windows
+  - Shuts both child processes down together on exit
 */
 
-import { watch, FSWatcher } from "fs";
 import treeKill from "tree-kill";
 
-const DEBOUNCE_MS = 3000;
+const SERVER_ENTRY = "src/index.ts";
+const CLIENT_DIR = "client";
+const CLIENT_WATCH_SCRIPT = "build:watch";
 
 let server: Bun.Subprocess | null = null;
-let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-let watcher: FSWatcher | null = null;
+let client: Bun.Subprocess | null = null;
 let shuttingDown = false;
 
-function startServer() {
-  // Start the Bun server process
-  server = Bun.spawn(["bun", "run", "src/index.ts"], {
+function spawnProcess(cmd: string[], cwd?: string) {
+  return Bun.spawn(cmd, {
+    cwd,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -26,70 +26,52 @@ function startServer() {
       NODE_ENV: process.env.NODE_ENV || "development",
     },
   });
-  console.log(`[dev-watch] Server started (pid=${server.pid}).`);
 }
 
-function stopServer(signal: "SIGINT" | "SIGTERM" | "SIGKILL" = "SIGINT") {
-  if (server !== null) {
-    console.log(`[dev-watch] Stopping server (pid=${server.pid}) ...`);
-    treeKill(server.pid, signal, (err) => {
-      if (err) {
-        console.warn(`[dev-watch] Failed to tree-kill server:`, err);
-      }
-    });
-    server = null;
-  }
+function startServer() {
+  if (server) return;
+  server = spawnProcess(["bun", "--watch", "run", SERVER_ENTRY]);
+  console.log(`[dev-watch] Server watcher started (pid=${server.pid}).`);
 }
 
-function scheduleRestart(reason: string) {
-  if (shuttingDown) return;
-  if (debounceTimer) clearTimeout(debounceTimer);
-  console.log(`[dev-watch] Change detected (${reason}). Waiting ${DEBOUNCE_MS}ms before restart...`);
-  debounceTimer = setTimeout(() => {
-    if (shuttingDown) return;
-    stopServer();
-    startServer();
-  }, DEBOUNCE_MS);
+function startClient() {
+  if (client) return;
+  client = spawnProcess(["bun", "run", CLIENT_WATCH_SCRIPT], CLIENT_DIR);
+  console.log(`[dev-watch] Client watcher started (pid=${client.pid}).`);
 }
 
-function setupWatcher() {
-  watcher = watch(
-    "src",
-    { recursive: true },
-    (eventType, filename) => {
-      const path = filename ? `src/${filename}` : "src";
-      // Ignore editor temp files (common patterns)
-      if (/\.(swp|swx|tmp|DS_Store)$/i.test(path)) return;
-      scheduleRestart(`${eventType}: ${path}`);
-    }
-  );
-  console.log(`[dev-watch] Watching ./src for changes (recursive, debounce ${DEBOUNCE_MS}ms).`);
+function stopProcess(processRef: Bun.Subprocess | null, name: string, signal: "SIGINT" | "SIGTERM" | "SIGKILL" = "SIGINT") {
+  if (!processRef) return;
+
+  console.log(`[dev-watch] Stopping ${name} (pid=${processRef.pid}) ...`);
+  treeKill(processRef.pid, signal, (err) => {
+    if (!err) return;
+    if ((err as NodeJS.ErrnoException).code === "ESRCH") return;
+    console.warn(`[dev-watch] Failed to tree-kill ${name}:`, err);
+  });
 }
 
 function cleanupAndExit(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
-  if (debounceTimer) clearTimeout(debounceTimer);
-  try {
-    if (watcher) watcher.close();
-  } catch {}
-  stopServer("SIGINT");
-  // Small delay to allow child process to terminate
-  setTimeout(() => process.exit(code), 50);
+
+  stopProcess(client, "client watcher", "SIGINT");
+  stopProcess(server, "server watcher", "SIGINT");
+  client = null;
+  server = null;
+
+  setTimeout(() => process.exit(code), 100);
 }
 
 process.on("SIGINT", () => {
   console.log("\n[dev-watch] SIGINT received");
   cleanupAndExit(0);
 });
+
 process.on("SIGTERM", () => {
   console.log("\n[dev-watch] SIGTERM received");
   cleanupAndExit(0);
 });
-process.on("exit", (code) => {
-  if (!shuttingDown) cleanupAndExit(code ?? 0);
-});
 
-// Start
+startClient();
 startServer();
-setupWatcher();
