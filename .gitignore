@@ -13,5 +13,6 @@ data/*
 dist/
 public/
 src/embedded-static.ts
+src/version.ts
 /gowa-manager
 *.bun-build
