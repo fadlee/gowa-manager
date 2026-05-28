@@ -163,6 +163,31 @@ async function findAndCopyBinary(extractDir: string, targetBinaryPath: string): 
   }
 }
 
+async function createCompatibilityBinary(latestBinaryPath: string, binaryPath: string): Promise<void> {
+  const fs = require('node:fs')
+
+  if (!fs.existsSync(latestBinaryPath)) {
+    return
+  }
+
+  // Windows commonly blocks file symlink creation without elevated privileges,
+  // so keep the legacy path as a real file there.
+  if (process.platform === 'win32') {
+    await Bun.write(binaryPath, Bun.file(latestBinaryPath))
+    console.log(`📄 Created compatibility copy: ${binaryPath} -> ${latestBinaryPath}`)
+    return
+  }
+
+  try {
+    fs.symlinkSync(latestBinaryPath, binaryPath)
+    console.log(`🔗 Created compatibility symlink: ${binaryPath} -> ${latestBinaryPath}`)
+  } catch (linkError) {
+    console.warn('⚠️  Failed to create compatibility symlink, falling back to copy:', linkError)
+    await Bun.write(binaryPath, Bun.file(latestBinaryPath))
+    console.log(`📄 Created compatibility copy: ${binaryPath} -> ${latestBinaryPath}`)
+  }
+}
+
 // Download a specific version to the versions directory
 export async function downloadSpecificVersion(version: string): Promise<void> {
   // Declare actualVersion at the beginning of the function so it's available in the catch block
@@ -268,22 +293,11 @@ export async function downloadGowaBinary(): Promise<void> {
     try {
       await downloadSpecificVersion('latest')
       
-      // Create backward compatibility symlink
+      // Keep the legacy path available for older code paths.
       const latestVersion = await getLatestInstalledVersion()
       if (latestVersion) {
         const latestBinaryPath = join(absoluteDataDir, 'bin', 'versions', latestVersion, BINARY_NAME)
-        try {
-          // Create symlink for backward compatibility
-          const fs = require('node:fs')
-          if (fs.existsSync(latestBinaryPath)) {
-            fs.symlinkSync(latestBinaryPath, binaryPath)
-            console.log(`🔗 Created compatibility symlink: ${binaryPath} -> ${latestBinaryPath}`)
-          }
-        } catch (linkError) {
-          console.warn('⚠️  Failed to create compatibility symlink:', linkError)
-          // Copy file instead of symlink as fallback
-          await Bun.write(binaryPath, Bun.file(latestBinaryPath))
-        }
+        await createCompatibilityBinary(latestBinaryPath, binaryPath)
       }
     } catch (error) {
       console.error('❌ Failed to download latest GOWA version:', error)
