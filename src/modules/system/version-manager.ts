@@ -35,6 +35,10 @@ export class VersionManager {
     return process.platform === 'win32' ? 'gowa.exe' : 'gowa'
   }
 
+  private static compareVersions(a: string, b: string): number {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+  }
+
   // Get path to a specific version's binary
   static getVersionBinaryPath(version: string): string {
     if (version === 'latest') {
@@ -57,8 +61,7 @@ export class VersionManager {
       const versions = this.getInstalledVersionsSync()
       if (versions.length === 0) return null
       
-      // Sort versions by semver (simple string sort should work for most cases)
-      versions.sort((a, b) => b.localeCompare(a))
+      versions.sort((a, b) => this.compareVersions(b, a))
       return versions[0]
     } catch {
       return null
@@ -74,7 +77,6 @@ export class VersionManager {
       return fs.readdirSync(versionsDir, { withFileTypes: true })
         .filter((dirent: any) => dirent.isDirectory())
         .map((dirent: any) => dirent.name)
-        .filter((name: string) => name !== 'latest') // Exclude symlink
     } catch {
       return []
     }
@@ -121,7 +123,7 @@ export class VersionManager {
       }
 
       // Sort by version (descending)
-      versions.sort((a, b) => b.version.localeCompare(a.version))
+      versions.sort((a, b) => this.compareVersions(b.version, a.version))
       return versions
     } catch (error) {
       console.error('Failed to get installed versions:', error)

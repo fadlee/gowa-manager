@@ -11,6 +11,10 @@ const REPO_BASE_URL = 'https://api.github.com/repos/aldinokemal/go-whatsapp-web-
 const REPO_LATEST_URL = `${REPO_BASE_URL}/latest`
 const BINARY_NAME = process.platform === 'win32' ? 'gowa.exe' : 'gowa'
 
+function compareVersions(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+}
+
 interface GitHubRelease {
   tag_name: string
   assets: {
@@ -321,9 +325,9 @@ async function getLatestInstalledVersion(): Promise<string | null> {
     
     const entries = await readdir(versionsDir, { withFileTypes: true })
     const versions = entries
-      .filter(entry => entry.isDirectory() && entry.name !== 'latest')
+      .filter(entry => entry.isDirectory())
       .map(entry => entry.name)
-      .sort((a, b) => b.localeCompare(a)) // Simple version sort
+      .sort((a, b) => compareVersions(b, a))
     
     return versions.length > 0 ? versions[0] : null
   } catch {
