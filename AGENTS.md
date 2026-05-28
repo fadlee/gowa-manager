@@ -58,7 +58,8 @@ bun test
     - `feat/<area>-<short-desc>`, `fix/<area>-<short-desc>`, `chore/<area>-<short-desc>`.
   - Keep commits **small and focused**; imperative subject lines.
 - **Commits**
-  - No commit linting enforced; Conventional Commits style is **encouraged but not required**:
+  - Always use Conventional Commits for commit messages.
+  - No commit linting enforced, but commit subjects must follow the convention:
     - `feat: add instance CPU usage chart`
     - `fix: handle missing gowa_version`
 - **PR expectations**
