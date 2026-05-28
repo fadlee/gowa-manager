@@ -10,6 +10,7 @@ import treeKill from "tree-kill";
 const SERVER_ENTRY = "src/index.ts";
 const CLIENT_DIR = "client";
 const CLIENT_WATCH_SCRIPT = "build:watch";
+const GENERATE_VERSION_SCRIPT = "scripts/generate-version.ts";
 
 let server: Bun.Subprocess | null = null;
 let client: Bun.Subprocess | null = null;
@@ -26,6 +27,16 @@ function spawnProcess(cmd: string[], cwd?: string) {
       NODE_ENV: process.env.NODE_ENV || "development",
     },
   });
+}
+
+async function generateVersionFile() {
+  const process = spawnProcess(["bun", "run", GENERATE_VERSION_SCRIPT]);
+  const exitCode = await process.exited;
+
+  if (exitCode !== 0) {
+    console.error(`[dev-watch] Failed to generate src/version.ts (exit code ${exitCode}).`);
+    process.exit(exitCode);
+  }
 }
 
 function startServer() {
@@ -73,5 +84,6 @@ process.on("SIGTERM", () => {
   cleanupAndExit(0);
 });
 
+await generateVersionFile();
 startClient();
 startServer();

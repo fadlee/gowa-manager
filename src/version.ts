@@ -1,2 +1,2 @@
-// Default development version. Overwritten by scripts/generate-version.ts for builds.
-export const MANAGER_VERSION = '0.0.0'
+// Auto-generated from git tags. Do not edit manually.
+export const MANAGER_VERSION = '1.6.3'
