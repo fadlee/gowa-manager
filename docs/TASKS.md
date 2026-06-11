@@ -25,22 +25,25 @@ Updated: 2026-06-11
   - Triggers after config or version changes
   - Source: `client/src/components/instance-detail/SettingsSection.tsx`
 
+- [x] Build Overview connection/integration card
+  - Shows base URL with copy button
+  - Shows basic auth credentials masked by default
+  - Adds reveal/copy actions for username and password
+  - Shows active webhook URL
+  - Shows instance running/stopped connection status
+  - Source: `client/src/components/instance-detail/OverviewSection.tsx`
+
 ### 🔄 In Progress
 - [ ] No active task selected
 
+- [x] Fix API request snippets
+  - Added working `curl` example for quick testing
+  - Added JavaScript `fetch` example with correct URL construction
+  - Includes `Authorization: Basic ...` only when basic auth is configured
+  - Avoids confusing double paths such as `/app/{id}/app/devices`
+  - Source: `client/src/components/instance-detail/OverviewSection.tsx`
+
 ### 📋 Up Next
-- [ ] Build Overview connection/integration card
-  - Show base URL with copy button
-  - Show basic auth credentials masked by default
-  - Add reveal/copy actions for username and password
-  - Show active webhook URL
-  - Show WhatsApp connection status if available
-- [ ] Fix API request snippets
-  - Add working `curl` example for quick testing
-  - Add JavaScript `fetch` example with correct URL construction
-  - Add Python example if useful
-  - Include `Authorization: Basic ...` only when basic auth is configured
-  - Avoid confusing double paths such as `/app/{id}/app/devices`
 - [ ] Add API documentation tab or section
   - Link to GOWA Swagger/OpenAPI docs, e.g. instance `/docs` when available
   - Link to upstream `aldinokemal/go-whatsapp-web-multidevice` documentation

@@ -1,4 +1,5 @@
-import { ExternalLink, Clock, Cpu, MemoryStick, HardDrive } from 'lucide-react'
+import { useState } from 'react'
+import { ExternalLink, Clock, Cpu, MemoryStick, HardDrive, Eye, EyeOff, Globe, KeyRound, Radio, Webhook, Terminal, Braces } from 'lucide-react'
 import { Button } from '../ui/button'
 import { CopyButton } from '../ui/shadcn-io/copy-button'
 import type { Instance, InstanceStatus, InstanceConfig, BasicAuthPair } from '../../types'
@@ -12,12 +13,16 @@ interface OverviewSectionProps {
 
 export function OverviewSection({ instance, status, onOpenProxy, isRunning }: OverviewSectionProps) {
   const proxyUrl = `${window.location.origin}/app/${instance.key}`
+  const [revealedAuth, setRevealedAuth] = useState<Record<number, boolean>>({})
+  const [activeSnippet, setActiveSnippet] = useState<'curl' | 'javascript'>('curl')
 
-  // Parse config for basic auth
+  // Parse config for integration details
   let basicAuthPairs: BasicAuthPair[] = []
+  let webhooks: string[] = []
   try {
     const config: InstanceConfig = JSON.parse(instance.config || '{}')
     basicAuthPairs = config.flags?.basicAuth || []
+    webhooks = config.flags?.webhooks || []
   } catch {
     // Invalid config
   }
@@ -48,6 +53,32 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
     return `${memoryMB.toFixed(1)} MB`
   }
 
+  const maskValue = (value: string) => value ? '*'.repeat(Math.min(value.length, 12)) : 'Not set'
+  const firstAuthPair = basicAuthPairs[0]
+  const authHeader = firstAuthPair ? generateToken(firstAuthPair) : null
+  const devicesUrl = `${proxyUrl}/devices`
+  const curlSnippet = [
+    `curl -X GET '${devicesUrl}'`,
+    authHeader ? `  -H 'Authorization: ${authHeader}'` : null,
+    `  -H 'Accept: application/json'`,
+  ].filter(Boolean).join(' \\\n')
+  const jsSnippet = `const response = await fetch('${devicesUrl}', {${authHeader ? `
+  headers: {
+    Authorization: '${authHeader}',
+    Accept: 'application/json',
+  },` : `
+  headers: {
+    Accept: 'application/json',
+  },`}
+});
+
+if (!response.ok) {
+  throw new Error(\`GOWA request failed: \${response.status}\`);
+}
+
+const devices = await response.json();`
+  const activeSnippetContent = activeSnippet === 'curl' ? curlSnippet : jsSnippet
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
@@ -63,6 +94,101 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
             Open Admin Panel
           </Button>
         )}
+      </div>
+
+      {/* Connection / Integration */}
+      <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Connection / Integration</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Everything needed to connect your app to this instance.</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <Radio className={isRunning ? 'h-3.5 w-3.5 text-green-500' : 'h-3.5 w-3.5 text-gray-400'} />
+            {isRunning ? 'Instance running' : 'Instance stopped'}
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="space-y-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/70">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <Globe className="h-4 w-4" />
+              Base URL
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-md bg-white px-3 py-2 font-mono text-sm text-gray-900 dark:bg-gray-950 dark:text-white">
+                {proxyUrl}
+              </code>
+              <CopyButton content={proxyUrl} variant="ghost" className="text-gray-600 dark:text-gray-400" />
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/70">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <Webhook className="h-4 w-4" />
+              Webhook URL{webhooks.length > 1 ? 's' : ''}
+            </div>
+            {webhooks.length > 0 ? (
+              <div className="space-y-2">
+                {webhooks.map((webhook, index) => (
+                  <div key={`${webhook}-${index}`} className="flex items-center gap-2">
+                    <code className="min-w-0 flex-1 truncate rounded-md bg-white px-3 py-2 font-mono text-sm text-gray-900 dark:bg-gray-950 dark:text-white">
+                      {webhook}
+                    </code>
+                    <CopyButton content={webhook} variant="ghost" className="text-gray-600 dark:text-gray-400" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-md bg-white px-3 py-2 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">No webhook configured.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/70">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <KeyRound className="h-4 w-4" />
+            Basic Auth Credentials
+          </div>
+          {basicAuthPairs.length > 0 ? (
+            <div className="space-y-2">
+              {basicAuthPairs.map((pair, index) => {
+                const isRevealed = revealedAuth[index]
+                const username = isRevealed ? pair.username : maskValue(pair.username)
+                const password = isRevealed ? pair.password : maskValue(pair.password)
+                return (
+                  <div key={`${pair.username}-${index}`} className="grid gap-2 rounded-md bg-white p-3 dark:bg-gray-950 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">Username</p>
+                      <div className="flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate font-mono text-sm text-gray-900 dark:text-white">{username}</code>
+                        <CopyButton content={pair.username} variant="ghost" size="sm" className="text-gray-600 dark:text-gray-400" />
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="mb-1 text-xs text-gray-500 dark:text-gray-400">Password</p>
+                      <div className="flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate font-mono text-sm text-gray-900 dark:text-white">{password}</code>
+                        <CopyButton content={pair.password} variant="ghost" size="sm" className="text-gray-600 dark:text-gray-400" />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRevealedAuth((current) => ({ ...current, [index]: !current[index] }))}
+                    >
+                      {isRevealed ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+                      {isRevealed ? 'Hide' : 'Reveal'}
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="rounded-md bg-white px-3 py-2 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">No basic auth configured.</p>
+          )}
+        </div>
       </div>
 
       {/* Resource monitoring - only when running */}
@@ -132,53 +258,49 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
         </div>
       )}
 
-      {/* API URL */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Your Gowa URL is</h3>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 px-4 py-3 font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg">
-            {proxyUrl}
-          </code>
-          <CopyButton
-            content={proxyUrl}
-            variant="ghost"
-            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-          />
+      {/* API quickstart */}
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white">API Quickstart</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Use the proxied base URL directly. Paths are relative to <code className="font-mono">{proxyUrl}</code>.</p>
         </div>
-      </div>
 
-      {/* Auth tokens */}
-      {basicAuthPairs.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Authentication Token</h3>
-          {basicAuthPairs.map((pair, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <code className="flex-1 px-4 py-3 font-mono text-sm text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg truncate">
-                {generateToken(pair)}
-              </code>
-              <CopyButton
-                content={generateToken(pair)}
-                variant="ghost"
-                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              />
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
+            <div className="flex rounded-md bg-white p-1 dark:bg-gray-950">
+              <button
+                type="button"
+                onClick={() => setActiveSnippet('curl')}
+                className={`inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium transition-colors ${activeSnippet === 'curl'
+                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                }`}
+              >
+                <Terminal className="h-4 w-4" />
+                curl
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSnippet('javascript')}
+                className={`inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium transition-colors ${activeSnippet === 'javascript'
+                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                }`}
+              >
+                <Braces className="h-4 w-4" />
+                JavaScript
+              </button>
             </div>
-          ))}
+            <CopyButton content={activeSnippetContent} variant="ghost" className="text-gray-600 dark:text-gray-400" />
+          </div>
+          <pre className="overflow-x-auto p-4 text-sm text-gray-800 dark:text-gray-200"><code>{activeSnippetContent}</code></pre>
         </div>
-      )}
 
-      {/* Connection info */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Connecting to Your Instance</h3>
-        <div className="p-4 font-mono text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-lg">
-          <pre className="whitespace-pre-wrap">
-{`// Using fetch
-const response = await fetch('${proxyUrl}/app/devices', {
-  headers: {${basicAuthPairs.length > 0 ? `
-    'Authorization': '${generateToken(basicAuthPairs[0])}'` : ''}
-  }
-});`}
-          </pre>
-        </div>
+        {basicAuthPairs.length > 1 && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Snippets use the first configured basic auth credential. Copy another credential above if needed.
+          </p>
+        )}
       </div>
     </div>
   )
