@@ -183,6 +183,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test protected `/api/instances` langsung membutuhkan Basic Auth manager.
 - [x] Test protected `/api/system` langsung membutuhkan Basic Auth manager.
 - [x] Global Bun test setup memakai isolated `.test-data/bun-<pid>` sebagai `DATA_DIR` dan cleanup saat process exit.
+- [x] Test setup memfilter log noisy yang sudah dikenal dari DB init/migration dan directory cleanup.
 - [x] Test CRUD instance routes dengan test database/temp data dir.
 - [ ] Test action routes start/stop/restart/kill dengan mocked process layer.
 - [x] Test system status/config route shape dasar dengan isolated test data dir.
