@@ -85,6 +85,12 @@ class ApiClient {
     return this.request<InstanceStatus>(`/instances/${id}/status`);
   }
 
+  async testInstanceConnection(id: number): Promise<{ ok: boolean; status?: number; message: string; body?: string }> {
+    return this.request<{ ok: boolean; status?: number; message: string; body?: string }>(`/instances/${id}/test-connection`, {
+      method: 'POST',
+    });
+  }
+
   // System management
   async getSystemStatus(): Promise<SystemStatus> {
     return this.request<SystemStatus>('/system/status');

@@ -81,4 +81,12 @@ export namespace InstanceModel {
     message: t.String()
   })
   export type successResponse = Instance.SuccessResponse
+
+  export const connectionTestResponse = t.Object({
+    ok: t.Boolean(),
+    status: t.Optional(t.Number()),
+    message: t.String(),
+    body: t.Optional(t.String())
+  })
+  export type connectionTestResponse = typeof connectionTestResponse.static
 }

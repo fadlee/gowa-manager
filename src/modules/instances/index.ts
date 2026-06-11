@@ -182,3 +182,60 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
       404: InstanceModel.notFoundError
     }
   })
+
+  // Test proxied GOWA API connection without triggering browser basic-auth prompts
+  .post('/:id/test-connection', async ({ params: { id }, set }) => {
+    const instance = InstanceService.getInstanceById(Number(id)) as any
+    if (!instance) {
+      set.status = 404
+      return { error: 'Instance not found', success: false }
+    }
+
+    if (instance.status !== 'running' || !instance.port) {
+      return {
+        ok: false,
+        message: 'Instance is not running. Start it before testing the GOWA API connection.',
+      }
+    }
+
+    let authHeader: string | undefined
+    try {
+      const config = JSON.parse(instance.config || '{}')
+      const firstAuth = config.flags?.basicAuth?.[0]
+      if (firstAuth?.username && firstAuth?.password) {
+        authHeader = `Basic ${btoa(`${firstAuth.username}:${firstAuth.password}`)}`
+      }
+    } catch {
+      // Invalid config should not block testing unauthenticated instances.
+    }
+
+    try {
+      const response = await fetch(`http://localhost:${instance.port}/app/${instance.key}/devices`, {
+        headers: {
+          ...(authHeader ? { Authorization: authHeader } : {}),
+          Accept: 'application/json',
+        },
+      })
+      const text = await response.text()
+      const body = text.length > 600 ? `${text.slice(0, 600)}...` : text
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        message: response.ok
+          ? 'Connection successful. The instance responded to GET /devices.'
+          : 'Connection failed. Check instance status, applied settings, or credentials.',
+        body: body || 'No response body.',
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Connection failed before receiving a response.',
+      }
+    }
+  }, {
+    response: {
+      200: InstanceModel.connectionTestResponse,
+      404: InstanceModel.notFoundError
+    }
+  })

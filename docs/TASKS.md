@@ -51,11 +51,15 @@ Updated: 2026-06-11
   - Includes copyable quickstart examples with curl/JavaScript tabs
   - Source: `client/src/components/instance-detail/ApiSection.tsx`
 
+- [x] Add Test Connection action
+  - Calls safe `GET /devices` endpoint from the manager backend
+  - Uses stored instance basic auth server-side to avoid browser auth prompts
+  - Shows success/error response inline
+  - Validates base URL and basic auth credentials from the UI
+  - Source: `src/modules/instances/index.ts`
+  - Source: `client/src/components/instance-detail/ApiSection.tsx`
+
 ### 📋 Up Next
-- [ ] Add Test Connection action
-  - Call a safe endpoint such as health/devices
-  - Show success/error response inline
-  - Validate base URL and basic auth credentials from the UI
 - [ ] Clean up Admin Panel navigation
   - Avoid duplicate unclear entries between sidebar and header
   - If kept in sidebar, separate with divider and external-link icon

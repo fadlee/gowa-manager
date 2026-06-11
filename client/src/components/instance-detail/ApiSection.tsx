@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Braces, BookOpen, ExternalLink, KeyRound, MessageSquare, QrCode, Server, Smartphone, Terminal, Webhook } from 'lucide-react'
+import { AlertCircle, Braces, BookOpen, CheckCircle2, ExternalLink, KeyRound, Loader2, MessageSquare, PlayCircle, QrCode, Server, Smartphone, Terminal, Webhook } from 'lucide-react'
 import { Button } from '../ui/button'
 import { CopyButton } from '../ui/shadcn-io/copy-button'
+import { apiClient } from '../../lib/api'
 import type { BasicAuthPair, Instance, InstanceConfig } from '../../types'
 
 interface ApiSectionProps {
@@ -13,6 +14,13 @@ export function ApiSection({ instance }: ApiSectionProps) {
   const docsUrl = `${proxyUrl}/docs`
   const upstreamDocsUrl = 'https://github.com/aldinokemal/go-whatsapp-web-multidevice'
   const [activeSnippet, setActiveSnippet] = useState<'curl' | 'javascript'>('curl')
+  const [isTestingConnection, setIsTestingConnection] = useState(false)
+  const [testResult, setTestResult] = useState<{
+    ok: boolean
+    status?: number
+    message: string
+    body?: string
+  } | null>(null)
 
   let basicAuthPairs: BasicAuthPair[] = []
   try {
@@ -77,6 +85,23 @@ const devices = await response.json();`
       icon: Webhook,
     },
   ]
+
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true)
+    setTestResult(null)
+
+    try {
+      const result = await apiClient.testInstanceConnection(instance.id)
+      setTestResult(result)
+    } catch (error) {
+      setTestResult({
+        ok: false,
+        message: error instanceof Error ? error.message : 'Connection failed before receiving a response.',
+      })
+    } finally {
+      setIsTestingConnection(false)
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -144,6 +169,51 @@ const devices = await response.json();`
           <h3 className="text-sm font-medium text-gray-900 dark:text-white">Quick Test</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">Start with <code className="font-mono">GET /devices</code> to verify URL and credentials.</p>
         </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+              <PlayCircle className="h-4 w-4" />
+              Test Connection
+            </div>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Calls <code className="font-mono">GET /devices</code> from the manager server using the stored instance credentials.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleTestConnection}
+            disabled={isTestingConnection}
+            className="bg-blue-600 hover:bg-blue-700 sm:shrink-0"
+          >
+            {isTestingConnection ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+            {isTestingConnection ? 'Testing...' : 'Test Connection'}
+          </Button>
+        </div>
+
+        {testResult && (
+          <div className={`rounded-xl border p-4 ${testResult.ok
+            ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30'
+            : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30'
+          }`}>
+            <div className="flex items-start gap-3">
+              {testResult.ok ? (
+                <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-600 dark:text-green-400" />
+              ) : (
+                <AlertCircle className="mt-0.5 h-5 w-5 text-red-600 dark:text-red-400" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-medium ${testResult.ok ? 'text-green-900 dark:text-green-100' : 'text-red-900 dark:text-red-100'}`}>
+                  {testResult.status ? `HTTP ${testResult.status} - ` : ''}{testResult.message}
+                </p>
+                {testResult.body && (
+                  <pre className="mt-3 max-h-56 overflow-auto rounded-md bg-white p-3 text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-200"><code>{testResult.body}</code></pre>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
