@@ -71,7 +71,7 @@ Konsekuensi:
 - [x] Endpoint proxy `status` dan `health` mengikuti desain auth proxy yang sudah dipilih.
 - [x] `basicAuth` manager tetap hanya melindungi API manager seperti `/api/instances` dan `/api/system` (verified by route integration test).
 - [x] `basicAuth` mengembalikan 401 untuk Authorization header invalid, termasuk invalid base64.
-- [ ] `basicAuth` memakai perbandingan credential yang lebih aman atau risikonya dinyatakan eksplisit.
+- [x] `basicAuth` memakai perbandingan credential timing-safe untuk username/password.
 - [x] Startup log tidak mencetak password admin.
 - [x] Error response proxy 502 tidak mengembalikan `error.message` mentah.
 - [x] Error response proxy tidak membocorkan detail upstream ke response client pada test route integration.
