@@ -3,6 +3,9 @@ import { queries } from '../../db'
 import { InstanceService } from './service'
 import { DirectoryManager } from './utils/directory-manager'
 import { ResourceMonitor } from './utils/resource-monitor'
+import { SystemService } from '../system/service'
+import { VersionManager } from '../system/version-manager'
+import { ProcessManager } from './utils/process-manager'
 
 const createdIds: number[] = []
 const originalStopInstance = InstanceService.stopInstance
@@ -139,5 +142,125 @@ describe('InstanceService.deleteInstance', () => {
     stop.mockRestore()
     cleanup.mockRestore()
     clearHistory.mockRestore()
+  })
+})
+
+describe('InstanceService.startInstance', () => {
+  afterEach(() => {
+    cleanupCreatedInstances()
+  })
+
+  test('starts an instance with mocked version, port, and spawn dependencies', async () => {
+    const instance = createStoredInstance({
+      key: 'TSTSTA01',
+      name: 'test-start-success',
+      port: 19101,
+      config: JSON.stringify({ args: ['rest', '--port=PORT'], flags: { basePath: '/app/TSTSTA01' } }),
+      gowa_version: 'v-test',
+    })
+    const versionAvailable = spyOn(VersionManager, 'isVersionAvailable').mockResolvedValue(true)
+    const binaryPath = spyOn(VersionManager, 'getVersionBinaryPath').mockReturnValue('/fake/gowa')
+    const portAvailable = spyOn(SystemService, 'isPortAvailable').mockResolvedValue(true)
+    const resourceUsage = spyOn(ResourceMonitor, 'getResourceUsage').mockResolvedValue(null)
+    const spawn = spyOn(Bun, 'spawn').mockReturnValue({
+      pid: 9001,
+      kill: () => {},
+      exited: Promise.resolve(),
+    } as any)
+
+    const status = await InstanceService.startInstance(instance.id)
+    const updated = queries.getInstanceById.get(instance.id) as any
+
+    expect(status).toMatchObject({
+      id: instance.id,
+      name: 'test-start-success',
+      status: 'running',
+      port: 19101,
+      pid: 9001,
+    })
+    expect(updated.status).toBe('running')
+    expect(updated.error_message).toBeNull()
+    expect(versionAvailable).toHaveBeenCalledWith('v-test')
+    expect(binaryPath).toHaveBeenCalledWith('v-test')
+    expect(portAvailable).toHaveBeenCalledWith(19101)
+    const spawnArg = spawn.mock.calls[0][0] as any
+    expect(spawnArg.cmd).toEqual(['/fake/gowa', 'rest', '--port=19101', '--base-path=/app/TSTSTA01'])
+    expect(spawnArg.env.PORT).toBe('19101')
+
+    ProcessManager.removeProcess(instance.id)
+    queries.deleteInstance.run(instance.id)
+    createdIds.pop()
+    spawn.mockRestore()
+    resourceUsage.mockRestore()
+    portAvailable.mockRestore()
+    binaryPath.mockRestore()
+    versionAvailable.mockRestore()
+  })
+
+  test('allocates a new port when stored port is unavailable', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTA02', name: 'test-start-new-port', port: 19102 })
+    const versionAvailable = spyOn(VersionManager, 'isVersionAvailable').mockResolvedValue(true)
+    const binaryPath = spyOn(VersionManager, 'getVersionBinaryPath').mockReturnValue('/fake/gowa')
+    const portAvailable = spyOn(SystemService, 'isPortAvailable').mockResolvedValue(false)
+    const nextPort = spyOn(SystemService, 'getNextAvailablePort').mockResolvedValue(19222)
+    const resourceUsage = spyOn(ResourceMonitor, 'getResourceUsage').mockResolvedValue(null)
+    const spawn = spyOn(Bun, 'spawn').mockReturnValue({
+      pid: 9002,
+      kill: () => {},
+      exited: Promise.resolve(),
+    } as any)
+
+    const status = await InstanceService.startInstance(instance.id)
+    const updated = queries.getInstanceById.get(instance.id) as any
+
+    expect(status?.port).toBe(19222)
+    expect(updated.port).toBe(19222)
+    const spawnArg = spawn.mock.calls[0][0] as any
+    expect(spawnArg.cmd).toEqual(['/fake/gowa', '--os=Chrome', '--base-path=/wrong'])
+    expect(spawnArg.env.PORT).toBe('19222')
+
+    ProcessManager.removeProcess(instance.id)
+    queries.deleteInstance.run(instance.id)
+    createdIds.pop()
+    spawn.mockRestore()
+    resourceUsage.mockRestore()
+    nextPort.mockRestore()
+    portAvailable.mockRestore()
+    binaryPath.mockRestore()
+    versionAvailable.mockRestore()
+  })
+
+  test('marks instance as error when version is unavailable', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTA03', name: 'test-start-version-error', gowa_version: 'missing' })
+    const versionAvailable = spyOn(VersionManager, 'isVersionAvailable').mockResolvedValue(false)
+
+    await expect(InstanceService.startInstance(instance.id)).rejects.toThrow("GOWA version 'missing' is not installed")
+    const updated = queries.getInstanceById.get(instance.id) as any
+
+    expect(updated.status).toBe('error')
+    expect(updated.error_message).toContain("GOWA version 'missing' is not installed")
+
+    versionAvailable.mockRestore()
+  })
+
+  test('marks instance as error when spawn fails', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTA04', name: 'test-start-spawn-error', port: 19104 })
+    const versionAvailable = spyOn(VersionManager, 'isVersionAvailable').mockResolvedValue(true)
+    const binaryPath = spyOn(VersionManager, 'getVersionBinaryPath').mockReturnValue('/fake/gowa')
+    const portAvailable = spyOn(SystemService, 'isPortAvailable').mockResolvedValue(true)
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(() => {
+      throw new Error('spawn failed')
+    })
+
+    await expect(InstanceService.startInstance(instance.id)).rejects.toThrow('spawn failed')
+    const updated = queries.getInstanceById.get(instance.id) as any
+
+    expect(updated.status).toBe('error')
+    expect(updated.error_message).toBe('spawn failed')
+
+    spawn.mockRestore()
+    portAvailable.mockRestore()
+    binaryPath.mockRestore()
+    versionAvailable.mockRestore()
   })
 })
