@@ -168,11 +168,11 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 #### Phase 5 - System And Version Tests
 
-- [ ] Test `SystemService` port availability dan next available port dengan mock socket/server.
-- [ ] Test system status response shape dan resource fallback.
+- [x] Test `SystemService` port availability dan next available port dengan mock socket/server.
+- [x] Test system status response shape dan next-port fallback saat tidak ada allocated port. Resource fallback dicakup pada `getInstanceStatus`.
 - [x] Test `VersionManager` path resolution untuk `latest` dan explicit version.
 - [x] Test installed versions listing dengan temporary data dir.
-- [ ] Test install/remove version dengan mocked GitHub fetch dan filesystem temp dir.
+- [x] Test install/remove version dengan mocked helper/module dan filesystem temp dir; available versions juga dicakup dengan mocked GitHub fetch.
 - [ ] Test auto-updater behavior dengan mocked available versions dan installed versions.
 - [ ] Test cleanup scheduler behavior tanpa menghapus data nyata.
 
