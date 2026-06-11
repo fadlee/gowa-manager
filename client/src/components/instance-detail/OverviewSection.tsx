@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, Clock, Cpu, MemoryStick, HardDrive, Eye, EyeOff, Globe, KeyRound, Radio, Webhook, Terminal, Braces } from 'lucide-react'
+import { ExternalLink, Clock, Cpu, MemoryStick, HardDrive, Eye, EyeOff, Globe, KeyRound, Radio, Webhook } from 'lucide-react'
 import { Button } from '../ui/button'
 import { CopyButton } from '../ui/shadcn-io/copy-button'
 import type { Instance, InstanceStatus, InstanceConfig, BasicAuthPair } from '../../types'
@@ -14,7 +14,6 @@ interface OverviewSectionProps {
 export function OverviewSection({ instance, status, onOpenProxy, isRunning }: OverviewSectionProps) {
   const proxyUrl = `${window.location.origin}/app/${instance.key}`
   const [revealedAuth, setRevealedAuth] = useState<Record<number, boolean>>({})
-  const [activeSnippet, setActiveSnippet] = useState<'curl' | 'javascript'>('curl')
 
   // Parse config for integration details
   let basicAuthPairs: BasicAuthPair[] = []
@@ -25,10 +24,6 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
     webhooks = config.flags?.webhooks || []
   } catch {
     // Invalid config
-  }
-
-  const generateToken = (pair: BasicAuthPair): string => {
-    return `Basic ${btoa(`${pair.username}:${pair.password}`)}`
   }
 
   const formatUptime = (uptime: number | null) => {
@@ -54,30 +49,6 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
   }
 
   const maskValue = (value: string) => value ? '*'.repeat(Math.min(value.length, 12)) : 'Not set'
-  const firstAuthPair = basicAuthPairs[0]
-  const authHeader = firstAuthPair ? generateToken(firstAuthPair) : null
-  const devicesUrl = `${proxyUrl}/devices`
-  const curlSnippet = [
-    `curl -X GET '${devicesUrl}'`,
-    authHeader ? `  -H 'Authorization: ${authHeader}'` : null,
-    `  -H 'Accept: application/json'`,
-  ].filter(Boolean).join(' \\\n')
-  const jsSnippet = `const response = await fetch('${devicesUrl}', {${authHeader ? `
-  headers: {
-    Authorization: '${authHeader}',
-    Accept: 'application/json',
-  },` : `
-  headers: {
-    Accept: 'application/json',
-  },`}
-});
-
-if (!response.ok) {
-  throw new Error(\`GOWA request failed: \${response.status}\`);
-}
-
-const devices = await response.json();`
-  const activeSnippetContent = activeSnippet === 'curl' ? curlSnippet : jsSnippet
 
   return (
     <div className="space-y-8">
@@ -258,50 +229,6 @@ const devices = await response.json();`
         </div>
       )}
 
-      {/* API quickstart */}
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-sm font-medium text-gray-900 dark:text-white">API Quickstart</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Use the proxied base URL directly. Paths are relative to <code className="font-mono">{proxyUrl}</code>.</p>
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
-            <div className="flex rounded-md bg-white p-1 dark:bg-gray-950">
-              <button
-                type="button"
-                onClick={() => setActiveSnippet('curl')}
-                className={`inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium transition-colors ${activeSnippet === 'curl'
-                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
-                }`}
-              >
-                <Terminal className="h-4 w-4" />
-                curl
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSnippet('javascript')}
-                className={`inline-flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium transition-colors ${activeSnippet === 'javascript'
-                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
-                }`}
-              >
-                <Braces className="h-4 w-4" />
-                JavaScript
-              </button>
-            </div>
-            <CopyButton content={activeSnippetContent} variant="ghost" className="text-gray-600 dark:text-gray-400" />
-          </div>
-          <pre className="overflow-x-auto p-4 text-sm text-gray-800 dark:text-gray-200"><code>{activeSnippetContent}</code></pre>
-        </div>
-
-        {basicAuthPairs.length > 1 && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Snippets use the first configured basic auth credential. Copy another credential above if needed.
-          </p>
-        )}
-      </div>
     </div>
   )
 }

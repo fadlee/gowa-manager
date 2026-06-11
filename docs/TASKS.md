@@ -43,12 +43,15 @@ Updated: 2026-06-11
   - Avoids confusing double paths such as `/app/{id}/app/devices`
   - Source: `client/src/components/instance-detail/OverviewSection.tsx`
 
+- [x] Add API documentation tab or section
+  - Added dedicated instance `API` tab
+  - Links to GOWA Swagger/OpenAPI docs via instance `/docs`
+  - Links to upstream `aldinokemal/go-whatsapp-web-multidevice` documentation
+  - Documents common endpoints: devices, send message, login/QR, webhook
+  - Includes copyable quickstart examples with curl/JavaScript tabs
+  - Source: `client/src/components/instance-detail/ApiSection.tsx`
+
 ### 📋 Up Next
-- [ ] Add API documentation tab or section
-  - Link to GOWA Swagger/OpenAPI docs, e.g. instance `/docs` when available
-  - Link to upstream `aldinokemal/go-whatsapp-web-multidevice` documentation
-  - Document common endpoints: devices, send message, login/QR, webhook
-  - Include copyable quickstart examples
 - [ ] Add Test Connection action
   - Call a safe endpoint such as health/devices
   - Show success/error response inline
