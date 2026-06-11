@@ -110,7 +110,7 @@ Konsekuensi:
 - [x] Koneksi upstream WebSocket tidak disimpan hanya berdasarkan `instanceKey`.
 - [x] Setiap client connection punya upstream connection sendiri atau connection id unik.
 - [x] Menutup satu browser tab tidak menutup koneksi client lain untuk instance yang sama.
-- [ ] Message forwarding mempertahankan tipe data yang benar, bukan selalu `JSON.stringify`.
+- [x] Message forwarding memakai helper agar string/binary payload tidak selalu dipaksa `JSON.stringify`.
 - [ ] Cleanup connection berjalan saat client close, upstream close, dan error (registry covered, route/upstream integration pending).
 
 ### Testing Roadmap
@@ -162,9 +162,9 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test WebSocket connection dibuat per client connection atau connection id unik, bukan hanya per `instanceKey`.
 - [x] Test multiple client untuk instance yang sama tidak saling menutup koneksi.
 - [ ] Test cleanup saat client close, upstream close, dan error (registry covered, route/upstream integration pending).
-- [ ] Test message forwarding mempertahankan tipe payload yang benar.
+- [x] Test message forwarding mempertahankan tipe payload yang benar.
 - [x] Test forwarding query string dan auth injection helper untuk WebSocket.
-- [ ] Test forwarding header penting lain seperti cookie/subprotocol.
+- [x] Test forwarding header penting lain seperti cookie/subprotocol.
 
 #### Phase 5 - System And Version Tests
 

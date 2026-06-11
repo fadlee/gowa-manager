@@ -2,6 +2,7 @@ import { queries } from '../../db'
 import { WebSocket } from 'ws'
 import { WebSocketRegistry } from './websocket-registry'
 import { applyInstanceWebSocketAuthHeader } from './auth-utils'
+import { createWebSocketForwardingOptions } from './websocket-utils'
 
 const wsConnections = new WebSocketRegistry<WebSocket>()
 
@@ -21,29 +22,10 @@ export abstract class WebSocketProxyService {
 
       const targetUrl = `ws://localhost:${instance.port}${path}`
 
-      // Forward only essential headers for WS auth/handshake
-      const forwardHeaders: Record<string, string> = {}
-      let subprotocols: string[] | undefined
-      if (incomingHeaders) {
-        const allowList = [
-          'authorization',
-          'cookie',
-          'origin',
-          'user-agent',
-          'accept-language',
-        ]
-        for (const [k, v] of Object.entries(incomingHeaders)) {
-          const key = k.toLowerCase()
-          if (key === 'sec-websocket-protocol') {
-            subprotocols = v.split(',').map((s) => s.trim()).filter(Boolean)
-            continue
-          }
-          if (allowList.includes(key)) forwardHeaders[key] = v
-        }
-      }
-
-      const upstreamHeaders = applyInstanceWebSocketAuthHeader(forwardHeaders, instance)
-      const proxyWs = new WebSocket(targetUrl, subprotocols, { headers: upstreamHeaders })
+      // Forward only essential headers for WS auth/handshake.
+      const forwardingOptions = createWebSocketForwardingOptions(incomingHeaders)
+      const upstreamHeaders = applyInstanceWebSocketAuthHeader(forwardingOptions.headers, instance)
+      const proxyWs = new WebSocket(targetUrl, forwardingOptions.subprotocols, { headers: upstreamHeaders })
 
       console.log('WS targetUrl: ' + targetUrl)
 

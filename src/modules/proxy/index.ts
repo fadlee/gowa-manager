@@ -3,6 +3,7 @@ import { ProxyService } from './service'
 import { ProxyModel } from './model'
 import { WebSocketProxyService } from './service.websocket'
 import { createProxyErrorResponse, createWebSocketConnectionId, createWebSocketProxyPath, normalizeProxyPath } from './utils'
+import { serializeWebSocketMessage } from './websocket-utils'
 
 // Create a shared handler function
 const handleProxyRequest = async (
@@ -197,8 +198,8 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
       }
 
       try {
-        // Forward message to proxy WebSocket
-        proxyWs.send(JSON.stringify(message))
+        // Forward payload without forcing strings/binary frames into JSON strings.
+        proxyWs.send(serializeWebSocketMessage(message))
       } catch (error) {
         console.error(`Error forwarding message to proxy for instance ${instanceKey}:`, error)
         ws.close()
