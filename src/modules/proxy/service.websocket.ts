@@ -1,11 +1,13 @@
 import { queries } from '../../db'
 import { WebSocket } from 'ws'
+import { WebSocketRegistry } from './websocket-registry'
 
-const wsConnections = new Map<string, WebSocket>()
+const wsConnections = new WebSocketRegistry<WebSocket>()
 
 export abstract class WebSocketProxyService {
   // WebSocket connection management
   static async createWebSocketConnection(
+    connectionId: string,
     instanceKey: string,
     path: string,
     incomingHeaders?: Record<string, string>
@@ -14,11 +16,6 @@ export abstract class WebSocketProxyService {
       const instance = queries.getInstanceByKey.get(instanceKey) as any
       if (!instance || instance.status !== 'running' || !instance.port) {
         return null
-      }
-
-      const existingWs = wsConnections.get(instanceKey)
-      if (existingWs && existingWs.readyState === WebSocket.OPEN) {
-        return existingWs
       }
 
       const targetUrl = `ws://localhost:${instance.port}${path}`
@@ -48,15 +45,15 @@ export abstract class WebSocketProxyService {
 
       console.log('WS targetUrl: ' + targetUrl)
 
-      wsConnections.set(instanceKey, proxyWs)
+      wsConnections.set(connectionId, proxyWs)
 
       proxyWs.on('close', () => {
-        wsConnections.delete(instanceKey)
+        wsConnections.delete(connectionId)
       })
 
       proxyWs.on('error', (error) => {
         console.error(`WebSocket error for instance ${instanceKey}:`, error)
-        wsConnections.delete(instanceKey)
+        wsConnections.delete(connectionId)
       })
 
       // Note: 'unexpected-response' event is not implemented in Bun's ws shim; avoid adding a listener to prevent warnings.
@@ -68,22 +65,19 @@ export abstract class WebSocketProxyService {
     }
   }
 
-  static getWebSocketConnection(instanceKey: string): WebSocket | null {
-    return wsConnections.get(instanceKey) || null
+  static getWebSocketConnection(connectionId: string): WebSocket | null {
+    return wsConnections.get(connectionId)
   }
 
-  static closeWebSocketConnection(instanceKey: string): void {
-    const ws = wsConnections.get(instanceKey)
-    if (ws) {
-      ws.close()
-      wsConnections.delete(instanceKey)
-    }
+  static closeWebSocketConnection(connectionId: string): void {
+    wsConnections.close(connectionId)
+  }
+
+  static getConnectionCount(): number {
+    return wsConnections.count()
   }
 
   static closeAllWebSocketConnections(): void {
-    for (const [instanceKey, ws] of wsConnections) {
-      ws.close()
-    }
-    wsConnections.clear()
+    wsConnections.closeAll()
   }
 }

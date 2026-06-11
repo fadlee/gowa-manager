@@ -2,7 +2,7 @@ import { Elysia } from 'elysia'
 import { ProxyService } from './service'
 import { ProxyModel } from './model'
 import { WebSocketProxyService } from './service.websocket'
-import { createProxyErrorResponse, createWebSocketProxyPath, normalizeProxyPath } from './utils'
+import { createProxyErrorResponse, createWebSocketConnectionId, createWebSocketProxyPath, normalizeProxyPath } from './utils'
 
 // Create a shared handler function
 const handleProxyRequest = async (
@@ -132,6 +132,8 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
 
         // Create proxy WebSocket connection using the full proxied path including query string
         const query = (ws.data as any)?.query as Record<string, string> | undefined
+        const connectionId = createWebSocketConnectionId(instanceKey)
+        ;(ws.data as any).proxyConnectionId = connectionId
         const wsPath = createWebSocketProxyPath(instanceKey, query)
 
         // Forward incoming headers (auth, cookies, protocols) if available
@@ -145,6 +147,7 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
         }
 
         const proxyWs = await WebSocketProxyService.createWebSocketConnection(
+          connectionId,
           instanceKey,
           wsPath,
           incomingHeaders
@@ -184,7 +187,8 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
 
     message(ws, message) {
       const instanceKey = (ws.data.params as { instanceKey: string }).instanceKey
-      const proxyWs = WebSocketProxyService.getWebSocketConnection(instanceKey)
+      const connectionId = (ws.data as any).proxyConnectionId as string | undefined
+      const proxyWs = connectionId ? WebSocketProxyService.getWebSocketConnection(connectionId) : null
 
       if (!proxyWs || proxyWs.readyState !== proxyWs.OPEN) {
         console.error(`No active proxy WebSocket connection for instance ${instanceKey}`)
@@ -203,10 +207,13 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
 
     close(ws) {
       const instanceKey = (ws.data.params as { instanceKey: string }).instanceKey
+      const connectionId = (ws.data as any).proxyConnectionId as string | undefined
       console.log(`Client WebSocket closed for instance ${instanceKey}`)
 
-      // Close the proxy WebSocket connection
-      WebSocketProxyService.closeWebSocketConnection(instanceKey)
+      // Close only this client's proxy WebSocket connection.
+      if (connectionId) {
+        WebSocketProxyService.closeWebSocketConnection(connectionId)
+      }
     }
   })
 

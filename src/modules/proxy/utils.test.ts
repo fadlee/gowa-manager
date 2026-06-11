@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createProxyErrorResponse, createWebSocketProxyPath, normalizeProxyPath } from './utils'
+import { createProxyErrorResponse, createWebSocketConnectionId, createWebSocketProxyPath, normalizeProxyPath } from './utils'
 
 describe('proxy utils', () => {
   test('normalizes proxy path with query string intact', () => {
@@ -38,5 +38,14 @@ describe('proxy utils', () => {
     const path = createWebSocketProxyPath('ABC12345')
 
     expect(path).toBe('/app/ABC12345/ws')
+  })
+
+  test('creates unique websocket connection ids per client', () => {
+    const first = createWebSocketConnectionId('ABC12345')
+    const second = createWebSocketConnectionId('ABC12345')
+
+    expect(first).toStartWith('ABC12345:')
+    expect(second).toStartWith('ABC12345:')
+    expect(first).not.toBe(second)
   })
 })

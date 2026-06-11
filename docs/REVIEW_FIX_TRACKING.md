@@ -16,7 +16,7 @@ Kondisi saat review terakhir:
 - Route wildcard proxy didefinisikan sebelum route spesifik `status` dan `health`, sehingga berisiko menangkap request yang salah.
 - Proxy meneruskan path lengkap dari manager ke instance tanpa path normalization yang jelas.
 - Proxy mengembalikan `error.message` ke client pada response 502, sehingga detail internal seperti host/port dapat bocor.
-- WebSocket proxy menyimpan koneksi berdasarkan `instanceKey`, sehingga beberapa client untuk instance yang sama dapat berbagi koneksi upstream.
+- WebSocket proxy sekarang memakai connection id per client, bukan hanya `instanceKey`, sehingga client untuk instance yang sama tidak berbagi koneksi upstream.
 - Password admin tidak lagi dicetak ke log saat server start.
 - CORS memakai `origin: true` dan `credentials: true`, berisiko jika digunakan di production dengan Basic Auth.
 - `basicAuth` dapat throw saat menerima invalid base64 karena `atob` tidak dibungkus `try/catch`, sehingga invalid Authorization header dapat menjadi 500, bukan 401.
@@ -99,11 +99,11 @@ Konsekuensi:
 
 ### WebSocket
 
-- [ ] Koneksi upstream WebSocket tidak disimpan hanya berdasarkan `instanceKey`.
-- [ ] Setiap client connection punya upstream connection sendiri atau connection id unik.
-- [ ] Menutup satu browser tab tidak menutup koneksi client lain untuk instance yang sama.
+- [x] Koneksi upstream WebSocket tidak disimpan hanya berdasarkan `instanceKey`.
+- [x] Setiap client connection punya upstream connection sendiri atau connection id unik.
+- [x] Menutup satu browser tab tidak menutup koneksi client lain untuk instance yang sama.
 - [ ] Message forwarding mempertahankan tipe data yang benar, bukan selalu `JSON.stringify`.
-- [ ] Cleanup connection berjalan saat client close, upstream close, dan error.
+- [ ] Cleanup connection berjalan saat client close, upstream close, dan error (registry covered, route/upstream integration pending).
 
 ### Testing Roadmap
 
@@ -151,9 +151,9 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 #### Phase 4 - WebSocket Tests
 
-- [ ] Test WebSocket connection dibuat per client connection atau connection id unik, bukan hanya per `instanceKey`.
-- [ ] Test multiple client untuk instance yang sama tidak saling menutup koneksi.
-- [ ] Test cleanup saat client close, upstream close, dan error.
+- [x] Test WebSocket connection dibuat per client connection atau connection id unik, bukan hanya per `instanceKey`.
+- [x] Test multiple client untuk instance yang sama tidak saling menutup koneksi.
+- [ ] Test cleanup saat client close, upstream close, dan error (registry covered, route/upstream integration pending).
 - [ ] Test message forwarding mempertahankan tipe payload yang benar.
 - [ ] Test forwarding query string dan header penting seperti auth/cookie/subprotocol.
 

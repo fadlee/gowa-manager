@@ -17,3 +17,7 @@ export function createWebSocketProxyPath(instanceKey: string, query?: Record<str
   const queryStr = qs && qs.toString().length > 0 ? `?${qs.toString()}` : ''
   return `/${ProxyModel.prefix}/${instanceKey}/ws${queryStr}`
 }
+
+export function createWebSocketConnectionId(instanceKey: string): string {
+  return `${instanceKey}:${crypto.randomUUID()}`
+}
