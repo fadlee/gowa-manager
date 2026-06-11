@@ -206,6 +206,20 @@ bun run dev:server
 bun run dev:client
 ```
 
+### Testing And Validation
+```bash
+# Run backend/unit/integration tests
+bun run test
+
+# Typecheck backend TypeScript
+bun run build:tsc
+
+# Recommended pre-commit validation
+bun run test && bun run build:tsc
+```
+
+Tests use an isolated `.test-data/bun-<pid>` directory via `test/setup.ts`, so DB-backed tests do not touch the runtime `data/gowa.db`.
+
 ### Production Build
 ```bash
 # Build client and embed static files

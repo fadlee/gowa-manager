@@ -228,7 +228,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] README atau docs menjelaskan bahwa proxy route memakai auth per-instance GOWA, bukan Basic Auth manager.
 - [ ] Docs proxy path/basePath diperbarui jika perilaku path diubah.
 - [x] README menjelaskan `CORS_ALLOWED_ORIGINS` dan `PROXY_WS_INJECT_INSTANCE_AUTH`.
-- [ ] Docs development menambahkan command test yang diharapkan.
+- [x] Docs development menambahkan command test yang diharapkan.
 - [x] `.test-data/` di-ignore agar isolated test database tidak masuk git.
 - [ ] GitHub Actions atau CI lain menjalankan `bun run build:tsc`.
 - [ ] GitHub Actions atau CI lain menjalankan `bun test`.
