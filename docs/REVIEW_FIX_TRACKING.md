@@ -151,10 +151,10 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test route order proxy untuk `status` dan wildcard HTTP; WebSocket route ordering masih perlu coverage tersendiri.
 - [x] Test proxy path normalization dengan query string.
 - [x] Test proxy error sanitization agar detail internal seperti host/port target tidak muncul di response.
-- [ ] Test header forwarding: allow/deny header yang aman, host rewrite, forwarded headers.
-- [ ] Test body forwarding untuk JSON, text, binary/multipart jika didukung.
-- [ ] Test binary response pass-through tanpa transformasi.
-- [ ] Test JSON URL rewrite behavior sesuai keputusan desain.
+- [x] Test header forwarding: auth/cookie preservation, host rewrite, dan forwarded headers.
+- [x] Test body forwarding untuk JSON object dan text body.
+- [x] Test binary response pass-through tanpa transformasi.
+- [x] Test JSON URL rewrite behavior sesuai keputusan desain.
 - [ ] Test proxy status dan health untuk instance missing, stopped, running, dan upstream timeout.
 
 #### Phase 4 - WebSocket Tests
