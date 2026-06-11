@@ -14,6 +14,7 @@ import { proxyModule } from './modules/proxy'
 import { authModule } from './modules/auth'
 import { basicAuth } from './middlewares/auth'
 import { SystemService } from './modules/system/service'
+import { createCorsConfig } from './cors-config'
 import type { ApiResponse } from './types'
 
 // Parse CLI configuration
@@ -84,12 +85,7 @@ const DESIRED_PORT = config.port
 const PORT = await findAvailableHttpPort(DESIRED_PORT)
 
 const app = new Elysia()
-  .use(cors({
-    origin: true, // Allow all origins in development
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
-  }))
+  .use(cors(createCorsConfig()))
 
   // Global error handler
   .onError(({ code, error, set }: any) => {

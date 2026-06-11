@@ -19,7 +19,7 @@ Kondisi saat review terakhir:
 - Proxy mengembalikan `error.message` ke client pada response 502, sehingga detail internal seperti host/port dapat bocor.
 - WebSocket proxy sekarang memakai connection id per client, bukan hanya `instanceKey`, sehingga client untuk instance yang sama tidak berbagi koneksi upstream.
 - Password admin tidak lagi dicetak ke log saat server start.
-- CORS memakai `origin: true` dan `credentials: true`, berisiko jika digunakan di production dengan Basic Auth.
+- CORS sekarang memakai helper env-based: development tetap permissive, production deny-by-default kecuali `CORS_ALLOWED_ORIGINS` diisi.
 - `basicAuth` dapat throw saat menerima invalid base64 karena `atob` tidak dibungkus `try/catch`, sehingga invalid Authorization header dapat menjadi 500, bukan 401.
 - Perbandingan credential di `basicAuth` belum constant-time. Ini minor untuk konteks lokal, tetapi tetap perlu dicatat untuk hardening.
 - Update config instance sekarang memaksa ulang `flags.basePath` seperti create instance.
@@ -32,7 +32,7 @@ Urutan perbaikan yang disarankan:
 2. Tambahkan warning docs/UI bahwa instance GOWA perlu auth sendiri jika proxy diekspos ke jaringan publik.
 3. Hardening `basicAuth`: invalid base64 harus 401, bukan 500; pertimbangkan constant-time comparison.
 4. Sanitasi error proxy agar response 502 tidak membocorkan detail internal.
-5. Perketat CORS untuk production atau buat konfigurasi allowed origins.
+5. Perketat CORS untuk production atau buat konfigurasi allowed origins. (done: `CORS_ALLOWED_ORIGINS`)
 6. Pindahkan route proxy spesifik (`status`, `health`, WebSocket) sebelum route wildcard.
 7. Buat helper eksplisit untuk normalisasi proxy path sebelum request diteruskan ke GOWA.
 8. Hentikan logging password admin di startup log.
@@ -76,7 +76,8 @@ Konsekuensi:
 - [x] Error response proxy 502 tidak mengembalikan `error.message` mentah.
 - [x] Error response proxy tidak membocorkan detail upstream ke response client pada test route integration.
 - [ ] Error response global tidak membocorkan stack trace, credential, host internal, atau port internal.
-- [ ] CORS production tidak memakai kombinasi open origin dan credentials tanpa allowlist.
+- [x] CORS production tidak memakai kombinasi open origin dan credentials tanpa allowlist.
+- [x] CORS allowlist bisa dikonfigurasi lewat `CORS_ALLOWED_ORIGINS`.
 
 ### Proxy Routing
 
@@ -184,6 +185,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [ ] Test CRUD instance routes dengan test database/temp data dir.
 - [ ] Test action routes start/stop/restart/kill dengan mocked process layer.
 - [ ] Test auth login/logout response shape.
+- [x] Test CORS config untuk dev default, production deny-by-default, dan `CORS_ALLOWED_ORIGINS` allowlist.
 - [ ] Test global error handler untuk validation, unauthorized, not found, dan generic error.
 - [ ] Test CORS behavior untuk development dan production config.
 
