@@ -66,10 +66,12 @@ Updated: 2026-06-11
   - Source: `client/src/pages/InstanceDetailPage.tsx`
   - Source: `client/src/components/instance-detail/OverviewSection.tsx`
 
+- [x] Improve header information density
+  - Added status badge, port, uptime, lifecycle actions, and admin panel link
+  - Kept Overview focused on integration details
+  - Source: `client/src/pages/InstanceDetailPage.tsx`
+
 ### 📋 Up Next
-- [ ] Improve header information density
-  - Add status badge, port, uptime, lifecycle actions, and admin panel link
-  - Keep Overview focused on integration details
 - [ ] Improve webhook settings UX
   - Clarify whether multiple webhook URLs are supported
   - Add helper text with expected format

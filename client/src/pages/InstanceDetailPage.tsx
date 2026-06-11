@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ExternalLink,
   Eye,
+  Clock,
   Settings,
   AlertTriangle,
   RefreshCw,
@@ -136,6 +137,21 @@ export function InstanceDetailPage() {
         ? 'bg-gray-200 text-gray-700 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600'
         : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
 
+  const formatUptime = (uptime: number | null | undefined) => {
+    if (!uptime) return null
+    const seconds = Math.floor(uptime / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+
+    if (days > 0) return `${days}d ${hours % 24}h`
+    if (hours > 0) return `${hours}h ${minutes % 60}m`
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`
+    return `${seconds}s`
+  }
+
+  const uptimeLabel = formatUptime(status?.uptime)
+
   const handleOpenProxy = () => {
     if (status?.port) {
       window.open(apiClient.getProxyUrl(instance.key), '_blank')
@@ -179,6 +195,12 @@ export function InstanceDetailPage() {
               {status?.port && (
                 <span className="hidden text-xs text-gray-500 dark:text-gray-400 lg:inline">
                   :{status.port}
+                </span>
+              )}
+              {uptimeLabel && isRunning && (
+                <span className="hidden items-center gap-1 text-xs text-gray-500 dark:text-gray-400 xl:inline-flex">
+                  <Clock className="h-3.5 w-3.5" />
+                  {uptimeLabel}
                 </span>
               )}
               <Button
