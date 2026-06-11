@@ -154,7 +154,7 @@ export function InstanceDetailPage() {
       <div className="mx-auto max-w-7xl sm:px-6 lg:px-8">
       {/* Instance header bar */}
       <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sm:border-x sm:border-gray-200 dark:sm:border-gray-700">
-        <div className="flex justify-between items-center px-4 h-16">
+        <div className="flex justify-between items-center gap-3 px-4 py-3 min-h-16">
           {/* Left: Back + Name + Version */}
           <div className="flex gap-3 items-center min-w-0">
               <Button
@@ -181,6 +181,16 @@ export function InstanceDetailPage() {
                   :{status.port}
                 </span>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenProxy}
+                disabled={!isRunning}
+                className="hidden border-blue-500 text-blue-600 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/40 md:inline-flex"
+              >
+                <ExternalLink className="w-4 h-4 lg:mr-2" />
+                <span className="hidden lg:inline">Open Admin</span>
+              </Button>
               <div className="flex overflow-hidden items-center rounded-md border border-gray-300 dark:border-gray-600">
                 <Button
                   variant="ghost"
@@ -264,18 +274,6 @@ export function InstanceDetailPage() {
               </button>
             ))}
 
-            {/* Admin link - only when running */}
-            {isRunning && (
-              <a
-                href={apiClient.getProxyUrl(instance.key)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex gap-3 items-center px-3 py-2 text-sm text-gray-600 dark:text-gray-400 rounded-md transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Admin
-              </a>
-            )}
           </nav>
         </aside>
 
@@ -305,7 +303,6 @@ export function InstanceDetailPage() {
             <OverviewSection
               instance={instance}
               status={status}
-              onOpenProxy={handleOpenProxy}
               isRunning={isRunning}
             />
           )}

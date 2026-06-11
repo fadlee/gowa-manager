@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, Clock, Cpu, MemoryStick, HardDrive, Eye, EyeOff, Globe, KeyRound, Radio, Webhook } from 'lucide-react'
+import { Clock, Cpu, MemoryStick, HardDrive, Eye, EyeOff, Globe, KeyRound, Radio, Webhook } from 'lucide-react'
 import { Button } from '../ui/button'
 import { CopyButton } from '../ui/shadcn-io/copy-button'
 import type { Instance, InstanceStatus, InstanceConfig, BasicAuthPair } from '../../types'
@@ -7,11 +7,10 @@ import type { Instance, InstanceStatus, InstanceConfig, BasicAuthPair } from '..
 interface OverviewSectionProps {
   instance: Instance
   status: InstanceStatus | undefined
-  onOpenProxy: () => void
   isRunning: boolean
 }
 
-export function OverviewSection({ instance, status, onOpenProxy, isRunning }: OverviewSectionProps) {
+export function OverviewSection({ instance, status, isRunning }: OverviewSectionProps) {
   const proxyUrl = `${window.location.origin}/app/${instance.key}`
   const [revealedAuth, setRevealedAuth] = useState<Record<number, boolean>>({})
 
@@ -52,19 +51,9 @@ export function OverviewSection({ instance, status, onOpenProxy, isRunning }: Ov
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+      <div>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Overview</h2>
-        {isRunning && (
-          <Button
-            onClick={onOpenProxy}
-            variant="outline"
-            size="sm"
-            className="text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 w-full sm:w-auto"
-          >
-            <ExternalLink className="mr-2 w-4 h-4" />
-            Open Admin Panel
-          </Button>
-        )}
+        <p className="text-sm text-gray-500 dark:text-gray-400">Connection details and live resource usage for this instance.</p>
       </div>
 
       {/* Connection / Integration */}

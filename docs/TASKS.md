@@ -59,11 +59,14 @@ Updated: 2026-06-11
   - Source: `src/modules/instances/index.ts`
   - Source: `client/src/components/instance-detail/ApiSection.tsx`
 
+- [x] Clean up Admin Panel navigation
+  - Removed duplicate external `Admin` entry from sidebar
+  - Moved `Open Admin` action into the instance header near lifecycle buttons
+  - Removed duplicate Overview `Open Admin Panel` action
+  - Source: `client/src/pages/InstanceDetailPage.tsx`
+  - Source: `client/src/components/instance-detail/OverviewSection.tsx`
+
 ### 📋 Up Next
-- [ ] Clean up Admin Panel navigation
-  - Avoid duplicate unclear entries between sidebar and header
-  - If kept in sidebar, separate with divider and external-link icon
-  - Prefer a prominent `Open Admin Panel` button in instance header
 - [ ] Improve header information density
   - Add status badge, port, uptime, lifecycle actions, and admin panel link
   - Keep Overview focused on integration details
