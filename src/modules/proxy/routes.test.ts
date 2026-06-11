@@ -7,6 +7,7 @@ import { ProxyService } from './service'
 const originalIsInstanceAvailable = ProxyService.isInstanceAvailable
 const originalGetProxyStatus = ProxyService.getProxyStatus
 const originalForwardRequest = ProxyService.forwardRequest
+const originalHealthCheck = ProxyService.healthCheck
 
 function createTestApp() {
   return new Elysia()
@@ -28,6 +29,7 @@ describe('proxy route auth behavior', () => {
     ProxyService.isInstanceAvailable = originalIsInstanceAvailable
     ProxyService.getProxyStatus = originalGetProxyStatus
     ProxyService.forwardRequest = originalForwardRequest
+    ProxyService.healthCheck = originalHealthCheck
   })
 
   test('keeps manager API routes protected by manager basic auth', async () => {
@@ -49,6 +51,16 @@ describe('proxy route auth behavior', () => {
     expect(await response.json()).toEqual({ success: true })
   })
 
+  test('returns 404 for missing proxy status', async () => {
+    ProxyService.getProxyStatus = () => null
+    const app = createTestApp()
+
+    const response = await app.handle(new Request('http://localhost/app/MISSING1/status'))
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ error: 'Instance not found', success: false })
+  })
+
   test('does not require manager basic auth for proxy status routes', async () => {
     ProxyService.getProxyStatus = () => ({
       instanceKey: 'ABC12345',
@@ -64,6 +76,69 @@ describe('proxy route auth behavior', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ instanceKey: 'ABC12345', status: 'running' })
+  })
+
+  test('returns stopped proxy status without requiring manager basic auth', async () => {
+    ProxyService.getProxyStatus = () => ({
+      instanceKey: 'ABC12345',
+      instanceName: 'test-instance',
+      status: 'stopped',
+      port: 8000,
+      targetPort: 8000,
+      proxyPath: 'app/ABC12345',
+    })
+    const app = createTestApp()
+
+    const response = await app.handle(new Request('http://localhost/app/ABC12345/status'))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ instanceKey: 'ABC12345', status: 'stopped' })
+  })
+
+  test('returns 404 for missing proxy health', async () => {
+    ProxyService.getProxyStatus = () => null
+    const app = createTestApp()
+
+    const response = await app.handle(new Request('http://localhost/app/MISSING1/health'))
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ error: 'Instance not found', success: false })
+  })
+
+  test('returns unhealthy for stopped proxy health', async () => {
+    ProxyService.getProxyStatus = () => ({
+      instanceKey: 'ABC12345',
+      instanceName: 'test-instance',
+      status: 'stopped',
+      port: 8000,
+      targetPort: 8000,
+      proxyPath: 'app/ABC12345',
+    })
+    ProxyService.healthCheck = async () => false
+    const app = createTestApp()
+
+    const response = await app.handle(new Request('http://localhost/app/ABC12345/health'))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ instanceKey: 'ABC12345', healthy: false, status: 'stopped' })
+  })
+
+  test('returns healthy for running proxy health', async () => {
+    ProxyService.getProxyStatus = () => ({
+      instanceKey: 'ABC12345',
+      instanceName: 'test-instance',
+      status: 'running',
+      port: 8000,
+      targetPort: 8000,
+      proxyPath: 'app/ABC12345',
+    })
+    ProxyService.healthCheck = async () => true
+    const app = createTestApp()
+
+    const response = await app.handle(new Request('http://localhost/app/ABC12345/health'))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ instanceKey: 'ABC12345', healthy: true, status: 'running' })
   })
 
   test('does not require manager basic auth for proxied wildcard requests', async () => {

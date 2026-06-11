@@ -155,7 +155,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test body forwarding untuk JSON object dan text body.
 - [x] Test binary response pass-through tanpa transformasi.
 - [x] Test JSON URL rewrite behavior sesuai keputusan desain.
-- [ ] Test proxy status dan health untuk instance missing, stopped, running, dan upstream timeout.
+- [x] Test proxy status dan health untuk instance missing, stopped, running, dan upstream timeout.
 
 #### Phase 4 - WebSocket Tests
 

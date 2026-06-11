@@ -5,18 +5,22 @@ import { ProxyService } from './service'
 const originalGetInstanceByKey = queries.getInstanceByKey.get
 const originalFetch = globalThis.fetch
 
-function mockRunningInstance() {
+function mockInstance(overrides: Partial<{ status: string; port: number | null }> = {}) {
   queries.getInstanceByKey.get = (() => ({
     id: 1,
     key: 'ABC12345',
     name: 'proxy-test',
-    status: 'running',
-    port: 18080,
+    status: overrides.status ?? 'running',
+    port: Object.hasOwn(overrides, 'port') ? overrides.port : 18080,
     config: '{}',
     gowa_version: 'latest',
     created_at: '',
     updated_at: '',
   })) as any
+}
+
+function mockRunningInstance() {
+  mockInstance()
 }
 
 function createJsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -143,5 +147,44 @@ describe('ProxyService.forwardRequest', () => {
 
     expect(response.isBinary).toBe(true)
     expect(new Uint8Array(response.body)).toEqual(bytes)
+  })
+
+  test('healthCheck returns false for missing instance', async () => {
+    queries.getInstanceByKey.get = (() => null) as any
+
+    expect(await ProxyService.healthCheck('MISSING1')).toBe(false)
+  })
+
+  test('healthCheck returns false for stopped instance', async () => {
+    mockInstance({ status: 'stopped', port: 18080 })
+
+    expect(await ProxyService.healthCheck('ABC12345')).toBe(false)
+  })
+
+  test('healthCheck returns false when running instance has no port', async () => {
+    mockInstance({ status: 'running', port: null })
+
+    expect(await ProxyService.healthCheck('ABC12345')).toBe(false)
+  })
+
+  test('healthCheck returns true when upstream responds ok', async () => {
+    mockRunningInstance()
+    let capturedUrl = ''
+    globalThis.fetch = (async (url) => {
+      capturedUrl = String(url)
+      return new Response('ok', { status: 200 })
+    }) as typeof fetch
+
+    expect(await ProxyService.healthCheck('ABC12345')).toBe(true)
+    expect(capturedUrl).toBe('http://localhost:18080/')
+  })
+
+  test('healthCheck returns false when upstream times out or throws', async () => {
+    mockRunningInstance()
+    globalThis.fetch = (async () => {
+      throw new Error('timeout')
+    }) as unknown as typeof fetch
+
+    expect(await ProxyService.healthCheck('ABC12345')).toBe(false)
   })
 })

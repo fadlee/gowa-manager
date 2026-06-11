@@ -57,7 +57,7 @@ export namespace ProxyModel {
   export type proxyStatusList = Proxy.StatusList
 
   export const healthResponse = t.Object({
-    instanceId: t.String(),
+    instanceKey: t.String(),
     healthy: t.Boolean(),
     status: t.String()
   })
