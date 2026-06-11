@@ -68,13 +68,14 @@ Konsekuensi:
 - [ ] UI atau docs memberi warning bahwa proteksi proxy bergantung pada config GOWA instance seperti `flags.basicAuth`.
 - [x] WebSocket proxy menyuntikkan Basic Auth per-instance pertama ke upstream secara default jika request tidak membawa `Authorization`.
 - [x] WebSocket auth injection bisa dimatikan dengan `PROXY_WS_INJECT_INSTANCE_AUTH=false`.
-- [ ] Endpoint proxy `status` dan `health` mengikuti desain auth proxy yang sudah dipilih.
-- [ ] `basicAuth` manager tetap hanya melindungi API manager seperti `/api/instances` dan `/api/system` (verified by code, pending integration test).
+- [x] Endpoint proxy `status` dan `health` mengikuti desain auth proxy yang sudah dipilih.
+- [x] `basicAuth` manager tetap hanya melindungi API manager seperti `/api/instances` dan `/api/system` (verified by route integration test).
 - [x] `basicAuth` mengembalikan 401 untuk Authorization header invalid, termasuk invalid base64.
 - [ ] `basicAuth` memakai perbandingan credential yang lebih aman atau risikonya dinyatakan eksplisit.
 - [x] Startup log tidak mencetak password admin.
 - [x] Error response proxy 502 tidak mengembalikan `error.message` mentah.
-- [ ] Error response tidak membocorkan stack trace, credential, host internal, atau port internal.
+- [x] Error response proxy tidak membocorkan detail upstream ke response client pada test route integration.
+- [ ] Error response global tidak membocorkan stack trace, credential, host internal, atau port internal.
 - [ ] CORS production tidak memakai kombinasi open origin dan credentials tanpa allowlist.
 
 ### Proxy Routing
@@ -99,6 +100,7 @@ Konsekuensi:
 - [x] Update instance mem-parse JSON config dengan error handling yang jelas.
 - [ ] Update instance melakukan merge dengan default config bila diperlukan.
 - [x] `config.flags.basePath` selalu dipaksa menjadi `/${Proxy.PREFIX}/${existing.key}`.
+- [x] Service-level test memastikan `updateInstance` menyimpan basePath yang dipaksa dan mempertahankan field existing saat omitted.
 - [x] Config invalid tidak diam-diam disimpan sebagai string rusak.
 - [ ] Perubahan version/name/config tetap backward compatible dengan UI.
 
@@ -134,7 +136,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 #### Phase 2 - Instance Service Tests
 
 - [ ] Test create instance: auto port, generated key, generated basePath, default config, selected `gowa_version`.
-- [ ] Test update instance: name/version/config update, invalid config handling, dan `basePath` tetap dipaksa sesuai key.
+- [x] Test update instance: name/version/config update, invalid config handling, dan `basePath` tetap dipaksa sesuai key.
 - [x] Test helper update config memastikan `basePath` tetap dipaksa sesuai key dan invalid JSON tidak disimpan mentah.
 - [ ] Test delete instance: stop process jika running, cleanup directory, clear resource history, delete DB row.
 - [ ] Test start instance success path dengan mock `VersionManager`, `SystemService`, `Bun.spawn`, dan `ProcessManager`.
@@ -144,8 +146,8 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 #### Phase 3 - Proxy Tests
 
-- [ ] Test proxy auth decision: manager auth tidak diwajibkan untuk `/app/<key>/...`, sesuai keputusan opsi 2.
-- [ ] Test route order proxy: `status`, `health`, WebSocket, lalu wildcard.
+- [x] Test proxy auth decision: manager auth tidak diwajibkan untuk `/app/<key>/...`, sesuai keputusan opsi 2.
+- [x] Test route order proxy untuk `status` dan wildcard HTTP; WebSocket route ordering masih perlu coverage tersendiri.
 - [x] Test proxy path normalization dengan query string.
 - [x] Test proxy error sanitization agar detail internal seperti host/port target tidak muncul di response.
 - [ ] Test header forwarding: allow/deny header yang aman, host rewrite, forwarded headers.
@@ -176,7 +178,8 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 #### Phase 6 - Route/API Integration Tests
 
 - [ ] Test `/api/health` public access.
-- [ ] Test protected `/api/instances` dan `/api/system` membutuhkan Basic Auth manager.
+- [x] Test protected manager route membutuhkan Basic Auth manager melalui route integration harness.
+- [ ] Test protected `/api/instances` dan `/api/system` langsung membutuhkan Basic Auth manager.
 - [ ] Test CRUD instance routes dengan test database/temp data dir.
 - [ ] Test action routes start/stop/restart/kill dengan mocked process layer.
 - [ ] Test auth login/logout response shape.
