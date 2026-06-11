@@ -15,6 +15,7 @@ import { authModule } from './modules/auth'
 import { basicAuth } from './middlewares/auth'
 import { SystemService } from './modules/system/service'
 import { createCorsConfig } from './cors-config'
+import { handleGlobalError } from './error-handler'
 import type { ApiResponse } from './types'
 
 // Parse CLI configuration
@@ -88,28 +89,7 @@ const app = new Elysia()
   .use(cors(createCorsConfig()))
 
   // Global error handler
-  .onError(({ code, error, set }: any) => {
-    console.error('Server error:', error)
-
-    if (code === 'VALIDATION') {
-      set.status = 400
-      return { error: 'Validation failed', success: false }
-    }
-
-    if (code === 'UNAUTHORIZED') {
-      set.status = 401
-      set.headers['WWW-Authenticate'] = 'Basic realm="GOWA Manager"'
-      return { error: 'Unauthorized', success: false }
-    }
-
-    if (code === 'NOT_FOUND') {
-      set.status = 404
-      return { error: 'Route not found', success: false }
-    }
-
-    set.status = 500
-    return { error: 'Internal server error', success: false }
-  })
+  .onError(handleGlobalError)
 
   // Health check endpoint (no auth required)
   .get('/api/health', () => {

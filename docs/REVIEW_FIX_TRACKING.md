@@ -75,7 +75,7 @@ Konsekuensi:
 - [x] Startup log tidak mencetak password admin.
 - [x] Error response proxy 502 tidak mengembalikan `error.message` mentah.
 - [x] Error response proxy tidak membocorkan detail upstream ke response client pada test route integration.
-- [ ] Error response global tidak membocorkan stack trace, credential, host internal, atau port internal.
+- [x] Error response global tidak membocorkan stack trace, credential, host internal, atau port internal pada response helper test.
 - [x] CORS production tidak memakai kombinasi open origin dan credentials tanpa allowlist.
 - [x] CORS allowlist bisa dikonfigurasi lewat `CORS_ALLOWED_ORIGINS`.
 
@@ -180,13 +180,15 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 - [ ] Test `/api/health` public access.
 - [x] Test protected manager route membutuhkan Basic Auth manager melalui route integration harness.
-- [ ] Test protected `/api/instances` dan `/api/system` langsung membutuhkan Basic Auth manager.
+- [x] Test protected `/api/instances` langsung membutuhkan Basic Auth manager.
+- [x] Test protected `/api/system` langsung membutuhkan Basic Auth manager.
 - [x] Global Bun test setup memakai isolated `.test-data/bun-<pid>` sebagai `DATA_DIR` dan cleanup saat process exit.
-- [ ] Test CRUD instance routes dengan test database/temp data dir.
+- [x] Test CRUD instance routes dengan test database/temp data dir.
 - [ ] Test action routes start/stop/restart/kill dengan mocked process layer.
-- [ ] Test auth login/logout response shape.
+- [x] Test system status/config route shape dasar dengan isolated test data dir.
+- [x] Test auth login/logout response shape.
 - [x] Test CORS config untuk dev default, production deny-by-default, dan `CORS_ALLOWED_ORIGINS` allowlist.
-- [ ] Test global error handler untuk validation, unauthorized, not found, dan generic error.
+- [x] Test global error handler untuk validation, unauthorized, not found, dan generic error.
 - [ ] Test CORS behavior untuk development dan production config.
 
 #### Phase 7 - Frontend Unit/Component Tests
