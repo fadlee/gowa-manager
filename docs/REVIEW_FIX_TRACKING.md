@@ -129,9 +129,9 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 - [x] Test `basicAuth` tambahan untuk credential tanpa `:`, password mengandung `:`, casing auth scheme, dan malformed header.
 - [ ] Test CLI config parsing untuk env default, CLI override, port validation, username/password validation, dan data dir.
-- [ ] Test `ConfigParser`: default config, parse JSON valid/invalid, env var generation, CLI arg generation, dan flag edge cases.
+- [x] Test `ConfigParser`: default config, parse JSON valid/invalid, env var generation, CLI arg generation, dan flag edge cases.
 - [ ] Test `NameGenerator` untuk format nama dan collision tolerance jika ada.
-- [ ] Test `DirectoryManager` dengan temporary data dir agar create/cleanup aman.
+- [x] Test `DirectoryManager` dengan temporary data dir agar create/cleanup aman.
 - [ ] Test DB helper ringan seperti `generateInstanceKey` untuk panjang dan character set.
 
 #### Phase 2 - Instance Service Tests
