@@ -71,6 +71,13 @@ Updated: 2026-06-11
   - Kept Overview focused on integration details
   - Source: `client/src/pages/InstanceDetailPage.tsx`
 
+- [x] Add Force Kill action in Danger Zone
+  - Added `Force Kill Process` card with confirmation state
+  - Wired to existing `POST /api/instances/:id/kill` endpoint
+  - Invalidates instance list and status queries after success
+  - Source: `client/src/lib/api.ts`
+  - Source: `client/src/components/instance-detail/DangerZoneSection.tsx`
+
 ### 📋 Up Next
 - [ ] Improve webhook settings UX
   - Clarify whether multiple webhook URLs are supported

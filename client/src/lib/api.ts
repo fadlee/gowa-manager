@@ -81,6 +81,12 @@ class ApiClient {
     });
   }
 
+  async killInstance(id: number): Promise<InstanceStatus> {
+    return this.request<InstanceStatus>(`/instances/${id}/kill`, {
+      method: 'POST',
+    });
+  }
+
   async getInstanceStatus(id: number): Promise<InstanceStatus> {
     return this.request<InstanceStatus>(`/instances/${id}/status`);
   }
