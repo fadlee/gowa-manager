@@ -21,7 +21,7 @@ Kondisi saat review terakhir:
 - CORS memakai `origin: true` dan `credentials: true`, berisiko jika digunakan di production dengan Basic Auth.
 - `basicAuth` dapat throw saat menerima invalid base64 karena `atob` tidak dibungkus `try/catch`, sehingga invalid Authorization header dapat menjadi 500, bukan 401.
 - Perbandingan credential di `basicAuth` belum constant-time. Ini minor untuk konteks lokal, tetapi tetap perlu dicatat untuk hardening.
-- Update config instance belum memaksa ulang `flags.basePath`, berbeda dengan create instance.
+- Update config instance sekarang memaksa ulang `flags.basePath` seperti create instance.
 
 ## Next
 
@@ -91,10 +91,10 @@ Konsekuensi:
 
 ### Instance Config
 
-- [ ] Update instance mem-parse JSON config dengan error handling yang jelas.
+- [x] Update instance mem-parse JSON config dengan error handling yang jelas.
 - [ ] Update instance melakukan merge dengan default config bila diperlukan.
-- [ ] `config.flags.basePath` selalu dipaksa menjadi `/${Proxy.PREFIX}/${existing.key}`.
-- [ ] Config invalid tidak diam-diam disimpan sebagai string rusak.
+- [x] `config.flags.basePath` selalu dipaksa menjadi `/${Proxy.PREFIX}/${existing.key}`.
+- [x] Config invalid tidak diam-diam disimpan sebagai string rusak.
 - [ ] Perubahan version/name/config tetap backward compatible dengan UI.
 
 ### WebSocket
@@ -130,6 +130,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 - [ ] Test create instance: auto port, generated key, generated basePath, default config, selected `gowa_version`.
 - [ ] Test update instance: name/version/config update, invalid config handling, dan `basePath` tetap dipaksa sesuai key.
+- [x] Test helper update config memastikan `basePath` tetap dipaksa sesuai key dan invalid JSON tidak disimpan mentah.
 - [ ] Test delete instance: stop process jika running, cleanup directory, clear resource history, delete DB row.
 - [ ] Test start instance success path dengan mock `VersionManager`, `SystemService`, `Bun.spawn`, dan `ProcessManager`.
 - [ ] Test start instance failure path: version tidak tersedia, port unavailable, spawn gagal, status menjadi `error` dengan message aman.

@@ -8,6 +8,7 @@ import { NameGenerator } from './utils/name-generator'
 import { ResourceMonitor } from './utils/resource-monitor'
 import { VersionManager } from '../system/version-manager'
 import { Proxy } from '../../types'
+import { normalizeUpdateConfig } from './utils/update-config'
 
 // Get GOWA binary path for a specific version (respects DATA_DIR env var or CLI config)
 function getGowaBinaryPath(version: string = 'latest'): string {
@@ -86,11 +87,13 @@ export abstract class InstanceService {
     const existing = this.getInstanceById(id)
     if (!existing) return null
 
+    const config = normalizeUpdateConfig(existing.config, data.config, existing.key)
+
     const updated = queries.updateInstance.get(
       existing.key,
       data.name || existing.name,
       existing.port,
-      data.config || existing.config,
+      config,
       data.gowa_version || existing.gowa_version || 'latest',
       id
     ) as InstanceModel.instanceResponse
