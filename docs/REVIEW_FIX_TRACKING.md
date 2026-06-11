@@ -64,8 +64,8 @@ Konsekuensi:
 ### Security
 
 - [x] Model auth proxy diputuskan: proxy memakai auth per-instance GOWA, bukan Basic Auth manager.
-- [ ] Keputusan auth proxy terdokumentasi di docs pengguna, termasuk dampaknya ke client eksternal/webhook.
-- [ ] UI atau docs memberi warning bahwa proteksi proxy bergantung pada config GOWA instance seperti `flags.basicAuth`.
+- [x] Keputusan auth proxy terdokumentasi di docs pengguna, termasuk dampaknya ke client eksternal/webhook.
+- [x] UI atau docs memberi warning bahwa proteksi proxy bergantung pada config GOWA instance seperti `flags.basicAuth`.
 - [x] WebSocket proxy menyuntikkan Basic Auth per-instance pertama ke upstream secara default jika request tidak membawa `Authorization`.
 - [x] WebSocket auth injection bisa dimatikan dengan `PROXY_WS_INJECT_INSTANCE_AUTH=false`.
 - [x] Endpoint proxy `status` dan `health` mengikuti desain auth proxy yang sudah dipilih.
@@ -222,8 +222,9 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 ### Documentation And CI
 
-- [ ] README atau docs menjelaskan bahwa proxy route memakai auth per-instance GOWA, bukan Basic Auth manager.
+- [x] README atau docs menjelaskan bahwa proxy route memakai auth per-instance GOWA, bukan Basic Auth manager.
 - [ ] Docs proxy path/basePath diperbarui jika perilaku path diubah.
+- [x] README menjelaskan `CORS_ALLOWED_ORIGINS` dan `PROXY_WS_INJECT_INSTANCE_AUTH`.
 - [ ] Docs development menambahkan command test yang diharapkan.
 - [x] `.test-data/` di-ignore agar isolated test database tidak masuk git.
 - [ ] GitHub Actions atau CI lain menjalankan `bun run build:tsc`.

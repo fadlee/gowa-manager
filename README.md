@@ -138,6 +138,36 @@ data/
 bun run src/index.ts --admin-username admin --admin-password mypassword
 ```
 
+## Proxy Access And Security
+
+GOWA Manager exposes running instances through proxy paths such as `/app/{instanceKey}/...`.
+
+Important behavior:
+- Manager Basic Auth protects manager APIs like `/api/instances` and `/api/system`.
+- Proxy routes under `/app/{instanceKey}/...` do not require manager Basic Auth.
+- Proxy protection is delegated to each GOWA instance, so enable instance `basicAuth` when the proxy is reachable by untrusted clients.
+- External clients and webhooks can call proxied GOWA APIs without knowing manager admin credentials, but they should send the GOWA instance credentials when required.
+
+Example proxied API call:
+```bash
+curl \
+  -H "Authorization: Basic $(printf 'admin:admin123' | base64)" \
+  http://localhost:3000/app/ABC12345/app/devices
+```
+
+### WebSocket Auth Injection
+
+Browsers cannot set custom `Authorization` headers when creating a native `WebSocket`. To keep proxied GOWA multi-device pages working, the WebSocket proxy injects the first configured instance Basic Auth pair from `config.flags.basicAuth[0]` when the incoming WebSocket request has no `Authorization` header.
+
+Security notes:
+- This is enabled by default.
+- Anyone who can reach a proxied WebSocket URL for an instance can use the manager-injected upstream credential for that WebSocket connection.
+- Disable this behavior for stricter public deployments and require external clients to provide GOWA auth themselves.
+
+```bash
+PROXY_WS_INJECT_INSTANCE_AUTH=false
+```
+
 ## Instance Management
 
 ### Creating Instances
@@ -207,6 +237,12 @@ ADMIN_PASSWORD=password
 
 # Data directory (optional)
 DATA_DIR=./data
+
+# Comma-separated browser origins allowed in production CORS (optional)
+CORS_ALLOWED_ORIGINS=https://manager.example.com,https://admin.example.com
+
+# Disable default WebSocket Basic Auth injection from instance config (optional)
+PROXY_WS_INJECT_INSTANCE_AUTH=false
 ```
 
 ### CLI Options
