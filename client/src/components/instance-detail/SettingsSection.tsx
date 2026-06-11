@@ -27,6 +27,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
   const [flags, setFlags] = useState<CliFlags>({})
   const [errors, setErrors] = useState<{ name?: string }>({})
   const [hasChanges, setHasChanges] = useState(false)
+  const [restartRequired, setRestartRequired] = useState(false)
   const [showRestartConfirm, setShowRestartConfirm] = useState(false)
   const [pendingSaveData, setPendingSaveData] = useState<{ name?: string; config?: string; gowa_version?: string } | null>(null)
   const queryClient = useQueryClient()
@@ -66,10 +67,13 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
   const updateMutation = useMutation({
     mutationFn: (data: { name?: string; config?: string; gowa_version?: string }) =>
       apiClient.updateInstance(instance.id, data),
-    onSuccess: () => {
+    onSuccess: (_updatedInstance, variables) => {
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
       setHasChanges(false)
+      if (variables.config || variables.gowa_version) {
+        setRestartRequired(true)
+      }
       toast({ title: 'Settings saved', description: 'Your changes have been saved successfully.', variant: 'success' })
     },
     onError: (error) => {
@@ -83,7 +87,8 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
-      toast({ title: 'Instance restarted', description: 'The instance has been restarted with the new version.', variant: 'success' })
+      setRestartRequired(false)
+      toast({ title: 'Instance restarted', description: 'The instance has been restarted with the latest settings.', variant: 'success' })
     },
     onError: (error) => {
       console.error('Failed to restart instance:', error)
@@ -182,6 +187,36 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
           Save Changes
         </Button>
       </div>
+
+      {restartRequired && (
+        <div className="flex flex-col gap-3 p-4 rounded-lg border border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-3 items-start">
+            <AlertCircle className="mt-0.5 w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div>
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                Changes saved. Restart instance to apply.
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Updated GOWA version or CLI configuration will be used after the process restarts.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => restartMutation.mutate()}
+            disabled={restartMutation.isPending || updateMutation.isPending}
+            className="bg-blue-600 hover:bg-blue-700 sm:shrink-0"
+          >
+            {restartMutation.isPending ? (
+              <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+            ) : (
+              <RotateCcw className="mr-2 w-4 h-4" />
+            )}
+            Restart now
+          </Button>
+        </div>
+      )}
 
       {/* Name */}
       <div className="space-y-2">

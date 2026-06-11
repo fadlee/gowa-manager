@@ -19,11 +19,14 @@ Updated: 2026-06-11
   - Includes port in the header on wider screens
   - Source: `client/src/pages/InstanceDetailPage.tsx`
 
-### 🔄 In Progress
-- [ ] Add restart-required banner after settings save
+- [x] Add restart-required banner after settings save
   - Message: `Changes saved. Restart instance to apply.`
-  - Include inline `Restart now` action
-  - Trigger after config changes such as webhook/auth updates
+  - Includes inline `Restart now` action
+  - Triggers after config or version changes
+  - Source: `client/src/components/instance-detail/SettingsSection.tsx`
+
+### 🔄 In Progress
+- [ ] No active task selected
 
 ### 📋 Up Next
 - [ ] Build Overview connection/integration card
