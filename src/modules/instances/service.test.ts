@@ -6,11 +6,14 @@ import { ResourceMonitor } from './utils/resource-monitor'
 import { SystemService } from '../system/service'
 import { VersionManager } from '../system/version-manager'
 import { ProcessManager } from './utils/process-manager'
+import { NameGenerator } from './utils/name-generator'
 
 const createdIds: number[] = []
 const originalStopInstance = InstanceService.stopInstance
 const originalStartInstance = InstanceService.startInstance
 const originalRestartDelayMs = process.env.INSTANCE_RESTART_DELAY_MS
+const originalGetNextAvailablePort = SystemService.getNextAvailablePort
+const originalGenerateRandomName = NameGenerator.generateRandomName
 
 function createStoredInstance(overrides: Partial<{
   key: string
@@ -444,5 +447,81 @@ describe('InstanceService.getInstanceStatus', () => {
 
     ProcessManager.removeProcess(instance.id)
     resourceUsage.mockRestore()
+  })
+})
+
+describe('InstanceService.createInstance', () => {
+  afterEach(() => {
+    SystemService.getNextAvailablePort = originalGetNextAvailablePort
+    NameGenerator.generateRandomName = originalGenerateRandomName
+    cleanupCreatedInstances()
+  })
+
+  test('creates instance with auto port, generated name, key, basePath, and default config', async () => {
+    SystemService.getNextAvailablePort = async () => 19501
+    NameGenerator.generateRandomName = () => 'generated-service-name'
+
+    const instance = await InstanceService.createInstance({})
+    createdIds.push(instance.id)
+    const config = JSON.parse(instance.config)
+
+    expect(instance.name).toBe('generated-service-name')
+    expect(instance.port).toBe(19501)
+    expect(instance.key).toMatch(/^[A-Z0-9]{8}$/)
+    expect(instance.gowa_version).toBe('latest')
+    expect(config.args).toEqual(['rest', '--port=PORT'])
+    expect(config.flags).toEqual({
+      accountValidation: true,
+      os: 'GowaManager',
+      basePath: `/app/${instance.key}`,
+    })
+  })
+
+  test('merges provided config and forces generated basePath', async () => {
+    SystemService.getNextAvailablePort = async () => 19502
+
+    const instance = await InstanceService.createInstance({
+      name: 'provided-create-name',
+      gowa_version: 'v8.7.0',
+      config: JSON.stringify({
+        flags: {
+          os: 'Chrome',
+          basePath: '/wrong',
+          basicAuth: [{ username: 'admin', password: 'secret' }],
+        },
+      }),
+    })
+    createdIds.push(instance.id)
+    const config = JSON.parse(instance.config)
+
+    expect(instance.name).toBe('provided-create-name')
+    expect(instance.port).toBe(19502)
+    expect(instance.gowa_version).toBe('v8.7.0')
+    expect(config.args).toEqual(['rest', '--port=PORT'])
+    expect(config.flags).toEqual({
+      os: 'Chrome',
+      basePath: `/app/${instance.key}`,
+      basicAuth: [{ username: 'admin', password: 'secret' }],
+    })
+  })
+
+  test('falls back to default config when provided config is invalid JSON', async () => {
+    SystemService.getNextAvailablePort = async () => 19503
+
+    const instance = await InstanceService.createInstance({
+      name: 'invalid-config-create',
+      config: '{bad-json',
+    })
+    createdIds.push(instance.id)
+    const config = JSON.parse(instance.config)
+
+    expect(instance.name).toBe('invalid-config-create')
+    expect(instance.port).toBe(19503)
+    expect(config.args).toEqual(['rest', '--port=PORT'])
+    expect(config.flags).toEqual({
+      accountValidation: true,
+      os: 'GowaManager',
+      basePath: `/app/${instance.key}`,
+    })
   })
 })

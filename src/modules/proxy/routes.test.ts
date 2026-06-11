@@ -161,6 +161,21 @@ describe('proxy route auth behavior', () => {
     })
   })
 
+  test('keeps websocket route before wildcard proxy routes', () => {
+    const routes = (proxyModule as any).routes.map((route: any) => ({
+      method: route.method,
+      path: route.path,
+    }))
+
+    expect(routes).toEqual([
+      { method: 'GET', path: '/app/:instanceKey/status' },
+      { method: 'GET', path: '/app/:instanceKey/health' },
+      { method: 'WS', path: '/app/:instanceKey/ws' },
+      { method: 'ALL', path: '/app/:instanceKey/*' },
+      { method: 'ALL', path: '/app/:instanceKey' },
+    ])
+  })
+
   test('returns sanitized 502 when proxy forwarding throws', async () => {
     const consoleError = spyOn(console, 'error').mockImplementation(() => {})
     ProxyService.isInstanceAvailable = () => true

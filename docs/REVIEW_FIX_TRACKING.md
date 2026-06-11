@@ -136,7 +136,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 #### Phase 2 - Instance Service Tests
 
-- [ ] Test create instance: auto port, generated key, generated basePath, default config, selected `gowa_version`.
+- [x] Test create instance: auto port, generated key, generated basePath, default config, selected `gowa_version`.
 - [x] Test update instance: name/version/config update, invalid config handling, dan `basePath` tetap dipaksa sesuai key.
 - [x] Test helper update config memastikan `basePath` tetap dipaksa sesuai key dan invalid JSON tidak disimpan mentah.
 - [x] Test delete instance: stop process jika running, cleanup directory, clear resource history, delete DB row.
@@ -148,7 +148,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 #### Phase 3 - Proxy Tests
 
 - [x] Test proxy auth decision: manager auth tidak diwajibkan untuk `/app/<key>/...`, sesuai keputusan opsi 2.
-- [x] Test route order proxy untuk `status` dan wildcard HTTP; WebSocket route ordering masih perlu coverage tersendiri.
+- [x] Test route order proxy untuk `status`, WebSocket, dan wildcard HTTP.
 - [x] Test proxy path normalization dengan query string.
 - [x] Test proxy error sanitization agar detail internal seperti host/port target tidak muncul di response.
 - [x] Test header forwarding: auth/cookie preservation, host rewrite, dan forwarded headers.
@@ -170,8 +170,8 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 
 - [ ] Test `SystemService` port availability dan next available port dengan mock socket/server.
 - [ ] Test system status response shape dan resource fallback.
-- [ ] Test `VersionManager` path resolution untuk `latest` dan explicit version.
-- [ ] Test installed versions listing dengan temporary data dir.
+- [x] Test `VersionManager` path resolution untuk `latest` dan explicit version.
+- [x] Test installed versions listing dengan temporary data dir.
 - [ ] Test install/remove version dengan mocked GitHub fetch dan filesystem temp dir.
 - [ ] Test auto-updater behavior dengan mocked available versions dan installed versions.
 - [ ] Test cleanup scheduler behavior tanpa menghapus data nyata.
