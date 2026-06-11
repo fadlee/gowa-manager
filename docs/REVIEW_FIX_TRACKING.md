@@ -12,6 +12,7 @@ Kondisi saat review terakhir:
 - Keputusan desain: route proxy (`/app/<instanceKey>/...`) tidak memakai Basic Auth manager.
 - Route proxy dipakai sebagai gateway sederhana untuk client eksternal/webhook yang mengakses API GOWA langsung.
 - Proteksi proxy diserahkan ke auth per-instance GOWA, misalnya melalui config/flag auth GOWA pada masing-masing instance.
+- WebSocket proxy otomatis menyuntikkan Basic Auth per-instance pertama ke upstream jika request tidak membawa `Authorization`, agar UI GOWA multi-device tetap berjalan di browser. Perilaku ini bisa dimatikan dengan `PROXY_WS_INJECT_INSTANCE_AUTH=false`.
 - Konsekuensi: instance GOWA tanpa auth sendiri dapat diakses melalui proxy jika `instanceKey` diketahui.
 - Route wildcard proxy didefinisikan sebelum route spesifik `status` dan `health`, sehingga berisiko menangkap request yang salah.
 - Proxy meneruskan path lengkap dari manager ke instance tanpa path normalization yang jelas.
@@ -53,8 +54,10 @@ Alasan:
 Konsekuensi:
 
 - Instance GOWA yang tidak mengaktifkan auth sendiri dapat diakses melalui proxy jika `instanceKey` diketahui.
+- Jika WebSocket auth injection aktif, siapa pun yang bisa mengakses URL proxy WebSocket untuk instance tersebut dapat memakai credential per-instance yang disuntikkan oleh manager ke upstream.
 - Deployment yang expose proxy ke jaringan publik harus mengaktifkan auth per-instance GOWA.
 - Perbaikan keamanan proxy tetap wajib: sanitasi error, path normalization, route order, dan tidak membocorkan detail internal.
+- Untuk deployment publik yang tidak menginginkan WebSocket auth injection, set `PROXY_WS_INJECT_INSTANCE_AUTH=false` dan pastikan client eksternal mengirim auth GOWA sendiri.
 
 ## Checklist
 
@@ -63,6 +66,8 @@ Konsekuensi:
 - [x] Model auth proxy diputuskan: proxy memakai auth per-instance GOWA, bukan Basic Auth manager.
 - [ ] Keputusan auth proxy terdokumentasi di docs pengguna, termasuk dampaknya ke client eksternal/webhook.
 - [ ] UI atau docs memberi warning bahwa proteksi proxy bergantung pada config GOWA instance seperti `flags.basicAuth`.
+- [x] WebSocket proxy menyuntikkan Basic Auth per-instance pertama ke upstream secara default jika request tidak membawa `Authorization`.
+- [x] WebSocket auth injection bisa dimatikan dengan `PROXY_WS_INJECT_INSTANCE_AUTH=false`.
 - [ ] Endpoint proxy `status` dan `health` mengikuti desain auth proxy yang sudah dipilih.
 - [ ] `basicAuth` manager tetap hanya melindungi API manager seperti `/api/instances` dan `/api/system` (verified by code, pending integration test).
 - [x] `basicAuth` mengembalikan 401 untuk Authorization header invalid, termasuk invalid base64.
@@ -155,7 +160,8 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test multiple client untuk instance yang sama tidak saling menutup koneksi.
 - [ ] Test cleanup saat client close, upstream close, dan error (registry covered, route/upstream integration pending).
 - [ ] Test message forwarding mempertahankan tipe payload yang benar.
-- [ ] Test forwarding query string dan header penting seperti auth/cookie/subprotocol.
+- [x] Test forwarding query string dan auth injection helper untuk WebSocket.
+- [ ] Test forwarding header penting lain seperti cookie/subprotocol.
 
 #### Phase 5 - System And Version Tests
 

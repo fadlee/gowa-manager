@@ -1,6 +1,7 @@
 import { queries } from '../../db'
 import { WebSocket } from 'ws'
 import { WebSocketRegistry } from './websocket-registry'
+import { applyInstanceWebSocketAuthHeader } from './auth-utils'
 
 const wsConnections = new WebSocketRegistry<WebSocket>()
 
@@ -41,7 +42,8 @@ export abstract class WebSocketProxyService {
         }
       }
 
-      const proxyWs = new WebSocket(targetUrl, subprotocols, { headers: forwardHeaders })
+      const upstreamHeaders = applyInstanceWebSocketAuthHeader(forwardHeaders, instance)
+      const proxyWs = new WebSocket(targetUrl, subprotocols, { headers: upstreamHeaders })
 
       console.log('WS targetUrl: ' + targetUrl)
 
