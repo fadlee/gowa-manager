@@ -180,6 +180,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [ ] Test `/api/health` public access.
 - [x] Test protected manager route membutuhkan Basic Auth manager melalui route integration harness.
 - [ ] Test protected `/api/instances` dan `/api/system` langsung membutuhkan Basic Auth manager.
+- [x] Global Bun test setup memakai isolated `.test-data/bun-<pid>` sebagai `DATA_DIR` dan cleanup saat process exit.
 - [ ] Test CRUD instance routes dengan test database/temp data dir.
 - [ ] Test action routes start/stop/restart/kill dengan mocked process layer.
 - [ ] Test auth login/logout response shape.
@@ -222,6 +223,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [ ] README atau docs menjelaskan bahwa proxy route memakai auth per-instance GOWA, bukan Basic Auth manager.
 - [ ] Docs proxy path/basePath diperbarui jika perilaku path diubah.
 - [ ] Docs development menambahkan command test yang diharapkan.
+- [x] `.test-data/` di-ignore agar isolated test database tidak masuk git.
 - [ ] GitHub Actions atau CI lain menjalankan `bun run build:tsc`.
 - [ ] GitHub Actions atau CI lain menjalankan `bun test`.
 

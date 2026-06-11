@@ -8,6 +8,7 @@ node_modules/
 
 # Data directory
 data/*
+.test-data/
 
 # Build outputs
 dist/
