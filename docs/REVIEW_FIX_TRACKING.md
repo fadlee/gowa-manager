@@ -185,7 +185,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Global Bun test setup memakai isolated `.test-data/bun-<pid>` sebagai `DATA_DIR` dan cleanup saat process exit.
 - [x] Test setup memfilter log noisy yang sudah dikenal dari DB init/migration dan directory cleanup.
 - [x] Test CRUD instance routes dengan test database/temp data dir.
-- [ ] Test action routes start/stop/restart/kill dengan mocked process layer.
+- [x] Test action routes start/stop/restart/kill dengan mocked process layer.
 - [x] Test system status/config route shape dasar dengan isolated test data dir.
 - [x] Test auth login/logout response shape.
 - [x] Test CORS config untuk dev default, production deny-by-default, dan `CORS_ALLOWED_ORIGINS` allowlist.
