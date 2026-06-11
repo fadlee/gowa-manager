@@ -4,14 +4,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
-import { Switch } from '../components/ui/switch'
 import {
   ArrowLeft,
   ExternalLink,
   Eye,
   Settings,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Play,
+  Square
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { OverviewSection } from '../components/instance-detail/OverviewSection'
@@ -112,9 +113,26 @@ export function InstanceDetailPage() {
     )
   }
 
-  const isRunning = status?.status?.toLowerCase() === 'running'
-  const isError = status?.status?.toLowerCase() === 'error'
+  const currentStatus = status?.status || instance.status || 'unknown'
+  const normalizedStatus = currentStatus.toLowerCase()
+  const isRunning = normalizedStatus === 'running'
+  const isError = normalizedStatus === 'error'
+  const isStopped = normalizedStatus === 'stopped'
   const isLoading = startMutation.isPending || stopMutation.isPending || restartMutation.isPending
+  const statusLabel = isLoading
+    ? startMutation.isPending
+      ? 'Starting'
+      : stopMutation.isPending
+        ? 'Stopping'
+        : 'Restarting'
+    : currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)
+  const statusBadgeClass = isError
+    ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
+    : isRunning
+      ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
+      : isStopped
+        ? 'bg-gray-200 text-gray-700 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600'
+        : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800'
 
   const handleOpenProxy = () => {
     if (status?.port) {
@@ -150,23 +168,48 @@ export function InstanceDetailPage() {
               </Badge>
             </div>
 
-            {/* Right: Power toggle */}
+            {/* Right: Status and lifecycle actions */}
             <div className="flex gap-2 items-center sm:gap-3 shrink-0">
-              <span className="hidden text-xs text-gray-600 dark:text-gray-400 sm:text-sm sm:inline">
-                {isRunning ? 'ON' : 'OFF'}
-              </span>
-              <Switch
-                checked={isRunning}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    startMutation.mutate()
-                  } else {
-                    stopMutation.mutate()
-                  }
-                }}
-                disabled={isLoading}
-                className="data-[state=checked]:bg-green-600 data-[state=checked]:shadow-[0_0_12px_rgba(34,197,94,0.4)]"
-              />
+              <Badge variant="outline" className={cn('hidden sm:inline-flex text-xs border', statusBadgeClass)}>
+                {statusLabel}
+              </Badge>
+              {status?.port && (
+                <span className="hidden text-xs text-gray-500 dark:text-gray-400 lg:inline">
+                  :{status.port}
+                </span>
+              )}
+              <div className="flex overflow-hidden items-center rounded-md border border-gray-300 dark:border-gray-600">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => startMutation.mutate()}
+                  disabled={isLoading || isRunning}
+                  className="rounded-none border-r border-gray-300 dark:border-gray-600 text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20"
+                >
+                  <Play className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Start</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => restartMutation.mutate()}
+                  disabled={isLoading || !isRunning}
+                  className="rounded-none border-r border-gray-300 dark:border-gray-600"
+                >
+                  <RefreshCw className={cn('w-4 h-4 sm:mr-2', restartMutation.isPending && 'animate-spin')} />
+                  <span className="hidden sm:inline">Restart</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => stopMutation.mutate()}
+                  disabled={isLoading || !isRunning}
+                  className="rounded-none text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  <Square className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Stop</span>
+                </Button>
+              </div>
             </div>
         </div>
 
