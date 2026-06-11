@@ -10,6 +10,7 @@ import { ProcessManager } from './utils/process-manager'
 const createdIds: number[] = []
 const originalStopInstance = InstanceService.stopInstance
 const originalStartInstance = InstanceService.startInstance
+const originalRestartDelayMs = process.env.INSTANCE_RESTART_DELAY_MS
 
 function createStoredInstance(overrides: Partial<{
   key: string
@@ -150,6 +151,7 @@ describe('InstanceService.stopKillRestartInstance', () => {
   afterEach(() => {
     InstanceService.stopInstance = originalStopInstance
     InstanceService.startInstance = originalStartInstance
+    process.env.INSTANCE_RESTART_DELAY_MS = originalRestartDelayMs
     cleanupCreatedInstances()
   })
 
@@ -200,6 +202,7 @@ describe('InstanceService.stopKillRestartInstance', () => {
   })
 
   test('restartInstance stops then starts instance', async () => {
+    process.env.INSTANCE_RESTART_DELAY_MS = '0'
     const stop = spyOn(InstanceService, 'stopInstance').mockResolvedValue({
       id: 321,
       name: 'restart-service',
@@ -345,5 +348,101 @@ describe('InstanceService.startInstance', () => {
     portAvailable.mockRestore()
     binaryPath.mockRestore()
     versionAvailable.mockRestore()
+  })
+})
+
+describe('InstanceService.getInstanceStatus', () => {
+  afterEach(() => {
+    ProcessManager.removeProcess(9101)
+    ProcessManager.removeProcess(9102)
+    cleanupCreatedInstances()
+  })
+
+  test('returns stopped status without process info', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTS01', name: 'test-status-stopped', port: 19401 })
+
+    const status = await InstanceService.getInstanceStatus(instance.id)
+
+    expect(status).toMatchObject({
+      id: instance.id,
+      name: 'test-status-stopped',
+      status: 'stopped',
+      port: 19401,
+      pid: null,
+      uptime: null,
+    })
+    expect(status?.resources).toBeUndefined()
+  })
+
+  test('returns running status with process info and resource usage', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTS02', name: 'test-status-running', port: 19402 })
+    queries.updateInstanceStatus.run('running', instance.id)
+    ProcessManager.addProcess(instance.id, {
+      process: {} as any,
+      pid: 9101,
+      startTime: Date.now() - 5000,
+    })
+    const resources = {
+      cpuPercent: 12,
+      memoryMB: 34,
+      memoryPercent: 2,
+      avgCpu: 10,
+      avgMemory: 30,
+    }
+    const resourceUsage = spyOn(ResourceMonitor, 'getResourceUsage').mockResolvedValue(resources)
+
+    const status = await InstanceService.getInstanceStatus(instance.id)
+
+    expect(status).toMatchObject({
+      id: instance.id,
+      status: 'running',
+      port: 19402,
+      pid: 9101,
+      resources,
+    })
+    expect(status!.uptime).toBeGreaterThanOrEqual(0)
+    expect(resourceUsage).toHaveBeenCalledWith(9101, instance.id)
+
+    ProcessManager.removeProcess(instance.id)
+    resourceUsage.mockRestore()
+  })
+
+  test('returns error status with error message', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTS03', name: 'test-status-error', port: 19403 })
+    queries.updateInstanceStatusWithError.run('error', 'spawn failed', instance.id)
+
+    const status = await InstanceService.getInstanceStatus(instance.id)
+
+    expect(status).toMatchObject({
+      id: instance.id,
+      status: 'error',
+      port: 19403,
+      pid: null,
+      uptime: null,
+      error_message: 'spawn failed',
+    })
+  })
+
+  test('returns running status without resources when monitor fails', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTS04', name: 'test-status-resource-fallback', port: 19404 })
+    queries.updateInstanceStatus.run('running', instance.id)
+    ProcessManager.addProcess(instance.id, {
+      process: {} as any,
+      pid: 9102,
+      startTime: Date.now() - 1000,
+    })
+    const resourceUsage = spyOn(ResourceMonitor, 'getResourceUsage').mockRejectedValue(new Error('pid unavailable'))
+
+    const status = await InstanceService.getInstanceStatus(instance.id)
+
+    expect(status).toMatchObject({
+      id: instance.id,
+      status: 'running',
+      pid: 9102,
+    })
+    expect(status?.resources).toBeUndefined()
+
+    ProcessManager.removeProcess(instance.id)
+    resourceUsage.mockRestore()
   })
 })

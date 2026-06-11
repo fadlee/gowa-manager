@@ -15,6 +15,11 @@ function getGowaBinaryPath(version: string = 'latest'): string {
   return VersionManager.getVersionBinaryPath(version)
 }
 
+function getRestartDelayMs(): number {
+  const configuredDelay = Number(process.env.INSTANCE_RESTART_DELAY_MS)
+  return Number.isFinite(configuredDelay) && configuredDelay >= 0 ? configuredDelay : 1000
+}
+
 // Initialize process exit handlers
 ProcessManager.setupExitHandlers()
 
@@ -249,8 +254,8 @@ export abstract class InstanceService {
   // Restart instance
   static async restartInstance(id: number): Promise<InstanceModel.statusResponse | null> {
     this.stopInstance(id)
-    // Wait a bit before starting
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    // Wait a bit before starting, but allow tests to shorten the delay.
+    await new Promise(resolve => setTimeout(resolve, getRestartDelayMs()))
     return await this.startInstance(id)
   }
 

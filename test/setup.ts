@@ -12,6 +12,7 @@ process.env.DATA_DIR = testDataDir
 
 const originalConsoleLog = console.log.bind(console)
 const originalConsoleError = console.error.bind(console)
+const originalConsoleWarn = console.warn.bind(console)
 const noisyLogPrefixes = [
   'Database initialized successfully',
   'Added error_message column to existing instances table',
@@ -26,6 +27,10 @@ const noisyErrorPrefixes = [
   'Failed to start instance ',
 ]
 
+const noisyWarnPrefixes = [
+  'Failed to get resource usage for instance ',
+]
+
 console.log = (...args: unknown[]) => {
   const first = String(args[0] ?? '')
   if (noisyLogPrefixes.some((prefix) => first.startsWith(prefix))) return
@@ -36,6 +41,12 @@ console.error = (...args: unknown[]) => {
   const first = String(args[0] ?? '')
   if (noisyErrorPrefixes.some((prefix) => first.startsWith(prefix))) return
   originalConsoleError(...args)
+}
+
+console.warn = (...args: unknown[]) => {
+  const first = String(args[0] ?? '')
+  if (noisyWarnPrefixes.some((prefix) => first.startsWith(prefix))) return
+  originalConsoleWarn(...args)
 }
 
 process.on('exit', () => {

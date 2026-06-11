@@ -143,7 +143,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test start instance success path dengan mock `VersionManager`, `SystemService`, `Bun.spawn`, dan `ProcessManager`.
 - [x] Test start instance failure path: version tidak tersedia, port unavailable, spawn gagal, status menjadi `error` dengan message aman.
 - [x] Test stop/kill/restart lifecycle tanpa menjalankan binary GOWA asli.
-- [ ] Test get status untuk running/stopped/error termasuk resource usage fallback saat monitor gagal.
+- [x] Test get status untuk running/stopped/error termasuk resource usage fallback saat monitor gagal.
 
 #### Phase 3 - Proxy Tests
 
