@@ -20,6 +20,7 @@
     "generate-version": "bun run scripts/generate-version.ts",
     "prebuild:production": "bun run generate-version && bun run build:client && bun run embed-static",
     "build:production": "bun run prebuild:production && bun run build",
+    "test": "bun test",
     "dev:server": "bun --watch run src/index.ts",
     "dev:client": "cd client && bun run dev",
     "dev": "bun run scripts/dev-watch.ts",

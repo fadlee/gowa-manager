@@ -2,6 +2,7 @@ import { Elysia } from 'elysia'
 import { ProxyService } from './service'
 import { ProxyModel } from './model'
 import { WebSocketProxyService } from './service.websocket'
+import { createProxyErrorResponse, createWebSocketProxyPath, normalizeProxyPath } from './utils'
 
 // Create a shared handler function
 const handleProxyRequest = async (
@@ -70,10 +71,7 @@ const handleProxyRequest = async (
   } catch (error) {
     console.error(`Proxy error for instance ${instanceKey}:`, error)
     set.status = 502
-    return {
-      error: error instanceof Error ? error.message : 'Proxy request failed',
-      success: false
-    }
+    return createProxyErrorResponse()
   }
 }
 
@@ -86,20 +84,6 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
   //     200: ProxyModel.proxyStatusList
   //   }
   // })
-
-  // Dynamic proxy route - forwards all requests to the target instance
-  .all('/:instanceKey/*', async ({ params: { instanceKey }, request, set, headers }) => {
-    const url = new URL(request.url)
-    const pathSegments = url.pathname.split('/')
-    const proxyPath = pathSegments.join('/') + url.search
-    return handleProxyRequest(instanceKey, url.pathname, request, set, headers)
-  })
-
-  // Fallback route for instance root
-  .all('/:instanceKey', async ({ params: { instanceKey }, request, set, headers }) => {
-    const url = new URL(request.url)
-    return handleProxyRequest(instanceKey, url.pathname, request, set, headers)
-  })
 
   // Get proxy status for specific instance
   .get('/:instanceKey/status', ({ params: { instanceKey }, set }) => {
@@ -148,9 +132,7 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
 
         // Create proxy WebSocket connection using the full proxied path including query string
         const query = (ws.data as any)?.query as Record<string, string> | undefined
-        const qs = query ? new URLSearchParams(query) : undefined
-        const queryStr = qs && qs.toString().length > 0 ? `?${qs.toString()}` : ''
-        const wsPath = `/${ProxyModel.prefix}/${instanceKey}/ws${queryStr}`
+        const wsPath = createWebSocketProxyPath(instanceKey, query)
 
         // Forward incoming headers (auth, cookies, protocols) if available
         const incomingHeaders: Record<string, string> = {}
@@ -226,4 +208,14 @@ export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
       // Close the proxy WebSocket connection
       WebSocketProxyService.closeWebSocketConnection(instanceKey)
     }
+  })
+
+  // Dynamic proxy route - forwards all requests to the target instance
+  .all('/:instanceKey/*', async ({ params: { instanceKey }, request, set, headers }) => {
+    return handleProxyRequest(instanceKey, normalizeProxyPath(request.url), request, set, headers)
+  })
+
+  // Fallback route for instance root
+  .all('/:instanceKey', async ({ params: { instanceKey }, request, set, headers }) => {
+    return handleProxyRequest(instanceKey, normalizeProxyPath(request.url), request, set, headers)
   })

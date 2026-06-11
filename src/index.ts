@@ -222,6 +222,6 @@ if (PORT !== DESIRED_PORT) {
 }
 
 console.log(`🚀 GOWA Manager server is running on ${app.server?.hostname}:${app.server?.port}`)
-console.log(`👤 Admin credentials: ${ADMIN_USERNAME}/${ADMIN_PASSWORD}`)
+console.log(`👤 Admin username: ${ADMIN_USERNAME} (password configured)`)
 console.log(`📂 Data directory: ${config.dataDir || './data'}`)
 console.log(`🌐 Open: http://localhost:${PORT}`)
