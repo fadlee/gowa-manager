@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "cloak-browser": {
+      "command": "cloakbrowsermcp",
+      "args": [
+        "--caps",
+        "all"
+      ],
+      "directTools": true
+    }
+  }
+}
