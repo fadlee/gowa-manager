@@ -24,11 +24,8 @@ jobs:
       with:
         bun-version: latest
 
-    - name: Install dependencies (server)
+    - name: Install dependencies
       run: bun install --frozen-lockfile
-
-    - name: Install dependencies (client)
-      run: cd client && bun install --frozen-lockfile
 
     - name: Build client
       run: bun run build:client

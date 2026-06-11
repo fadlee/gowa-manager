@@ -3,6 +3,9 @@
   "version": "1.6.4",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "workspaces": [
+    "client"
+  ],
   "bin": {
     "gowa-manager": "./bin/npx-cli.js"
   },

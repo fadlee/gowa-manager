@@ -14,11 +14,8 @@
 Run all commands from the **repo root** unless noted.
 
 ```bash
-# Install backend + CLI deps
+# Install backend + CLI + frontend deps
 bun install
-
-# Install frontend deps
-cd client && bun install
 
 # Dev – integrated mode (build client on change, serve via Bun)
 bun run dev
@@ -27,7 +24,7 @@ bun run dev
 bun run dev:server
 
 # Dev – frontend only (Vite dev server on :5173)
-cd client && bun run dev
+bun run dev:client
 
 # Build all for production (client + embed + server)
 bun run build:production

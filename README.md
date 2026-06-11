@@ -62,10 +62,8 @@ chmod +x gowa-manager-*
 git clone https://github.com/fadlee/gowa-manager.git
 cd gowa-manager
 
-# Install dependencies
+# Install dependencies (server + client workspace)
 bun install
-cd client && bun install
-cd ..
 
 # Run in development mode
 bun run dev
