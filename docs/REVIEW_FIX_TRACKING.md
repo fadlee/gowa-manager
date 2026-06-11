@@ -142,7 +142,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test delete instance: stop process jika running, cleanup directory, clear resource history, delete DB row.
 - [x] Test start instance success path dengan mock `VersionManager`, `SystemService`, `Bun.spawn`, dan `ProcessManager`.
 - [x] Test start instance failure path: version tidak tersedia, port unavailable, spawn gagal, status menjadi `error` dengan message aman.
-- [ ] Test stop/kill/restart lifecycle tanpa menjalankan binary GOWA asli.
+- [x] Test stop/kill/restart lifecycle tanpa menjalankan binary GOWA asli.
 - [ ] Test get status untuk running/stopped/error termasuk resource usage fallback saat monitor gagal.
 
 #### Phase 3 - Proxy Tests
@@ -183,7 +183,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [x] Test protected `/api/instances` langsung membutuhkan Basic Auth manager.
 - [x] Test protected `/api/system` langsung membutuhkan Basic Auth manager.
 - [x] Global Bun test setup memakai isolated `.test-data/bun-<pid>` sebagai `DATA_DIR` dan cleanup saat process exit.
-- [x] Test setup memfilter log noisy yang sudah dikenal dari DB init/migration dan directory cleanup.
+- [x] Test setup memfilter log noisy yang sudah dikenal dari DB init/migration, directory cleanup, dan lifecycle start mock.
 - [x] Test CRUD instance routes dengan test database/temp data dir.
 - [x] Test action routes start/stop/restart/kill dengan mocked process layer.
 - [x] Test system status/config route shape dasar dengan isolated test data dir.

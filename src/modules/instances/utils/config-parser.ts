@@ -100,9 +100,6 @@ export class ConfigParser {
       args.push(...flagArgs)
     }
 
-    console.log(`Debug - config.args type: ${typeof config.args}, value:`, config.args)
-    console.log(`Debug - processed args:`, args)
-
     return args.map((arg: string) =>
       arg.replace(/PORT/g, port.toString())
     )

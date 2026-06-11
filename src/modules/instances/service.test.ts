@@ -9,6 +9,7 @@ import { ProcessManager } from './utils/process-manager'
 
 const createdIds: number[] = []
 const originalStopInstance = InstanceService.stopInstance
+const originalStartInstance = InstanceService.startInstance
 
 function createStoredInstance(overrides: Partial<{
   key: string
@@ -142,6 +143,88 @@ describe('InstanceService.deleteInstance', () => {
     stop.mockRestore()
     cleanup.mockRestore()
     clearHistory.mockRestore()
+  })
+})
+
+describe('InstanceService.stopKillRestartInstance', () => {
+  afterEach(() => {
+    InstanceService.stopInstance = originalStopInstance
+    InstanceService.startInstance = originalStartInstance
+    cleanupCreatedInstances()
+  })
+
+  test('stopInstance returns null when instance does not exist', async () => {
+    expect(await InstanceService.stopInstance(-999999)).toBeNull()
+  })
+
+  test('stopInstance stops process, clears history, and updates status', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTP01', name: 'test-stop-service' })
+    queries.updateInstanceStatus.run('running', instance.id)
+    const stopProcess = spyOn(ProcessManager, 'stopProcess').mockReturnValue(true)
+    const clearHistory = spyOn(ResourceMonitor, 'clearHistory').mockImplementation(() => {})
+
+    const status = await InstanceService.stopInstance(instance.id)
+    const updated = queries.getInstanceById.get(instance.id) as any
+
+    expect(status).toMatchObject({ id: instance.id, status: 'stopped', pid: null, uptime: null })
+    expect(updated.status).toBe('stopped')
+    expect(updated.error_message).toBeNull()
+    expect(stopProcess).toHaveBeenCalledWith(instance.id)
+    expect(clearHistory).toHaveBeenCalledWith(instance.id)
+
+    stopProcess.mockRestore()
+    clearHistory.mockRestore()
+  })
+
+  test('killInstance returns null when instance does not exist', async () => {
+    expect(await InstanceService.killInstance(-999999)).toBeNull()
+  })
+
+  test('killInstance kills process, clears history, and updates status', async () => {
+    const instance = createStoredInstance({ key: 'TSTKIL01', name: 'test-kill-service' })
+    queries.updateInstanceStatus.run('running', instance.id)
+    const killProcess = spyOn(ProcessManager, 'killProcess').mockReturnValue(true)
+    const clearHistory = spyOn(ResourceMonitor, 'clearHistory').mockImplementation(() => {})
+
+    const status = await InstanceService.killInstance(instance.id)
+    const updated = queries.getInstanceById.get(instance.id) as any
+
+    expect(status).toMatchObject({ id: instance.id, status: 'stopped', pid: null, uptime: null })
+    expect(updated.status).toBe('stopped')
+    expect(updated.error_message).toBeNull()
+    expect(killProcess).toHaveBeenCalledWith(instance.id)
+    expect(clearHistory).toHaveBeenCalledWith(instance.id)
+
+    killProcess.mockRestore()
+    clearHistory.mockRestore()
+  })
+
+  test('restartInstance stops then starts instance', async () => {
+    const stop = spyOn(InstanceService, 'stopInstance').mockResolvedValue({
+      id: 321,
+      name: 'restart-service',
+      status: 'stopped',
+      port: 19321,
+      pid: null,
+      uptime: null,
+    })
+    const start = spyOn(InstanceService, 'startInstance').mockResolvedValue({
+      id: 321,
+      name: 'restart-service',
+      status: 'running',
+      port: 19321,
+      pid: 9321,
+      uptime: 0,
+    })
+
+    const status = await InstanceService.restartInstance(321)
+
+    expect(status).toMatchObject({ id: 321, status: 'running', pid: 9321 })
+    expect(stop).toHaveBeenCalledWith(321)
+    expect(start).toHaveBeenCalledWith(321)
+
+    stop.mockRestore()
+    start.mockRestore()
   })
 })
 
