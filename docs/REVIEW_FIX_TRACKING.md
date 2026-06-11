@@ -139,7 +139,7 @@ Tujuan: membangun test suite komprehensif secara bertahap, bukan hanya test untu
 - [ ] Test create instance: auto port, generated key, generated basePath, default config, selected `gowa_version`.
 - [x] Test update instance: name/version/config update, invalid config handling, dan `basePath` tetap dipaksa sesuai key.
 - [x] Test helper update config memastikan `basePath` tetap dipaksa sesuai key dan invalid JSON tidak disimpan mentah.
-- [ ] Test delete instance: stop process jika running, cleanup directory, clear resource history, delete DB row.
+- [x] Test delete instance: stop process jika running, cleanup directory, clear resource history, delete DB row.
 - [ ] Test start instance success path dengan mock `VersionManager`, `SystemService`, `Bun.spawn`, dan `ProcessManager`.
 - [ ] Test start instance failure path: version tidak tersedia, port unavailable, spawn gagal, status menjadi `error` dengan message aman.
 - [ ] Test stop/kill/restart lifecycle tanpa menjalankan binary GOWA asli.

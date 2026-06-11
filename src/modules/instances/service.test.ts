@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { queries } from '../../db'
 import { InstanceService } from './service'
+import { DirectoryManager } from './utils/directory-manager'
+import { ResourceMonitor } from './utils/resource-monitor'
 
 const createdIds: number[] = []
+const originalStopInstance = InstanceService.stopInstance
 
 function createStoredInstance(overrides: Partial<{
   key: string
@@ -24,12 +27,16 @@ function createStoredInstance(overrides: Partial<{
   return instance
 }
 
+function cleanupCreatedInstances() {
+  while (createdIds.length > 0) {
+    const id = createdIds.pop()
+    if (id !== undefined) queries.deleteInstance.run(id)
+  }
+}
+
 describe('InstanceService.updateInstance', () => {
   afterEach(() => {
-    while (createdIds.length > 0) {
-      const id = createdIds.pop()
-      if (id !== undefined) queries.deleteInstance.run(id)
-    }
+    cleanupCreatedInstances()
   })
 
   test('persists enforced basePath when updating config', () => {
@@ -74,5 +81,63 @@ describe('InstanceService.updateInstance', () => {
     })
 
     expect(updated).toBeNull()
+  })
+})
+
+describe('InstanceService.deleteInstance', () => {
+  afterEach(() => {
+    InstanceService.stopInstance = originalStopInstance
+    cleanupCreatedInstances()
+  })
+
+  test('returns false when instance does not exist', () => {
+    expect(InstanceService.deleteInstance(-999999)).toBe(false)
+  })
+
+  test('deletes stopped instance and cleans up directory/resource history', () => {
+    const instance = createStoredInstance({ key: 'TSTDEL01', name: 'test-delete-stopped' })
+    const cleanup = spyOn(DirectoryManager, 'cleanupInstanceDirectory').mockImplementation(() => {})
+    const clearHistory = spyOn(ResourceMonitor, 'clearHistory').mockImplementation(() => {})
+
+    const deleted = InstanceService.deleteInstance(instance.id)
+    const stored = queries.getInstanceById.get(instance.id)
+    createdIds.pop()
+
+    expect(deleted).toBe(true)
+    expect(stored).toBeNull()
+    expect(cleanup).toHaveBeenCalledWith(instance.id)
+    expect(clearHistory).toHaveBeenCalledWith(instance.id)
+
+    cleanup.mockRestore()
+    clearHistory.mockRestore()
+  })
+
+  test('stops running instance before deleting it', () => {
+    const instance = createStoredInstance({ key: 'TSTDEL02', name: 'test-delete-running' })
+    queries.updateInstanceStatus.run('running', instance.id)
+    const stop = spyOn(InstanceService, 'stopInstance').mockResolvedValue({
+      id: instance.id,
+      name: instance.name,
+      status: 'stopped',
+      port: instance.port,
+      pid: null,
+      uptime: null,
+    })
+    const cleanup = spyOn(DirectoryManager, 'cleanupInstanceDirectory').mockImplementation(() => {})
+    const clearHistory = spyOn(ResourceMonitor, 'clearHistory').mockImplementation(() => {})
+
+    const deleted = InstanceService.deleteInstance(instance.id)
+    const stored = queries.getInstanceById.get(instance.id)
+    createdIds.pop()
+
+    expect(deleted).toBe(true)
+    expect(stored).toBeNull()
+    expect(stop).toHaveBeenCalledWith(instance.id)
+    expect(cleanup).toHaveBeenCalledWith(instance.id)
+    expect(clearHistory).toHaveBeenCalledWith(instance.id)
+
+    stop.mockRestore()
+    cleanup.mockRestore()
+    clearHistory.mockRestore()
   })
 })
