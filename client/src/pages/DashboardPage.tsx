@@ -25,7 +25,7 @@ import {
 } from '../components/ui/select'
 import { CreateInstanceDialog } from '../components/CreateInstanceDialog'
 import { toast } from '../components/ui/use-toast'
-import { AlertTriangle, Clock, Copy, ExternalLink, Plus, QrCode, RefreshCw, RotateCcw, Search, Server, Smartphone } from 'lucide-react'
+import { AlertTriangle, Clock, Copy, Cpu, ExternalLink, MemoryStick, Plus, QrCode, RefreshCw, RotateCcw, Search, Smartphone } from 'lucide-react'
 import type { Instance, InstanceStatus } from '../types'
 import { cn } from '../lib/utils'
 
@@ -371,6 +371,12 @@ function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardS
     return `${seconds}s`
   }
 
+  const formatMemory = (memoryMB: number | undefined) => {
+    if (memoryMB === undefined) return '--'
+    if (memoryMB >= 1024) return `${(memoryMB / 1024).toFixed(1)} GB`
+    return `${memoryMB.toFixed(0)} MB`
+  }
+
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(proxyUrl)
@@ -454,7 +460,7 @@ function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardS
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400">
+          <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-400">
             <button
               type="button"
               onClick={(event) => {
@@ -469,16 +475,20 @@ function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardS
                 !needsPairing && 'cursor-default'
               )}
             >
-              {needsPairing ? <QrCode className="w-3.5 h-3.5" /> : <Smartphone className="w-3.5 h-3.5" />}
-              <span>{devicesCount ?? '--'} devices</span>
+              {needsPairing ? <QrCode className="w-3.5 h-3.5 shrink-0" /> : <Smartphone className="w-3.5 h-3.5 shrink-0" />}
+              <span className="truncate">{devicesCount ?? '--'} devices</span>
             </button>
             <div className="flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-1.5 dark:bg-gray-900/40">
-              <Clock className="w-3.5 h-3.5" />
-              <span>{formatUptime(status?.uptime)}</span>
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{formatUptime(status?.uptime)}</span>
             </div>
             <div className="flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-1.5 dark:bg-gray-900/40">
-              <Server className="w-3.5 h-3.5" />
-              <span>{status?.port ? `:${status.port}` : '--'}</span>
+              <Cpu className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{status?.resources ? `${status.resources.cpuPercent.toFixed(1)}%` : '--'}</span>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-1.5 dark:bg-gray-900/40">
+              <MemoryStick className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{formatMemory(status?.resources?.memoryMB)}</span>
             </div>
           </div>
 
