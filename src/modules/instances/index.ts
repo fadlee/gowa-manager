@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { InstanceService } from './service'
 import { InstanceModel } from './model'
+import { DeviceClient } from './utils/device-client'
 
 export const instancesModule = new Elysia({ prefix: '/api/instances' })
   // Get all instances
@@ -9,6 +10,22 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
   }, {
     response: {
       200: InstanceModel.instanceListResponse
+    }
+  })
+
+  // Get instance devices
+  .get('/:id/devices', async ({ params: { id }, set }) => {
+    const instance = InstanceService.getInstanceById(Number(id))
+    if (!instance) {
+      set.status = 404
+      return { error: 'Instance not found', success: false }
+    }
+
+    return await DeviceClient.getDevices(instance)
+  }, {
+    response: {
+      200: InstanceModel.devicesResponse,
+      404: InstanceModel.notFoundError
     }
   })
 

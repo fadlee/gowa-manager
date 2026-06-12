@@ -7,6 +7,7 @@ import { SystemService } from '../system/service'
 import { VersionManager } from '../system/version-manager'
 import { ProcessManager } from './utils/process-manager'
 import { NameGenerator } from './utils/name-generator'
+import { DeviceClient } from './utils/device-client'
 
 const createdIds: number[] = []
 const originalStopInstance = InstanceService.stopInstance
@@ -447,6 +448,29 @@ describe('InstanceService.getInstanceStatus', () => {
 
     ProcessManager.removeProcess(instance.id)
     resourceUsage.mockRestore()
+  })
+
+  test('returns device summary on status response', async () => {
+    const instance = createStoredInstance({ key: 'TSTSTS05', name: 'test-status-devices', port: 19405 })
+    queries.updateInstanceStatus.run('running', instance.id)
+    const summary = spyOn(DeviceClient, 'getDevicesSummary').mockResolvedValue({
+      count: 2,
+      connected: true,
+      stale: false,
+      fetchedAt: '2026-06-12T00:00:00.000Z',
+    })
+
+    const status = await InstanceService.getInstanceStatus(instance.id)
+
+    expect(status?.devices).toEqual({
+      count: 2,
+      connected: true,
+      stale: false,
+      fetchedAt: '2026-06-12T00:00:00.000Z',
+    })
+    expect(summary).toHaveBeenCalledWith(expect.objectContaining({ id: instance.id }))
+
+    summary.mockRestore()
   })
 })
 

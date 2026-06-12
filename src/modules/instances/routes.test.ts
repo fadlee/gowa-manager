@@ -5,12 +5,14 @@ import { queries } from '../../db'
 import { SystemService } from '../system/service'
 import { instancesModule } from './index'
 import { InstanceService } from './service'
+import { DeviceClient } from './utils/device-client'
 
 const originalGetNextAvailablePort = SystemService.getNextAvailablePort
 const originalStartInstance = InstanceService.startInstance
 const originalStopInstance = InstanceService.stopInstance
 const originalRestartInstance = InstanceService.restartInstance
 const originalKillInstance = InstanceService.killInstance
+const originalGetDevices = DeviceClient.getDevices
 const createdIds: number[] = []
 
 function createTestApp() {
@@ -37,6 +39,7 @@ describe('instances routes', () => {
     InstanceService.stopInstance = originalStopInstance
     InstanceService.restartInstance = originalRestartInstance
     InstanceService.killInstance = originalKillInstance
+    DeviceClient.getDevices = originalGetDevices
     while (createdIds.length > 0) {
       const id = createdIds.pop()
       if (id !== undefined) queries.deleteInstance.run(id)
@@ -263,5 +266,44 @@ describe('instances routes', () => {
     expect(await json(restartResponse)).toEqual({ error: 'restart failed', success: false })
     expect(killResponse.status).toBe(500)
     expect(await json(killResponse)).toEqual({ error: 'kill failed', success: false })
+  })
+
+  test('returns devices for an instance', async () => {
+    SystemService.getNextAvailablePort = async () => 19021
+    const app = createTestApp()
+    const headers = { authorization: basicHeader('manager', 'secret') }
+    const created = await InstanceService.createInstance({ name: 'route-devices-instance' })
+    createdIds.push(created.id)
+    DeviceClient.getDevices = async () => ({
+      count: 2,
+      connected: true,
+      stale: false,
+      devices: [{ id: 'a' }, { id: 'b' }],
+      fetchedAt: '2026-06-12T00:00:00.000Z',
+      source: 'live',
+    })
+
+    const response = await app.handle(new Request(`http://localhost/api/instances/${created.id}/devices`, { headers }))
+    const body = await json(response)
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({
+      count: 2,
+      connected: true,
+      stale: false,
+      devices: [{ id: 'a' }, { id: 'b' }],
+      fetchedAt: '2026-06-12T00:00:00.000Z',
+      source: 'live',
+    })
+  })
+
+  test('returns 404 for devices route when instance is missing', async () => {
+    const app = createTestApp()
+    const headers = { authorization: basicHeader('manager', 'secret') }
+
+    const response = await app.handle(new Request('http://localhost/api/instances/999999/devices', { headers }))
+
+    expect(response.status).toBe(404)
+    expect(await json(response)).toEqual({ error: 'Instance not found', success: false })
   })
 })

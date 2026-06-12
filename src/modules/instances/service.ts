@@ -6,6 +6,7 @@ import { DirectoryManager } from './utils/directory-manager'
 import { ConfigParser } from './utils/config-parser'
 import { NameGenerator } from './utils/name-generator'
 import { ResourceMonitor } from './utils/resource-monitor'
+import { DeviceClient } from './utils/device-client'
 import { VersionManager } from '../system/version-manager'
 import { Proxy } from '../../types'
 import { normalizeUpdateConfig } from './utils/update-config'
@@ -121,6 +122,7 @@ export abstract class InstanceService {
 
     // Clear resource history
     ResourceMonitor.clearHistory(id)
+    DeviceClient.clearCache(id)
 
     const result = queries.deleteInstance.run(id)
     return result.changes > 0
@@ -233,6 +235,7 @@ export abstract class InstanceService {
     ProcessManager.stopProcess(id)
     // Clear resource history when stopping
     ResourceMonitor.clearHistory(id)
+    DeviceClient.clearCache(id)
     queries.updateInstanceStatus.run('stopped', id)
     queries.clearInstanceError.run(id)
     return await this.getInstanceStatus(id)
@@ -246,6 +249,7 @@ export abstract class InstanceService {
     ProcessManager.killProcess(id)
     // Clear resource history when killing
     ResourceMonitor.clearHistory(id)
+    DeviceClient.clearCache(id)
     queries.updateInstanceStatus.run('stopped', id)
     queries.clearInstanceError.run(id)
     return await this.getInstanceStatus(id)
@@ -278,6 +282,13 @@ export abstract class InstanceService {
       }
     }
 
+    let devices = undefined
+    try {
+      devices = await DeviceClient.getDevicesSummary(instance)
+    } catch (error) {
+      console.warn(`Failed to get devices for instance ${id}:`, error)
+    }
+
     return {
       id: instance.id,
       name: instance.name,
@@ -286,7 +297,8 @@ export abstract class InstanceService {
       pid: processInfo?.pid || null,
       uptime,
       error_message: instance.error_message || undefined,
-      resources: resources || undefined
+      resources: resources || undefined,
+      devices: devices || undefined
     }
   }
 }
