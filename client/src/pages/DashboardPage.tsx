@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
@@ -9,6 +9,14 @@ import { Badge } from '../components/ui/badge'
 import { Card, CardContent } from '../components/ui/card'
 import { Switch } from '../components/ui/switch'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -16,8 +24,9 @@ import {
   SelectValue,
 } from '../components/ui/select'
 import { CreateInstanceDialog } from '../components/CreateInstanceDialog'
-import { Plus, RefreshCw, Search } from 'lucide-react'
-import type { Instance } from '../types'
+import { toast } from '../components/ui/use-toast'
+import { AlertTriangle, Clock, Copy, ExternalLink, Plus, QrCode, RefreshCw, RotateCcw, Search, Server, Smartphone } from 'lucide-react'
+import type { Instance, InstanceStatus } from '../types'
 import { cn } from '../lib/utils'
 
 export function DashboardPage() {
@@ -26,6 +35,7 @@ export function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [versionFilter, setVersionFilter] = useState('all')
+  const [statusByInstance, setStatusByInstance] = useState<Record<number, InstanceStatus>>({})
   const queryClient = useQueryClient()
 
   const { data: instances, isLoading, error, refetch } = useQuery({
@@ -41,7 +51,7 @@ export function DashboardPage() {
   // Filtered instances
   const filteredInstances = instances
     ? instances
-        .filter(inst => statusFilter === 'all' || inst.status?.toLowerCase() === statusFilter.toLowerCase())
+        .filter(inst => statusFilter === 'all' || (statusByInstance[inst.id]?.status || inst.status)?.toLowerCase() === statusFilter.toLowerCase())
         .filter(inst => versionFilter === 'all' || inst.gowa_version === versionFilter)
         .filter(inst =>
           searchTerm === ''
@@ -52,6 +62,17 @@ export function DashboardPage() {
     : []
 
   const filteredCount = filteredInstances.length
+  const summaryStatuses = filteredInstances.map(instance => statusByInstance[instance.id] || {
+    id: instance.id,
+    name: instance.name,
+    status: instance.status,
+    port: instance.port,
+    pid: null,
+    uptime: null,
+  })
+  const runningCount = summaryStatuses.filter(status => status.status?.toLowerCase() === 'running').length
+  const errorCount = summaryStatuses.filter(status => status.status?.toLowerCase() === 'error').length
+  const connectedDevicesCount = summaryStatuses.reduce((total, status) => total + (status.devices?.count || 0), 0)
 
   const refreshMutation = useMutation({
     mutationFn: () => apiClient.getInstances(),
@@ -171,9 +192,15 @@ export function DashboardPage() {
         </Button>
       </div>
 
-      {/* Instance count */}
-      <div className="text-sm text-gray-600 dark:text-gray-400">
-        {filteredCount} instance{filteredCount !== 1 ? 's' : ''}
+      {/* Instance summary */}
+      <div className="flex flex-wrap gap-2 text-sm text-gray-600 dark:text-gray-400">
+        <span>{filteredCount} instance{filteredCount !== 1 ? 's' : ''}</span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span>{runningCount} running</span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span className={cn(errorCount > 0 && 'font-medium text-red-600 dark:text-red-400')}>{errorCount} error</span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span>{connectedDevicesCount} devices connected</span>
       </div>
 
       {/* Instance Grid */}
@@ -205,6 +232,9 @@ export function DashboardPage() {
                 <InstanceCardSimple
                   instance={instance}
                   onClick={() => navigate(`/instances/${instance.id}`)}
+                  onStatusUpdate={(nextStatus) => {
+                    setStatusByInstance(prev => prev[instance.id] === nextStatus ? prev : { ...prev, [instance.id]: nextStatus })
+                  }}
                 />
               </motion.div>
             ))}
@@ -263,10 +293,12 @@ export function DashboardPage() {
 interface InstanceCardSimpleProps {
   instance: Instance
   onClick: () => void
+  onStatusUpdate?: (status: InstanceStatus) => void
 }
 
-function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
+function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardSimpleProps) {
   const queryClient = useQueryClient()
+  const [showStopConfirm, setShowStopConfirm] = useState(false)
   
   const { data: status } = useQuery({
     queryKey: ['instance-status', instance.id],
@@ -293,37 +325,87 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
   const stopMutation = useMutation({
     mutationFn: () => apiClient.stopInstance(instance.id),
     onSuccess: () => {
+      setShowStopConfirm(false)
       queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
       queryClient.invalidateQueries({ queryKey: ['instances'] })
+      toast({ title: 'Instance stopped', description: `${instance.name} has been stopped.`, variant: 'default' })
+    },
+    onError: (error) => {
+      toast({ title: 'Failed to stop instance', description: error.message, variant: 'error' })
     },
   })
+
+  const restartMutation = useMutation({
+    mutationFn: () => apiClient.restartInstance(instance.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
+      queryClient.invalidateQueries({ queryKey: ['instances'] })
+      toast({ title: 'Instance restarted', description: `${instance.name} is back online.`, variant: 'success' })
+    },
+    onError: (error) => {
+      toast({ title: 'Failed to restart instance', description: error.message, variant: 'error' })
+    },
+  })
+
+  useEffect(() => {
+    if (status) onStatusUpdate?.(status)
+  }, [onStatusUpdate, status])
 
   const isRunning = status?.status?.toLowerCase() === 'running'
   const isError = status?.status?.toLowerCase() === 'error'
   const isStopped = status?.status?.toLowerCase() === 'stopped'
+  const isBusy = startMutation.isPending || stopMutation.isPending || restartMutation.isPending
+  const proxyUrl = apiClient.getProxyUrl(instance.key)
+  const qrUrl = `${proxyUrl}login/qr`
+  const devicesCount = status?.devices?.count
+  const needsPairing = isRunning && devicesCount === 0
+  const errorMessage = status?.error_message || instance.error_message
+
+  const formatUptime = (uptime: number | null | undefined) => {
+    if (!uptime) return '--'
+    const seconds = Math.floor(uptime / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    if (hours > 0) return `${hours}h ${minutes % 60}m`
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`
+    return `${seconds}s`
+  }
+
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(proxyUrl)
+      toast({ title: 'Base URL copied', description: proxyUrl, variant: 'success' })
+    } catch (error) {
+      toast({ title: 'Failed to copy URL', description: error instanceof Error ? error.message : 'Clipboard unavailable.', variant: 'error' })
+    }
+  }
+
+  const openUrl = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   const getStatusConfig = () => {
-    if (isRunning) return { 
-      label: 'Running', 
-      color: 'text-green-500 dark:text-green-400', 
+    if (isRunning) return {
+      label: 'Running',
+      color: 'text-green-600 dark:text-green-400',
       dotBg: 'bg-green-500',
       glow: 'shadow-[0_0_8px_rgba(34,197,94,0.6)]'
     }
-    if (isError) return { 
-      label: 'Error', 
-      color: 'text-red-500 dark:text-red-400', 
+    if (isError) return {
+      label: 'Error',
+      color: 'text-red-600 dark:text-red-400',
       dotBg: 'bg-red-500',
       glow: 'shadow-[0_0_8px_rgba(239,68,68,0.6)]'
     }
-    if (isStopped) return { 
-      label: 'Stopped', 
-      color: 'text-gray-500 dark:text-gray-400', 
+    if (isStopped) return {
+      label: 'Stopped',
+      color: 'text-gray-500 dark:text-gray-400',
       dotBg: 'bg-gray-400 dark:bg-gray-500',
       glow: ''
     }
-    return { 
-      label: status?.status || 'Unknown', 
-      color: 'text-yellow-500 dark:text-yellow-400', 
+    return {
+      label: status?.status || 'Unknown',
+      color: 'text-yellow-600 dark:text-yellow-400',
       dotBg: 'bg-yellow-500',
       glow: 'shadow-[0_0_8px_rgba(234,179,8,0.6)]'
     }
@@ -332,50 +414,128 @@ function InstanceCardSimple({ instance, onClick }: InstanceCardSimpleProps) {
   const statusConfig = getStatusConfig()
 
   return (
-    <Card
-      className={cn(
-        'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 transition-all cursor-pointer hover:shadow-lg hover:border-gray-300 dark:hover:border-gray-500 hover:scale-[1.02]',
-        isError && 'border-red-300 dark:border-red-800 hover:border-red-400 dark:hover:border-red-700'
-      )}
-      onClick={onClick}
-    >
-      <CardContent className="p-4">
-        <div className="flex justify-between items-start">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 dark:text-white truncate">{instance.name}</h3>
-            <div className="flex gap-2 items-center mt-2">
-              <Badge variant="secondary" className="text-xs text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
-                {instance.gowa_version || 'latest'}
-              </Badge>
-              {/* Status indicator with label and glow */}
-              <div className="flex items-center gap-1.5">
-                <span className={cn(
-                  'w-2 h-2 rounded-full transition-shadow duration-300',
-                  statusConfig.dotBg,
-                  statusConfig.glow,
-                  isRunning && 'animate-pulse'
-                )} />
-                <span className={cn('text-xs font-medium', statusConfig.color)}>{statusConfig.label}</span>
+    <>
+      <Card
+        className={cn(
+          'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 transition-all cursor-pointer hover:shadow-lg hover:border-gray-300 dark:hover:border-gray-500 hover:scale-[1.02]',
+          isError && 'border-red-300 dark:border-red-800 hover:border-red-400 dark:hover:border-red-700'
+        )}
+        onClick={onClick}
+      >
+        <CardContent className="p-4 space-y-3">
+          <div className="flex justify-between items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-gray-900 dark:text-white truncate">{instance.name}</h3>
+              <div className="flex flex-wrap gap-2 items-center mt-2">
+                <Badge variant="secondary" className="text-xs text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
+                  {instance.gowa_version || 'latest'}
+                </Badge>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn(
+                    'w-2 h-2 rounded-full transition-shadow duration-300',
+                    statusConfig.dotBg,
+                    statusConfig.glow,
+                    isRunning && 'animate-pulse'
+                  )} />
+                  <span className={cn('text-xs font-medium', statusConfig.color)}>{statusConfig.label}</span>
+                </div>
               </div>
             </div>
+            <div className="flex gap-2 items-center" onClick={(e) => e.stopPropagation()}>
+              <Switch
+                checked={isRunning}
+                onCheckedChange={(checked) => {
+                  if (checked) startMutation.mutate()
+                  else setShowStopConfirm(true)
+                }}
+                disabled={isBusy}
+                className="data-[state=checked]:bg-green-600 data-[state=checked]:shadow-[0_0_12px_rgba(34,197,94,0.4)]"
+              />
+            </div>
           </div>
-          <div className="flex gap-2 items-center" onClick={(e) => e.stopPropagation()}>
-            {/* Power toggle switch */}
-            <Switch
-              checked={isRunning}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  startMutation.mutate()
-                } else {
-                  stopMutation.mutate()
-                }
+
+          <div className="grid grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-400">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                if (needsPairing) openUrl(qrUrl)
               }}
-              disabled={startMutation.isPending || stopMutation.isPending}
-              className="data-[state=checked]:bg-green-600 data-[state=checked]:shadow-[0_0_12px_rgba(34,197,94,0.4)]"
-            />
+              className={cn(
+                'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left',
+                needsPairing
+                  ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:text-yellow-300 dark:hover:bg-yellow-900/30'
+                  : 'bg-gray-50 dark:bg-gray-900/40',
+                !needsPairing && 'cursor-default'
+              )}
+            >
+              {needsPairing ? <QrCode className="w-3.5 h-3.5" /> : <Smartphone className="w-3.5 h-3.5" />}
+              <span>{devicesCount ?? '--'} devices</span>
+            </button>
+            <div className="flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-1.5 dark:bg-gray-900/40">
+              <Clock className="w-3.5 h-3.5" />
+              <span>{formatUptime(status?.uptime)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-md bg-gray-50 px-2 py-1.5 dark:bg-gray-900/40">
+              <Server className="w-3.5 h-3.5" />
+              <span>{status?.port ? `:${status.port}` : '--'}</span>
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+
+          {errorMessage && (
+            <div className="flex gap-2 items-start rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+              <AlertTriangle className="mt-0.5 w-3.5 h-3.5 shrink-0" />
+              <span className="line-clamp-2">{errorMessage}</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={() => restartMutation.mutate()}
+              disabled={!isRunning || isBusy}
+            >
+              <RotateCcw className={cn('mr-1 w-3.5 h-3.5', restartMutation.isPending && 'animate-spin')} />
+              Restart
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={handleCopyUrl}>
+              <Copy className="mr-1 w-3.5 h-3.5" />
+              Copy URL
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 text-xs ml-auto"
+              onClick={() => openUrl(proxyUrl)}
+              disabled={!status?.port}
+            >
+              <ExternalLink className="mr-1 w-3.5 h-3.5" />
+              Admin
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={showStopConfirm} onOpenChange={setShowStopConfirm}>
+        <DialogContent onClick={(event) => event.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Stop {instance.name}?</DialogTitle>
+            <DialogDescription>
+              This will turn off the GOWA instance and disconnect any active WhatsApp sessions until it is started again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStopConfirm(false)} disabled={stopMutation.isPending}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
+              Stop instance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
