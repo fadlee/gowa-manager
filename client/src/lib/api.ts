@@ -3,6 +3,7 @@ import type {
   CreateInstanceRequest,
   UpdateInstanceRequest,
   InstanceStatus,
+  InstanceDevicesResponse,
   ApiSuccess,
   SystemStatus,
   VersionInfo,
@@ -89,6 +90,10 @@ class ApiClient {
 
   async getInstanceStatus(id: number): Promise<InstanceStatus> {
     return this.request<InstanceStatus>(`/instances/${id}/status`);
+  }
+
+  async getInstanceDevices(id: number): Promise<InstanceDevicesResponse> {
+    return this.request<InstanceDevicesResponse>(`/instances/${id}/devices`);
   }
 
   async testInstanceConnection(id: number): Promise<{ ok: boolean; status?: number; message: string; body?: string }> {

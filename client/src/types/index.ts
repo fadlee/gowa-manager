@@ -24,6 +24,19 @@ export interface UpdateInstanceRequest {
   gowa_version?: string;
 }
 
+export interface DeviceSummary {
+  count: number;
+  connected: boolean;
+  stale: boolean;
+  fetchedAt?: string;
+  error?: string;
+}
+
+export interface InstanceDevicesResponse extends DeviceSummary {
+  devices: Array<Record<string, unknown>>;
+  source: 'live' | 'cache' | 'not-running';
+}
+
 export interface InstanceStatus {
   id: number;
   name: string;
@@ -40,6 +53,7 @@ export interface InstanceStatus {
     avgMemory?: number;
     diskMB?: number;
   };
+  devices?: DeviceSummary;
 }
 
 // API Response Types
