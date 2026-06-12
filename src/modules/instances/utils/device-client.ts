@@ -51,11 +51,24 @@ function normalizeDevicesBody(body: unknown): { devices: Array<Record<string, un
   }
 
   if (isRecord(body)) {
-    if (Array.isArray(body.devices)) {
-      return { devices: body.devices.map(normalizeDevice) }
+    for (const key of ['devices', 'data', 'results', 'sessions', 'accounts']) {
+      const value = body[key]
+      if (Array.isArray(value)) {
+        return { devices: value.map(normalizeDevice) }
+      }
+      if (isRecord(value)) {
+        const nested = normalizeDevicesBody(value)
+        if (!nested.error) return nested
+      }
     }
-    if (Array.isArray(body.data)) {
-      return { devices: body.data.map(normalizeDevice) }
+
+    const metadataKeys = new Set(['count', 'connected', 'success', 'status', 'message', 'error'])
+    const collectionValues = Object.entries(body)
+      .filter(([key]) => !metadataKeys.has(key))
+      .map(([, value]) => value)
+
+    if (collectionValues.length > 0 && collectionValues.every(isRecord)) {
+      return { devices: collectionValues.map(normalizeDevice) }
     }
   }
 

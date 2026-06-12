@@ -73,19 +73,39 @@ describe('DeviceClient', () => {
     expect(init.headers.Accept).toBe('application/json')
   })
 
-  test('normalizes devices and data wrapper responses', async () => {
+  test('normalizes common wrapper responses', async () => {
     const fetchMock = mock(async () => jsonResponse({ devices: [{ jid: 'one' }] }))
     globalThis.fetch = fetchMock as any
 
     const devicesResult = await DeviceClient.getDevices(instance({ id: 502 }))
     DeviceClient.clearCache(502)
     fetchMock.mockImplementationOnce(async () => jsonResponse({ data: [{ jid: 'two' }, { jid: 'three' }] }))
-
     const dataResult = await DeviceClient.getDevices(instance({ id: 502 }))
+    DeviceClient.clearCache(502)
+    fetchMock.mockImplementationOnce(async () => jsonResponse({ results: [{ jid: 'four' }] }))
+    const resultsResult = await DeviceClient.getDevices(instance({ id: 502 }))
+    DeviceClient.clearCache(502)
+    fetchMock.mockImplementationOnce(async () => jsonResponse({ data: { devices: [{ jid: 'five' }] } }))
+    const nestedResult = await DeviceClient.getDevices(instance({ id: 502 }))
 
     expect(devicesResult.devices).toEqual([{ jid: 'one' }])
     expect(dataResult.count).toBe(2)
     expect(dataResult.devices).toEqual([{ jid: 'two' }, { jid: 'three' }])
+    expect(resultsResult.devices).toEqual([{ jid: 'four' }])
+    expect(nestedResult.devices).toEqual([{ jid: 'five' }])
+  })
+
+  test('normalizes object maps as device collections', async () => {
+    const fetchMock = mock(async () => jsonResponse({
+      phoneA: { jid: 'a@s.whatsapp.net' },
+      phoneB: { jid: 'b@s.whatsapp.net' },
+    }))
+    globalThis.fetch = fetchMock as any
+
+    const result = await DeviceClient.getDevices(instance({ id: 507 }))
+
+    expect(result.count).toBe(2)
+    expect(result.devices).toEqual([{ jid: 'a@s.whatsapp.net' }, { jid: 'b@s.whatsapp.net' }])
   })
 
   test('uses fresh cache within ttl', async () => {
