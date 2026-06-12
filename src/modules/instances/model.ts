@@ -43,6 +43,24 @@ export namespace InstanceModel {
   })
   export type controlAction = Instance.ControlAction
 
+  export const deviceSummary = t.Object({
+    count: t.Number(),
+    connected: t.Boolean(),
+    stale: t.Boolean(),
+    fetchedAt: t.Optional(t.String()),
+    error: t.Optional(t.String())
+  })
+  export type deviceSummary = Instance.DeviceSummary
+
+  export const devicesResponse = t.Intersect([
+    deviceSummary,
+    t.Object({
+      devices: t.Array(t.Record(t.String(), t.Unknown())),
+      source: t.Union([t.Literal('live'), t.Literal('cache'), t.Literal('not-running')])
+    })
+  ])
+  export type devicesResponse = Instance.DevicesResponse
+
   // Status response
   export const statusResponse = t.Object({
     id: t.Number(),
@@ -59,7 +77,8 @@ export namespace InstanceModel {
       avgCpu: t.Optional(t.Number()),
       avgMemory: t.Optional(t.Number()),
       diskMB: t.Optional(t.Number())
-    }))
+    })),
+    devices: t.Optional(deviceSummary)
   })
   export type statusResponse = Instance.StatusResponse
 

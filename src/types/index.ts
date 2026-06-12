@@ -47,6 +47,19 @@ export namespace Instance {
     action: 'start' | 'stop' | 'restart';
   }
 
+  export type DeviceSummary = {
+    count: number;
+    connected: boolean;
+    stale: boolean;
+    fetchedAt?: string;
+    error?: string;
+  }
+
+  export type DevicesResponse = DeviceSummary & {
+    devices: Array<Record<string, unknown>>;
+    source: 'live' | 'cache' | 'not-running';
+  }
+
   export type StatusResponse = {
     id: number;
     name: string;
@@ -62,6 +75,7 @@ export namespace Instance {
       avgCpu?: number;
       avgMemory?: number;
     };
+    devices?: DeviceSummary;
   }
 
   export type NotFoundError = {
