@@ -78,11 +78,14 @@ Updated: 2026-06-11
   - Source: `client/src/lib/api.ts`
   - Source: `client/src/components/instance-detail/DangerZoneSection.tsx`
 
+- [x] Improve webhook settings UX
+  - Clarified that multiple webhook URLs are supported
+  - Added helper text with expected HTTPS format and local tunnel tip
+  - Always shows an explicit `Add` button for queued webhook URLs
+  - Source: `client/src/components/CliFlags/WebhooksSection.tsx`
+
 ### 📋 Up Next
-- [ ] Improve webhook settings UX
-  - Clarify whether multiple webhook URLs are supported
-  - Add helper text with expected format
-  - Add `Send test event` action if backend support exists or can be added
+- [ ] No active task selected
 
 ### 🚫 Blocked
 - [ ] Add Logs tab for instance debugging
