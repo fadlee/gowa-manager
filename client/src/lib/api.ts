@@ -63,6 +63,12 @@ class ApiClient {
     });
   }
 
+  async resetInstanceData(id: number): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>(`/instances/${id}/reset-data`, {
+      method: 'POST',
+    });
+  }
+
   // Instance actions
   async startInstance(id: number): Promise<InstanceStatus> {
     return this.request<InstanceStatus>(`/instances/${id}/start`, {

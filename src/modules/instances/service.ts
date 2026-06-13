@@ -128,6 +128,26 @@ export abstract class InstanceService {
     return result.changes > 0
   }
 
+  // Reset generated runtime data while keeping the instance record and key intact.
+  static resetInstanceData(id: number): boolean {
+    const instance = this.getInstanceById(id)
+    if (!instance) return false
+
+    if (instance.status === 'running') {
+      this.stopInstance(id)
+    }
+
+    DirectoryManager.cleanupInstanceDirectory(id)
+    DirectoryManager.createInstanceDirectory(id)
+    ResourceMonitor.clearHistory(id)
+    DeviceClient.clearCache(id)
+
+    queries.updateInstanceStatus.run('stopped', id)
+    queries.clearInstanceError.run(id)
+
+    return true
+  }
+
   private static isReallyRunning(id: number): boolean {
     const instance = this.getInstanceById(id)
     if (!instance) return false

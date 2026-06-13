@@ -98,6 +98,21 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
     }
   })
 
+  // Reset generated data without changing the instance ID/key
+  .post('/:id/reset-data', ({ params: { id }, set }) => {
+    const reset = InstanceService.resetInstanceData(Number(id))
+    if (!reset) {
+      set.status = 404
+      return { error: 'Instance not found', success: false }
+    }
+    return { success: true, message: 'Instance data reset successfully' }
+  }, {
+    response: {
+      200: InstanceModel.successResponse,
+      404: InstanceModel.notFoundError
+    }
+  })
+
   // Start instance
   .post('/:id/start', async ({ params: { id }, set }) => {
     try {

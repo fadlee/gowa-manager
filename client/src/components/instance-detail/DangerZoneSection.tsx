@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../lib/api'
 import { Button } from '../ui/button'
-import { Loader2, Trash2, AlertTriangle, Skull } from 'lucide-react'
+import { Loader2, Trash2, AlertTriangle, Skull, RotateCcw } from 'lucide-react'
 import type { Instance } from '../../types'
 
 interface DangerZoneSectionProps {
@@ -13,6 +13,7 @@ interface DangerZoneSectionProps {
 export function DangerZoneSection({ instance, onDeleted }: DangerZoneSectionProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showKillConfirm, setShowKillConfirm] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
   const queryClient = useQueryClient()
 
   const killMutation = useMutation({
@@ -38,12 +39,30 @@ export function DangerZoneSection({ instance, onDeleted }: DangerZoneSectionProp
     },
   })
 
+  const resetMutation = useMutation({
+    mutationFn: () => apiClient.resetInstanceData(instance.id),
+    onSuccess: () => {
+      setShowResetConfirm(false)
+      queryClient.invalidateQueries({ queryKey: ['instances'] })
+      queryClient.invalidateQueries({ queryKey: ['instance', instance.id] })
+      queryClient.invalidateQueries({ queryKey: ['instance-status', instance.id] })
+      queryClient.invalidateQueries({ queryKey: ['instance-devices', instance.id] })
+    },
+    onError: (error) => {
+      console.error('Failed to reset instance data:', error)
+    },
+  })
+
   const handleDelete = () => {
     deleteMutation.mutate()
   }
 
   const handleForceKill = () => {
     killMutation.mutate()
+  }
+
+  const handleResetData = () => {
+    resetMutation.mutate()
   }
 
   return (
@@ -101,6 +120,56 @@ export function DangerZoneSection({ instance, onDeleted }: DangerZoneSectionProp
                   <Skull className="mr-2 w-4 h-4" />
                 )}
                 Confirm Kill
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Reset Generated Data */}
+      <div className="p-6 bg-amber-100 dark:bg-amber-900/20 rounded-lg border border-amber-300 dark:border-amber-800">
+        <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start">
+          <div>
+            <h3 className="font-medium text-gray-900 dark:text-white">Reset Generated Data</h3>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              Delete generated runtime data and recreate the instance folder, like a fresh install. Instance ID, key, name, port, version, and config stay the same.
+            </p>
+          </div>
+          {!showResetConfirm ? (
+            <Button
+              variant="destructive"
+              onClick={() => setShowResetConfirm(true)}
+              className="bg-amber-600 hover:bg-amber-700 sm:shrink-0"
+              size="sm"
+            >
+              <RotateCcw className="mr-2 w-4 h-4" />
+              Reset Data
+            </Button>
+          ) : (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:shrink-0">
+              <span className="text-sm text-amber-700 dark:text-amber-300">Reset generated data?</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetMutation.isPending}
+                className="text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleResetData}
+                disabled={resetMutation.isPending}
+                className="bg-amber-600 hover:bg-amber-700"
+              >
+                {resetMutation.isPending ? (
+                  <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="mr-2 w-4 h-4" />
+                )}
+                Confirm Reset
               </Button>
             </div>
           )}

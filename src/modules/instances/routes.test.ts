@@ -12,6 +12,7 @@ const originalStartInstance = InstanceService.startInstance
 const originalStopInstance = InstanceService.stopInstance
 const originalRestartInstance = InstanceService.restartInstance
 const originalKillInstance = InstanceService.killInstance
+const originalResetInstanceData = InstanceService.resetInstanceData
 const originalGetDevices = DeviceClient.getDevices
 const createdIds: number[] = []
 
@@ -39,6 +40,7 @@ describe('instances routes', () => {
     InstanceService.stopInstance = originalStopInstance
     InstanceService.restartInstance = originalRestartInstance
     InstanceService.killInstance = originalKillInstance
+    InstanceService.resetInstanceData = originalResetInstanceData
     DeviceClient.getDevices = originalGetDevices
     while (createdIds.length > 0) {
       const id = createdIds.pop()
@@ -132,6 +134,39 @@ describe('instances routes', () => {
     const headers = { authorization: basicHeader('manager', 'secret') }
 
     const response = await app.handle(new Request('http://localhost/api/instances/999999', { headers }))
+
+    expect(response.status).toBe(404)
+    expect(await json(response)).toEqual({ error: 'Instance not found', success: false })
+  })
+
+  test('resets generated data through the danger zone route', async () => {
+    const app = createTestApp()
+    const headers = { authorization: basicHeader('manager', 'secret') }
+    let resetId: number | null = null
+    InstanceService.resetInstanceData = (id: number) => {
+      resetId = id
+      return true
+    }
+
+    const response = await app.handle(new Request('http://localhost/api/instances/101/reset-data', {
+      method: 'POST',
+      headers,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(resetId).toBe(101)
+    expect(await json(response)).toEqual({ success: true, message: 'Instance data reset successfully' })
+  })
+
+  test('returns 404 when resetting missing generated data', async () => {
+    const app = createTestApp()
+    const headers = { authorization: basicHeader('manager', 'secret') }
+    InstanceService.resetInstanceData = () => false
+
+    const response = await app.handle(new Request('http://localhost/api/instances/999999/reset-data', {
+      method: 'POST',
+      headers,
+    }))
 
     expect(response.status).toBe(404)
     expect(await json(response)).toEqual({ error: 'Instance not found', success: false })

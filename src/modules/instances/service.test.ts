@@ -151,6 +151,81 @@ describe('InstanceService.deleteInstance', () => {
   })
 })
 
+describe('InstanceService.resetInstanceData', () => {
+  afterEach(() => {
+    InstanceService.stopInstance = originalStopInstance
+    cleanupCreatedInstances()
+  })
+
+  test('returns false when instance does not exist', () => {
+    expect(InstanceService.resetInstanceData(-999999)).toBe(false)
+  })
+
+  test('cleans generated data while preserving instance identity and config', () => {
+    const instance = createStoredInstance({
+      key: 'TSTRST01',
+      name: 'test-reset-data',
+      port: 19011,
+      config: JSON.stringify({ flags: { basePath: '/app/TSTRST01', os: 'Chrome' } }),
+      gowa_version: 'v8.7.0',
+    })
+    const cleanup = spyOn(DirectoryManager, 'cleanupInstanceDirectory').mockImplementation(() => {})
+    const createDirectory = spyOn(DirectoryManager, 'createInstanceDirectory').mockReturnValue('/tmp/test-reset-data')
+    const clearHistory = spyOn(ResourceMonitor, 'clearHistory').mockImplementation(() => {})
+    const clearDeviceCache = spyOn(DeviceClient, 'clearCache').mockImplementation(() => {})
+
+    const reset = InstanceService.resetInstanceData(instance.id)
+    const stored = queries.getInstanceById.get(instance.id) as any
+
+    expect(reset).toBe(true)
+    expect(stored).toMatchObject({
+      id: instance.id,
+      key: 'TSTRST01',
+      name: 'test-reset-data',
+      port: 19011,
+      config: instance.config,
+      gowa_version: 'v8.7.0',
+      status: 'stopped',
+      error_message: null,
+    })
+    expect(cleanup).toHaveBeenCalledWith(instance.id)
+    expect(createDirectory).toHaveBeenCalledWith(instance.id)
+    expect(clearHistory).toHaveBeenCalledWith(instance.id)
+    expect(clearDeviceCache).toHaveBeenCalledWith(instance.id)
+
+    cleanup.mockRestore()
+    createDirectory.mockRestore()
+    clearHistory.mockRestore()
+    clearDeviceCache.mockRestore()
+  })
+
+  test('stops running instance before resetting data', () => {
+    const instance = createStoredInstance({ key: 'TSTRST02', name: 'test-reset-running' })
+    queries.updateInstanceStatus.run('running', instance.id)
+    const stop = spyOn(InstanceService, 'stopInstance').mockResolvedValue({
+      id: instance.id,
+      name: instance.name,
+      status: 'stopped',
+      port: instance.port,
+      pid: null,
+      uptime: null,
+    })
+    const cleanup = spyOn(DirectoryManager, 'cleanupInstanceDirectory').mockImplementation(() => {})
+    const createDirectory = spyOn(DirectoryManager, 'createInstanceDirectory').mockReturnValue('/tmp/test-reset-running')
+
+    const reset = InstanceService.resetInstanceData(instance.id)
+
+    expect(reset).toBe(true)
+    expect(stop).toHaveBeenCalledWith(instance.id)
+    expect(cleanup).toHaveBeenCalledWith(instance.id)
+    expect(createDirectory).toHaveBeenCalledWith(instance.id)
+
+    stop.mockRestore()
+    cleanup.mockRestore()
+    createDirectory.mockRestore()
+  })
+})
+
 describe('InstanceService.stopKillRestartInstance', () => {
   afterEach(() => {
     InstanceService.stopInstance = originalStopInstance
