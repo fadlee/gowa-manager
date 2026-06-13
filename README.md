@@ -273,6 +273,12 @@ bun run src/index.ts --admin-username admin --admin-password pass
 
 ## API Reference
 
+OpenAPI docs tersedia di:
+
+```bash
+GET /openapi
+```
+
 ### Instance Management
 ```bash
 # List all instances
@@ -478,7 +484,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: Report bugs and feature requests via GitHub Issues
 - **Documentation**: See `/docs` directory for detailed guides
-- **API**: Full OpenAPI documentation available at `/api/docs` (when running)
+- **API**: Full OpenAPI documentation available at `/openapi` (when running)
 
 ---
 

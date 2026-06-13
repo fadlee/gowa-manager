@@ -17,6 +17,8 @@ import { SystemService } from './modules/system/service'
 import { createCorsConfig } from './cors-config'
 import { handleGlobalError } from './error-handler'
 import type { ApiResponse } from './types'
+import { MANAGER_VERSION } from './version'
+import { openapi } from '@elysiajs/openapi'
 
 // Parse CLI configuration
 const config = getConfig()
@@ -87,6 +89,15 @@ const PORT = await findAvailableHttpPort(DESIRED_PORT)
 
 const app = new Elysia()
   .use(cors(createCorsConfig()))
+  .use(openapi({
+    documentation: {
+      info: {
+        title: 'GOWA Manager API',
+        version: MANAGER_VERSION,
+        description: 'API documentation for managing GOWA instances, system status, versions, and authentication.'
+      }
+    }
+  }))
 
   // Global error handler
   .onError(handleGlobalError)
@@ -95,15 +106,6 @@ const app = new Elysia()
   .get('/api/health', () => {
     const data: ApiResponse = {
       message: "GOWA Manager API is running",
-      success: true
-    }
-    return data
-  })
-
-  // Legacy hello endpoint
-  .get('/hello', () => {
-    const data: ApiResponse = {
-      message: "Hello VERB!",
       success: true
     }
     return data
@@ -155,6 +157,8 @@ const app = new Elysia()
         'Cache-Control': 'public, max-age=31536000' // 1 year cache for assets
       }
     })
+  }, {
+    detail: { hide: true }
   })
 
   .get('/', () => {
@@ -171,6 +175,8 @@ const app = new Elysia()
         'Cache-Control': 'no-cache' // No cache for index.html
       }
     })
+  }, {
+    detail: { hide: true }
   })
 
   // SPA catch-all route - serve index.html for client-side routing
@@ -189,6 +195,8 @@ const app = new Elysia()
         'Cache-Control': 'no-cache'
       }
     })
+  }, {
+    detail: { hide: true }
   })
 
   .listen(PORT)

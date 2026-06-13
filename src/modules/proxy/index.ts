@@ -76,7 +76,7 @@ const handleProxyRequest = async (
   }
 }
 
-export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}` })
+export const proxyModule = new Elysia({ prefix: `/${ProxyModel.prefix}`, detail: { hide: true } })
   // Get all available proxy targets
   // .get('/', () => {
   //   return ProxyService.getAvailableProxyTargets()
