@@ -60,6 +60,27 @@ describe('ConfigParser', () => {
     ])
   })
 
+  test('excludes disabled webhooks from CLI arguments', () => {
+    const args = ConfigParser.flagsToArgs({
+      webhooks: ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'],
+      disabledWebhooks: ['https://example.com/b'],
+    })
+
+    expect(args).toEqual([
+      '--webhook=https://example.com/a',
+      '--webhook=https://example.com/c',
+    ])
+  })
+
+  test('emits no webhook args when every webhook is disabled', () => {
+    const args = ConfigParser.flagsToArgs({
+      webhooks: ['https://example.com/a', 'https://example.com/b'],
+      disabledWebhooks: ['https://example.com/a', 'https://example.com/b'],
+    })
+
+    expect(args).toEqual([])
+  })
+
   test('processes array args, appends flags, and replaces PORT placeholders', () => {
     const log = spyOn(console, 'log').mockImplementation(() => {})
 

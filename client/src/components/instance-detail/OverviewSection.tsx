@@ -17,13 +17,17 @@ export function OverviewSection({ instance, status, isRunning }: OverviewSection
   // Parse config for integration details
   let basicAuthPairs: BasicAuthPair[] = []
   let webhooks: string[] = []
+  let disabledWebhooks: string[] = []
   try {
     const config: InstanceConfig = JSON.parse(instance.config || '{}')
     basicAuthPairs = config.flags?.basicAuth || []
     webhooks = config.flags?.webhooks || []
+    disabledWebhooks = config.flags?.disabledWebhooks || []
   } catch {
     // Invalid config
   }
+
+  const disabledWebhookSet = new Set(disabledWebhooks)
 
   const formatUptime = (uptime: number | null) => {
     if (!uptime) return 'N/A'
@@ -90,14 +94,22 @@ export function OverviewSection({ instance, status, isRunning }: OverviewSection
             </div>
             {webhooks.length > 0 ? (
               <div className="space-y-2">
-                {webhooks.map((webhook, index) => (
-                  <div key={`${webhook}-${index}`} className="flex items-center gap-2">
-                    <code className="min-w-0 flex-1 truncate rounded-md bg-white px-3 py-2 font-mono text-sm text-gray-900 dark:bg-gray-950 dark:text-white">
-                      {webhook}
-                    </code>
-                    <CopyButton content={webhook} variant="ghost" className="text-gray-600 dark:text-gray-400" />
-                  </div>
-                ))}
+                {webhooks.map((webhook, index) => {
+                  const disabled = disabledWebhookSet.has(webhook)
+                  return (
+                    <div key={`${webhook}-${index}`} className="flex items-center gap-2">
+                      <code className={`min-w-0 flex-1 truncate rounded-md bg-white px-3 py-2 font-mono text-sm dark:bg-gray-950 ${disabled ? 'text-gray-500 line-through dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
+                        {webhook}
+                      </code>
+                      {disabled && (
+                        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                          Disabled
+                        </span>
+                      )}
+                      <CopyButton content={webhook} variant="ghost" className="text-gray-600 dark:text-gray-400" />
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <p className="rounded-md bg-white px-3 py-2 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">No webhook configured.</p>

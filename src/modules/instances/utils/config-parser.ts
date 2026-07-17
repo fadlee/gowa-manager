@@ -8,6 +8,7 @@ interface CliFlags {
   basicAuth?: BasicAuthPair[];
   os?: string;
   webhooks?: string[];
+  disabledWebhooks?: string[];
   autoMarkRead?: boolean;
   autoReply?: string;
   basePath?: string;
@@ -53,9 +54,12 @@ export class ConfigParser {
     }
     
     if (flags.webhooks && flags.webhooks.length > 0) {
-      flags.webhooks.forEach(webhook => {
-        args.push(`--webhook=${webhook}`)
-      })
+      const disabledWebhooks = new Set(flags.disabledWebhooks || [])
+      flags.webhooks
+        .filter(webhook => !disabledWebhooks.has(webhook))
+        .forEach(webhook => {
+          args.push(`--webhook=${webhook}`)
+        })
     }
     
     if (flags.autoMarkRead !== undefined) {

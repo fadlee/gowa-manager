@@ -94,6 +94,7 @@ export interface CliFlags {
   basicAuth?: BasicAuthPair[];
   os?: string;
   webhooks?: string[];
+  disabledWebhooks?: string[];
   autoMarkRead?: boolean;
   autoReply?: string;
   basePath?: string;
