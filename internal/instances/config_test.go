@@ -91,6 +91,17 @@ func TestConfigFlagsToArgsExcludesDisabledWebhooks(t *testing.T) {
 	}
 }
 
+func TestConfigFlagsToArgsExcludesAllDisabledWebhooks(t *testing.T) {
+	args := FlagsToArgs(CLIFlags{
+		Webhooks:         []string{"https://example.com/a", "https://example.com/b"},
+		DisabledWebhooks: []string{"https://example.com/a", "https://example.com/b"},
+	})
+
+	if len(args) != 0 {
+		t.Fatalf("FlagsToArgs = %#v, want no webhook args", args)
+	}
+}
+
 func TestConfigProcessArgs(t *testing.T) {
 	debug := false
 	config := InstanceConfig{
@@ -148,6 +159,16 @@ func TestConfigNormalizeUpdateConfig(t *testing.T) {
 	assertJSONEqual(t, config, `{"flags":{"basePath":"/app/ABC12345","debug":false},"env":{"FOO":"bar"}}`)
 }
 
+func TestConfigNormalizeUpdateConfigUsesExistingConfigWhenNextConfigIsUndefined(t *testing.T) {
+	config := NormalizeUpdateConfig(
+		`{"flags":{"basePath":"/app/OLDKEY","debug":true},"custom":{"keep":true}}`,
+		nil,
+		"EXISTING",
+	)
+
+	assertJSONEqual(t, config, `{"flags":{"basePath":"/app/EXISTING","debug":true},"custom":{"keep":true}}`)
+}
+
 func TestConfigNormalizeUpdateConfigFallbacks(t *testing.T) {
 	assertJSONEqual(t,
 		NormalizeUpdateConfig(`{"flags":{"basePath":"/app/OLDKEY"},"command":"rest"}`, ptrString("{bad-json"), "GOODKEY1"),
@@ -179,11 +200,15 @@ func TestConfigBuildCreateConfig(t *testing.T) {
 
 func FuzzNormalizeUpdateConfigRestoresBasePath(f *testing.F) {
 	f.Add(`{"flags":{"basePath":"/wrong"},"unknown":{"keep":true}}`, "FUZZKEY1")
+	f.Add(`{"flags":{"basePath":"/other","debug":false,"unknownFlag":"keep"},"extra":"value"}`, "FUZZKEY3")
+	f.Add(`{"flags":{"basePath":"/nested"},"unknownList":[1,{"two":true}],"unknownBool":false}`, "FUZZKEY4")
 	f.Add(`[]`, "FUZZKEY2")
 	f.Fuzz(func(t *testing.T, next string, key string) {
 		if key == "" {
 			key = "KEY"
 		}
+		var input map[string]json.RawMessage
+		validObjectWithUnknowns := json.Unmarshal([]byte(next), &input) == nil && input != nil
 		got := NormalizeUpdateConfig(`{"unknown":"existing"}`, &next, key)
 		var decoded map[string]any
 		if err := json.Unmarshal([]byte(got), &decoded); err != nil {
@@ -196,8 +221,44 @@ func FuzzNormalizeUpdateConfigRestoresBasePath(f *testing.F) {
 		if flags["basePath"] != "/app/"+key {
 			t.Fatalf("basePath = %#v, want %q", flags["basePath"], "/app/"+key)
 		}
-		if _, ok := decoded["unknown"]; json.Valid([]byte(next)) && next == `{"flags":{"basePath":"/wrong"},"unknown":{"keep":true}}` && !ok {
-			t.Fatalf("unknown field was deleted: %#v", decoded)
+		if !validObjectWithUnknowns {
+			return
+		}
+		for field, value := range input {
+			if field == "flags" {
+				continue
+			}
+			gotValue, ok := decoded[field]
+			if !ok {
+				t.Fatalf("unknown field %q was deleted: %#v", field, decoded)
+			}
+			var wantValue any
+			if err := json.Unmarshal(value, &wantValue); err != nil {
+				t.Fatalf("seed field %q is invalid JSON: %v", field, err)
+			}
+			if !reflect.DeepEqual(gotValue, wantValue) {
+				t.Fatalf("unknown field %q = %#v, want %#v", field, gotValue, wantValue)
+			}
+		}
+		var inputFlags map[string]json.RawMessage
+		if err := json.Unmarshal(input["flags"], &inputFlags); err != nil || inputFlags == nil {
+			return
+		}
+		for field, value := range inputFlags {
+			if field == "basePath" {
+				continue
+			}
+			gotValue, ok := flags[field]
+			if !ok {
+				t.Fatalf("unknown flags field %q was deleted: %#v", field, flags)
+			}
+			var wantValue any
+			if err := json.Unmarshal(value, &wantValue); err != nil {
+				t.Fatalf("seed flags field %q is invalid JSON: %v", field, err)
+			}
+			if !reflect.DeepEqual(gotValue, wantValue) {
+				t.Fatalf("unknown flags field %q = %#v, want %#v", field, gotValue, wantValue)
+			}
 		}
 	})
 }
