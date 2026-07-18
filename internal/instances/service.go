@@ -33,6 +33,14 @@ type DeviceCacheCleaner interface {
 	ClearCache(int64)
 }
 
+type ServiceOption func(*Service)
+
+func WithDeviceCacheCleaner(cleaner DeviceCacheCleaner) ServiceOption {
+	return func(s *Service) {
+		s.deviceCache = cleaner
+	}
+}
+
 type noopDeviceCacheCleaner struct{}
 
 func (noopDeviceCacheCleaner) ClearCache(int64) {}
@@ -70,8 +78,8 @@ type UpdateRequest struct {
 	GOWAVersion *string
 }
 
-func NewService(repo Repository, fs InstanceFilesystem, ports PortAllocator, lifecycle Lifecycle) *Service {
-	return &Service{
+func NewService(repo Repository, fs InstanceFilesystem, ports PortAllocator, lifecycle Lifecycle, opts ...ServiceOption) *Service {
+	service := &Service{
 		repo:         repo,
 		fs:           fs,
 		ports:        ports,
@@ -81,6 +89,10 @@ func NewService(repo Repository, fs InstanceFilesystem, ports PortAllocator, lif
 		generateName: func() string { return RandomName(nil) },
 		locks:        map[int64]*instanceLock{},
 	}
+	for _, opt := range opts {
+		opt(service)
+	}
+	return service
 }
 
 func (s *Service) List(ctx context.Context) ([]Instance, error) {

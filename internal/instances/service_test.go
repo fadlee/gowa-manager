@@ -476,8 +476,7 @@ func TestServiceDeleteAndResetStopRunningInstanceBeforeStagingFiles(t *testing.T
 			fs := &fakeFilesystem{}
 			lifecycle := &fakeLifecycle{status: Status{State: "running"}}
 			cache := &fakeDeviceCacheCleaner{}
-			service := NewService(repo, fs, &fakePortAllocator{next: 7300}, lifecycle)
-			service.deviceCache = cache
+			service := NewService(repo, fs, &fakePortAllocator{next: 7300}, lifecycle, WithDeviceCacheCleaner(cache))
 			service.generateKey = func() (string, error) { return "RUNNING1", nil }
 			created, err := service.Create(ctx, CreateRequest{Name: operation})
 			if err != nil {
@@ -513,8 +512,7 @@ func TestServiceClearsDeviceCacheAfterStoppedDeleteAndReset(t *testing.T) {
 			repo := newFakeRepository()
 			fs := &fakeFilesystem{}
 			cache := &fakeDeviceCacheCleaner{}
-			service := NewService(repo, fs, &fakePortAllocator{next: 7302}, nil)
-			service.deviceCache = cache
+			service := NewService(repo, fs, &fakePortAllocator{next: 7302}, nil, WithDeviceCacheCleaner(cache))
 			service.generateKey = func() (string, error) { return "CACHE001", nil }
 			created, err := service.Create(ctx, CreateRequest{Name: operation})
 			if err != nil {

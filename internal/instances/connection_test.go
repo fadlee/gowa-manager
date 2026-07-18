@@ -83,6 +83,25 @@ func TestConnectionTesterSendsOptionalBasicAuthAndDoesNotLeakSecretOnError(t *te
 	}
 }
 
+func TestConnectionTesterRedactsBasicAuthBeforeTruncatingBody(t *testing.T) {
+	secret := "boundary-secret"
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("boundary-user:"+secret))
+	body := strings.Repeat("x", 595) + want + " " + secret
+	server := newDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	defer server.Close()
+	tester := NewConnectionTester(ConnectionTesterOptions{HTTPClient: server.Client()})
+
+	got := tester.Test(context.Background(), runningInstance(server, `{"flags":{"basicAuth":[{"username":"boundary-user","password":"`+secret+`"}]}}`))
+	if strings.Contains(got.Body, want) || strings.Contains(got.Body, strings.TrimPrefix(want, "Basic ")[:8]) || strings.Contains(got.Body, secret) {
+		t.Fatalf("Test() leaked credential fragment in body: %q", got.Body)
+	}
+	if len(got.Body) != 603 || !strings.HasSuffix(got.Body, "...") {
+		t.Fatalf("body len/suffix = %d/%q", len(got.Body), got.Body[len(got.Body)-3:])
+	}
+}
+
 func TestConnectionTesterTimeoutDoesNotLeakSecrets(t *testing.T) {
 	server := newDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()

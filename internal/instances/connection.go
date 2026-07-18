@@ -4,11 +4,14 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const defaultConnectionTimeout = 3 * time.Second
+
+var genericBasicAuthPattern = regexp.MustCompile(`Basic [A-Za-z0-9+/=_-]+`)
 
 type ConnectionTesterOptions struct {
 	HTTPClient *http.Client
@@ -59,14 +62,16 @@ func (t *ConnectionTester) Test(ctx context.Context, instance Instance) Connecti
 		return ConnectionTestResult{Message: sanitizeConnectionError(message, instance)}
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 601))
+	body, _ := io.ReadAll(resp.Body)
 	bodyText := string(body)
 	if bodyText == "" {
 		bodyText = "No response body."
-	} else if len(bodyText) > 600 {
+	} else {
+		bodyText = sanitizeConnectionError(bodyText, instance)
+	}
+	if len(bodyText) > 600 {
 		bodyText = bodyText[:600] + "..."
 	}
-	bodyText = sanitizeConnectionError(bodyText, instance)
 	message := "Failed to connect to the GOWA API."
 	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 		message = "Successfully connected to the GOWA API."
@@ -75,6 +80,7 @@ func (t *ConnectionTester) Test(ctx context.Context, instance Instance) Connecti
 }
 
 func sanitizeConnectionError(message string, instance Instance) string {
+	message = genericBasicAuthPattern.ReplaceAllString(message, "Basic [redacted]")
 	config := ParseConfig(instance.Config)
 	for _, auth := range config.Flags.BasicAuth {
 		if auth.Username != "" || auth.Password != "" {
