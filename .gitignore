@@ -20,4 +20,5 @@ src/version.ts
 /gowa-manager-go.exe
 /dist-go/
 /.contract-tmp/
+/spike/
 *.bun-build
