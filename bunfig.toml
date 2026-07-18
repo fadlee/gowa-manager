@@ -1,2 +1,6 @@
 [test]
 preload = ["./test/setup.ts"]
+# NOTE: Bun's coverageThreshold is per-file (not aggregate) as of v1.3.x,
+# and several modules (proxy/index.ts, version-manager.ts) are intentionally
+# below 90% due to network/spawn dependencies. Aggregate coverage is enforced
+# by the CI workflow instead (see .github/workflows/test.yml).

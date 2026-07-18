@@ -4,7 +4,7 @@
 
 > Active sprint: 2026-W29 — see TASKS.md for technical breakdown.
 
-> Last updated: 2026-07-18
+> Last updated: 2026-07-19
 
 ---
 
@@ -16,9 +16,9 @@
 
 ## Sprint 2026-W29 result (2026-07-18)
 
-- Aggregate: 93.97% funcs / 97.22% lines (+9.49% funcs / +8.96% lines vs baseline)
-- 333 tests pass, 0 fail, 759 expect() calls across 28 files (+162 tests)
-- `process-manager.ts`: 21.43% -> 84.52% lines
+- Aggregate: 94.42% funcs / 97.48% lines (+9.94% funcs / +9.22% lines vs baseline)
+- 339 tests pass, 0 fail, 777 expect() calls across 28 files (+168 tests)
+- `process-manager.ts`: 21.43% -> 100.00% lines
 - `service.websocket.ts`: 21.82% -> 100.00% lines
 - `resource-monitor.ts`: 11.64% -> 86.73% lines
 - `auto-updater.ts`: 13.19% -> 98.18% lines
@@ -35,7 +35,7 @@
 - [x] Test `ProcessManager` lifecycle (add/remove/get/isReallyRunning) — shipped:2026-07-18
 - [x] Test `stopProcess` & `killProcess` (success + missing instance) — shipped:2026-07-18
 - [x] Test `cleanupAllInstances` (idempotency via `isShuttingDown` guard) — shipped:2026-07-18
-- [ ] Test `setupExitHandlers` registration (mock process events) — blocked: needs process event mocking strategy
+- [x] Test `setupExitHandlers` registration (mock process events) — shipped:2026-07-19
 
 ## 0.2 WebSocket Proxy Service — P0
 - [x] Test `createWebSocketConnection` returns null for missing/stopped/no-port instance — shipped:2026-07-18
@@ -86,5 +86,5 @@
 # 3. Maintenance (P2)
 
 ## 3.1 Coverage Gates — P2
-- [ ] Add coverage threshold to `bun test` CI (target: 90% lines)
-- [ ] Document test running & coverage commands in docs/test-coverage/README.md
+- [x] Add coverage threshold to CI (target: 90% lines) — shipped:2026-07-19
+- [x] Document test running & coverage commands in docs/test-coverage/README.md — shipped:2026-07-19

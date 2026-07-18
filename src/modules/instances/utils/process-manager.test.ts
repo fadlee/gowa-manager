@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import treeKill from 'tree-kill'
 import { ProcessManager } from './process-manager'
 
@@ -205,5 +205,125 @@ describe('ProcessManager.cleanupAllInstances', () => {
     // The newly added process is NOT cleaned up because shutdown is in progress.
     expect(ProcessManager.isReallyRunning(30)).toBe(true)
     ProcessManager.removeProcess(30)
+  })
+})
+
+describe('ProcessManager.setupExitHandlers', () => {
+  const registeredHandlers = new Map<string, (...args: any[]) => any>()
+  let onSpy: ReturnType<typeof spyOn>
+  let exitMock: ReturnType<typeof mock>
+  let originalExit: typeof process.exit
+  let originalOn: typeof process.on
+
+  beforeEach(() => {
+    registeredHandlers.clear()
+
+    originalOn = process.on
+    onSpy = spyOn(process, 'on').mockImplementation((event: string, handler: any) => {
+      registeredHandlers.set(event, handler)
+      return process
+    })
+
+    originalExit = process.exit
+    exitMock = mock((code?: number) => {})
+    Object.defineProperty(process, 'exit', {
+      value: exitMock,
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  afterEach(() => {
+    // Remove handlers that were registered via the real process.on before the spy
+    for (const [event, handler] of registeredHandlers) {
+      process.removeListener(event as any, handler)
+    }
+    registeredHandlers.clear()
+
+    // Restore process.exit
+    Object.defineProperty(process, 'exit', {
+      value: originalExit,
+      configurable: true,
+      writable: true,
+    })
+
+    onSpy.mockRestore()
+  })
+
+  test('registers handlers for all five process events', () => {
+    ProcessManager.setupExitHandlers()
+
+    const events = onSpy.mock.calls.map((c) => c[0])
+    expect(events).toContain('SIGTERM')
+    expect(events).toContain('SIGINT')
+    expect(events).toContain('beforeExit')
+    expect(events).toContain('uncaughtException')
+    expect(events).toContain('unhandledRejection')
+    expect(onSpy).toHaveBeenCalledTimes(5)
+  })
+
+  test('SIGTERM handler cleans up and exits with code 0', async () => {
+    const cleanupSpy = spyOn(ProcessManager, 'cleanupAllInstances').mockResolvedValue(undefined)
+    ProcessManager.setupExitHandlers()
+
+    const handler = registeredHandlers.get('SIGTERM')!
+    await handler()
+
+    expect(cleanupSpy).toHaveBeenCalledTimes(1)
+    expect(exitMock).toHaveBeenCalledWith(0)
+    cleanupSpy.mockRestore()
+  })
+
+  test('SIGINT handler cleans up and exits with code 0', async () => {
+    const cleanupSpy = spyOn(ProcessManager, 'cleanupAllInstances').mockResolvedValue(undefined)
+    ProcessManager.setupExitHandlers()
+
+    const handler = registeredHandlers.get('SIGINT')!
+    await handler()
+
+    expect(cleanupSpy).toHaveBeenCalledTimes(1)
+    expect(exitMock).toHaveBeenCalledWith(0)
+    cleanupSpy.mockRestore()
+  })
+
+  test('beforeExit handler cleans up without calling process.exit', async () => {
+    const cleanupSpy = spyOn(ProcessManager, 'cleanupAllInstances').mockResolvedValue(undefined)
+    ProcessManager.setupExitHandlers()
+
+    const handler = registeredHandlers.get('beforeExit')!
+    await handler()
+
+    expect(cleanupSpy).toHaveBeenCalledTimes(1)
+    expect(exitMock).not.toHaveBeenCalled()
+    cleanupSpy.mockRestore()
+  })
+
+  test('uncaughtException handler logs the error, cleans up, and exits with code 1', async () => {
+    const cleanupSpy = spyOn(ProcessManager, 'cleanupAllInstances').mockResolvedValue(undefined)
+    ProcessManager.setupExitHandlers()
+
+    const handler = registeredHandlers.get('uncaughtException')!
+    const testError = new Error('test uncaught')
+    await handler(testError)
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Uncaught exception:', testError)
+    expect(cleanupSpy).toHaveBeenCalledTimes(1)
+    expect(exitMock).toHaveBeenCalledWith(1)
+    cleanupSpy.mockRestore()
+  })
+
+  test('unhandledRejection handler logs reason+promise, cleans up, and exits with code 1', async () => {
+    const cleanupSpy = spyOn(ProcessManager, 'cleanupAllInstances').mockResolvedValue(undefined)
+    ProcessManager.setupExitHandlers()
+
+    const handler = registeredHandlers.get('unhandledRejection')!
+    const testReason = new Error('test rejection')
+    const testPromise = Promise.resolve()
+    await handler(testReason, testPromise)
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Unhandled rejection at:', testPromise, 'reason:', testReason)
+    expect(cleanupSpy).toHaveBeenCalledTimes(1)
+    expect(exitMock).toHaveBeenCalledWith(1)
+    cleanupSpy.mockRestore()
   })
 })

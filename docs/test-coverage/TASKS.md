@@ -1,12 +1,12 @@
 # Active Tasks — Backend Test Coverage
 
 ## Sprint: 2026-W29
-Updated: 2026-07-18
+Updated: 2026-07-19
 
 ## 0.1 ProcessManager tests — DONE
 
 Target file: `src/modules/instances/utils/process-manager.test.ts` (new)
-Source under test: `src/modules/instances/utils/process-manager.ts` (21.43% -> 84.52% lines)
+Source under test: `src/modules/instances/utils/process-manager.ts` (21.43% -> 100.00% lines)
 
 ### Tasks
 - [x] Create test file with imports & shared setup
@@ -20,7 +20,12 @@ Source under test: `src/modules/instances/utils/process-manager.ts` (21.43% -> 8
 - [x] Test `killProcess` swallows ESRCH error code silently
 - [x] Test `cleanupAllInstances` no-op when already shutting down
 - [x] Test `cleanupAllInstances` kills all tracked processes and clears map
-- [x] Verify `bun test --coverage` shows process-manager.ts > 80% lines (84.52%)
+- [x] Test `setupExitHandlers` registers handlers for all 5 process events
+- [x] Test SIGTERM/SIGINT handlers call cleanupAllInstances + exit(0)
+- [x] Test beforeExit handler calls cleanupAllInstances without exit
+- [x] Test uncaughtException handler logs error, cleans up, exits(1)
+- [x] Test unhandledRejection handler logs reason+promise, cleans up, exits(1)
+- [x] Verify `bun test --coverage` shows process-manager.ts = 100% lines
 
 ## 0.2 WebSocketProxyService tests — DONE
 
@@ -180,8 +185,26 @@ Source under test: `src/modules/instances/index.ts` (76.49% -> 100.00% lines)
 - 20 tests in a separate file from routes.test.ts.
 - All spies created in beforeEach with mockRestore in afterEach.
 
-## Next sprint candidates
+## 3.1 Coverage Gates — DONE
 
-See BACKLOG.md sections 1.x (Resource Monitor, Auto-Updater, System Versions API)
-and 2.x (CLI, Proxy edge cases, Instances index). Pick the next P0/P1 set and
-move items to `[~]` with `sprint:` annotation before starting.
+### Tasks
+- [x] Create `scripts/check-coverage.ts` aggregate coverage gate script
+- [x] Create `.github/workflows/test.yml` CI workflow (typecheck + coverage gate)
+- [x] Document test running & coverage commands in `docs/test-coverage/README.md`
+- [x] Note in `bunfig.toml` why `coverageThreshold` is not used (Bun per-file bug)
+
+### Notes
+- Bun's `coverageThreshold` is per-file, not aggregate
+  ([oven-sh/bun#17028](https://github.com/oven-sh/bun/issues/17028)). Several
+  modules (proxy/index.ts at 49% lines, version-manager.ts at 75%) are
+  intentionally below 90% due to network/spawn dependencies. A per-file gate
+  would always fail, so the CI workflow uses a custom script that checks the
+  "All files" aggregate from the text coverage report.
+- Default threshold: 90% lines / 90% functions. Current: 97.48% lines / 94.42% funcs.
+
+## Sprint complete
+
+All backlog items shipped. Remaining low-coverage files (proxy/index.ts,
+version-manager.ts, system/index.ts) are deferred — they require network
+calls, process spawning, or cron scheduling that is impractical to unit test
+without heavy integration infrastructure.
