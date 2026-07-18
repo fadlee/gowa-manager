@@ -206,6 +206,23 @@ bun run dev:server
 bun run dev:client
 ```
 
+### Experimental Go Backend
+
+The Go backend rewrite is under active development and is not a production runtime yet. It must not run against the same `DATA_DIR` as the Bun backend, and Bun and Go must never manage the same GOWA processes at the same time.
+
+```bash
+# Run the experimental Go backend shell with a separate data directory
+bun run dev:go -- --data-dir .contract-tmp/go-dev --port 39000
+
+# Run Go tests
+bun run test:go
+
+# Build the experimental Go binary with embedded frontend assets
+bun run build:go
+```
+
+The existing Bun commands remain the production baseline until the Go rewrite reaches full feature parity and passes the cutover gates.
+
 ### Testing And Validation
 ```bash
 # Run backend/unit/integration tests
