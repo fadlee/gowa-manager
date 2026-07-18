@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
+	"github.com/fadlee/gowa-manager/internal/app"
 	"github.com/fadlee/gowa-manager/internal/config"
 )
 
@@ -13,7 +16,7 @@ func main() {
 }
 
 func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
-	_, action, err := config.Parse(args, getenv)
+	cfg, action, err := config.Parse(args, getenv)
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 1
@@ -25,6 +28,12 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	case config.ActionVersion:
 		fmt.Fprintln(stdout, config.VersionText())
 		return 0
+	}
+	ctx, stop := app.SignalContext(context.Background())
+	defer stop()
+	if err := app.Run(ctx, app.Options{Config: cfg, Logger: slog.New(slog.NewTextHandler(stderr, nil))}); err != nil {
+		fmt.Fprintln(stderr, err.Error())
+		return 1
 	}
 	return 0
 }
