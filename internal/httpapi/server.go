@@ -11,15 +11,22 @@ import (
 )
 
 type Dependencies struct {
-	Logger         *slog.Logger
-	AllowedOrigins []string
-	TestPanicRoute bool
-	StaticFS       fs.FS
+	Logger            *slog.Logger
+	AllowedOrigins    []string
+	TestPanicRoute    bool
+	StaticFS          fs.FS
+	Instances         InstanceService
+	InstanceLifecycle InstanceLifecycle
+	DeviceClient      InstanceDeviceClient
+	ConnectionTester  InstanceConnectionTester
 }
 
 func New(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
+	if deps.Instances != nil {
+		registerInstanceRoutes(mux, deps)
+	}
 	if deps.TestPanicRoute {
 		mux.HandleFunc("/api/__panic", func(http.ResponseWriter, *http.Request) { panic("test panic") })
 	}
