@@ -4,7 +4,7 @@
 
 > Active sprint: 2026-W29 — see TASKS.md for technical breakdown.
 
-> Last updated: 2026-07-19
+> Last updated: 2026-07-20
 
 ---
 
@@ -14,10 +14,10 @@
 - 171 tests pass, 0 fail, 387 expect() calls across 21 files
 - Domain logic & routes teruji baik; side-effect heavy code jadi titik buta
 
-## Sprint 2026-W29 result (2026-07-18)
+## Sprint 2026-W29 result (2026-07-18 → 2026-07-20)
 
-- Aggregate: 94.42% funcs / 97.48% lines (+9.94% funcs / +9.22% lines vs baseline)
-- 339 tests pass, 0 fail, 777 expect() calls across 28 files (+168 tests)
+- Aggregate: 96.11% funcs / 98.97% lines (+11.63% funcs / +10.71% lines vs baseline)
+- 384 tests pass, 0 fail, 863 expect() calls across 29 files (+213 tests)
 - `process-manager.ts`: 21.43% -> 100.00% lines
 - `service.websocket.ts`: 21.82% -> 100.00% lines
 - `resource-monitor.ts`: 11.64% -> 86.73% lines
@@ -26,6 +26,10 @@
 - `cli.ts`: 19.73% -> 100.00% lines
 - `proxy/service.ts`: 66.86% -> 85.06% lines
 - `instances/index.ts`: 76.49% -> 100.00% lines
+- `proxy/index.ts`: 49.04% -> 97.87% lines
+- `version-manager.ts`: 75.69% -> 98.26% lines
+- `system/index.ts`: 83.54% -> 100.00% lines
+- `instances/service.ts`: 91.39% -> 95.17% lines
 
 ---
 

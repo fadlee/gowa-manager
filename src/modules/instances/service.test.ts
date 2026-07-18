@@ -623,4 +623,56 @@ describe('InstanceService.createInstance', () => {
       basePath: `/app/${instance.key}`,
     })
   })
+
+  test('initializes empty flags object when config has no flags key', async () => {
+    SystemService.getNextAvailablePort = async () => 19504
+
+    const instance = await InstanceService.createInstance({
+      name: 'no-flags-create',
+      config: JSON.stringify({ args: ['rest'] }),
+    })
+    createdIds.push(instance.id)
+    const config = JSON.parse(instance.config)
+
+    expect(config.flags).toBeDefined()
+    expect(config.flags.basePath).toBe(`/app/${instance.key}`)
+  })
+})
+
+describe('InstanceService.cleanupAllInstances', () => {
+  test('delegates to ProcessManager.cleanupAllInstances', async () => {
+    const spy = spyOn(ProcessManager, 'cleanupAllInstances').mockResolvedValue(undefined)
+
+    await InstanceService.cleanupAllInstances()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+  })
+})
+
+describe('InstanceService.startInstance — already running', () => {
+  afterEach(() => {
+    ProcessManager.removeProcess(9201)
+    cleanupCreatedInstances()
+  })
+
+  test('returns current status when instance is already running and process is alive', async () => {
+    const instance = createStoredInstance({ key: 'TSTRUN01', name: 'test-already-running', port: 19601 })
+    queries.updateInstanceStatus.run('running', instance.id)
+    ProcessManager.addProcess(instance.id, {
+      process: {} as any,
+      pid: 9201,
+      startTime: Date.now() - 1000,
+    })
+
+    const status = await InstanceService.startInstance(instance.id)
+
+    expect(status).toMatchObject({
+      id: instance.id,
+      status: 'running',
+      pid: 9201,
+    })
+
+    ProcessManager.removeProcess(instance.id)
+  })
 })

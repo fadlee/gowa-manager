@@ -1,7 +1,7 @@
 # Active Tasks — Backend Test Coverage
 
 ## Sprint: 2026-W29
-Updated: 2026-07-19
+Updated: 2026-07-20
 
 ## 0.1 ProcessManager tests — DONE
 
@@ -200,11 +200,21 @@ Source under test: `src/modules/instances/index.ts` (76.49% -> 100.00% lines)
   intentionally below 90% due to network/spawn dependencies. A per-file gate
   would always fail, so the CI workflow uses a custom script that checks the
   "All files" aggregate from the text coverage report.
-- Default threshold: 90% lines / 90% functions. Current: 97.48% lines / 94.42% funcs.
+- Default threshold: 90% lines / 90% functions. Current: 98.97% lines / 96.11% funcs.
 
 ## Sprint complete
 
-All backlog items shipped. Remaining low-coverage files (proxy/index.ts,
-version-manager.ts, system/index.ts) are deferred — they require network
-calls, process spawning, or cron scheduling that is impractical to unit test
-without heavy integration infrastructure.
+All backlog items shipped. Remaining low-coverage files:
+
+| File | Lines | Reason |
+|------|-------|--------|
+| `proxy/service.ts` | 85.06% | `modifyJsonUrls` private unused method (lines 136-161) |
+| `instances/service.ts` | 95.17% | Process spawn exit callbacks & cleanup closure (lines 206-207, 217-220, 232-233) |
+| `resource-monitor.ts` | 86.73% | `testPidUsage` wrapper (lines 152-166) — low-value self-test |
+| `system/service.ts` | 96.43% | Port allocation edge case (lines 105-107) |
+| `proxy/index.ts` | 97.87% | `request.text()` body fallback (lines 64-67) — impractical to trigger |
+| `version-manager.ts` | 98.26% | Unreachable catch in `isVersionAvailable('latest')` (lines 222-223) |
+| `auto-updater.ts` | 98.18% | Mocked timer callback (line 35) |
+
+These are deferred — they require process spawn integration, network calls, or
+cover unreachable/dead code paths that are impractical to unit test.

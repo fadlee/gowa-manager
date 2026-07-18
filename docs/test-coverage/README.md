@@ -42,10 +42,10 @@ so the aggregate check script is used instead.
 
 | Metric | Baseline (2026-07-18) | Current |
 |--------|----------------------|---------|
-| Functions | 84.48% | 94.42% |
-| Lines | 88.26% | 97.48% |
-| Tests | 171 | 339 |
-| Test files | 21 | 28 |
+| Functions | 84.48% | 96.11% |
+| Lines | 88.26% | 98.97% |
+| Tests | 171 | 384 |
+| Test files | 21 | 29 |
 
 ## Test structure
 

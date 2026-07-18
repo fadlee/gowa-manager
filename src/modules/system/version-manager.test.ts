@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { VersionManager } from './version-manager'
 
+const fs = require('node:fs')
+
 const dataDir = process.env.DATA_DIR!
 const versionsDir = join(dataDir, 'bin', 'versions')
 const binaryName = process.platform === 'win32' ? 'gowa.exe' : 'gowa'
@@ -88,5 +90,140 @@ describe('VersionManager', () => {
     await VersionManager.removeVersion('v4.0.0')
 
     expect(existsSync(join(versionsDir, 'v4.0.0'))).toBe(false)
+  })
+
+  test('resolveLatestVersion returns null when getInstalledVersionsSync throws', () => {
+    // Force the private sync helper to throw so the catch in resolveLatestVersion
+    // is exercised; getVersionBinaryPath('latest') should fall back to legacy path.
+    const spy = spyOn(VersionManager as any, 'getInstalledVersionsSync').mockImplementation(() => {
+      throw new Error('boom')
+    })
+
+    expect(VersionManager.getVersionBinaryPath('latest')).toBe(join(dataDir, 'bin', binaryName))
+
+    spy.mockRestore()
+  })
+
+  test('getInstalledVersionsSync returns [] when readdirSync throws', () => {
+    // versionsDir exists (as a file) so existsSync is true, but readdirSync throws.
+    mkdirSync(join(dataDir, 'bin'), { recursive: true })
+    writeFileSync(versionsDir, 'not-a-dir')
+
+    const spy = spyOn(fs, 'readdirSync').mockImplementation(() => {
+      throw new Error('cannot read')
+    })
+
+    expect((VersionManager as any).getInstalledVersionsSync()).toEqual([])
+
+    spy.mockRestore()
+  })
+
+  test('getInstalledVersions skips version directories missing the binary', async () => {
+    // Create a version directory without the binary file inside.
+    mkdirSync(join(versionsDir, 'v1.0.0'), { recursive: true })
+    createVersion('v2.0.0')
+
+    const versions = await VersionManager.getInstalledVersions()
+
+    expect(versions.map((v) => v.version)).toEqual(['v2.0.0'])
+  })
+
+  test('getInstalledVersions returns [] when readdir throws', async () => {
+    // Make versionsDir a file so readdir throws ENOTDIR, hitting the outer catch.
+    mkdirSync(join(dataDir, 'bin'), { recursive: true })
+    writeFileSync(versionsDir, 'not-a-dir')
+
+    expect(await VersionManager.getInstalledVersions()).toEqual([])
+  })
+
+  test('getAvailableVersions returns [] on GitHub API error', async () => {
+    const fetchMock = spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      statusText: 'Not Found',
+    } as any)
+
+    expect(await VersionManager.getAvailableVersions(5)).toEqual([])
+
+    fetchMock.mockRestore()
+  })
+
+  test('removeVersion rejects the latest alias', async () => {
+    expect(VersionManager.removeVersion('latest')).rejects.toThrow(
+      'Cannot remove the latest version alias'
+    )
+  })
+
+  test('isVersionAvailable("latest") returns false when no available versions', async () => {
+    const fetchMock = spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      statusText: 'Server Error',
+    } as any)
+
+    expect(await VersionManager.isVersionAvailable('latest')).toBe(false)
+
+    fetchMock.mockRestore()
+  })
+
+  test('isVersionAvailable("latest") returns true when actual latest version is installed', async () => {
+    createVersion('v5.0.0')
+    const fetchMock = spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { tag_name: 'v5.0.0', published_at: '2024-01-01T00:00:00Z', assets: [] },
+      ],
+    } as any)
+
+    expect(await VersionManager.isVersionAvailable('latest')).toBe(true)
+
+    fetchMock.mockRestore()
+  })
+
+  test('isVersionAvailable("latest") returns false when actual latest version is not installed', async () => {
+    const fetchMock = spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { tag_name: 'v9.9.9', published_at: '2024-01-01T00:00:00Z', assets: [] },
+      ],
+    } as any)
+
+    expect(await VersionManager.isVersionAvailable('latest')).toBe(false)
+
+    fetchMock.mockRestore()
+  })
+
+  test('getVersionsSize returns sizes for installed versions', async () => {
+    createVersion('v1.0.0', 'aaaa')
+    createVersion('v2.0.0', 'bbbbbbbb')
+
+    const sizes = await VersionManager.getVersionsSize()
+
+    expect(sizes['v1.0.0']).toBe(4)
+    expect(sizes['v2.0.0']).toBe(8)
+  })
+
+  test('cleanup returns [] when versions count does not exceed keepCount', async () => {
+    createVersion('v1.0.0')
+    createVersion('v2.0.0')
+
+    expect(await VersionManager.cleanup(5)).toEqual([])
+    expect(existsSync(join(versionsDir, 'v1.0.0'))).toBe(true)
+    expect(existsSync(join(versionsDir, 'v2.0.0'))).toBe(true)
+  })
+
+  test('cleanup removes old versions keeping only the newest N', async () => {
+    createVersion('v1.0.0')
+    createVersion('v2.0.0')
+    createVersion('v3.0.0')
+    createVersion('v4.0.0')
+
+    const removed = await VersionManager.cleanup(2)
+
+    // getInstalledVersions sorts descending by version; with equal birthtimes the
+    // cleanup sort is stable, so the two lowest versions are removed.
+    expect(removed.sort()).toEqual(['v1.0.0', 'v2.0.0'])
+    expect(existsSync(join(versionsDir, 'v3.0.0'))).toBe(true)
+    expect(existsSync(join(versionsDir, 'v4.0.0'))).toBe(true)
+    expect(existsSync(join(versionsDir, 'v1.0.0'))).toBe(false)
+    expect(existsSync(join(versionsDir, 'v2.0.0'))).toBe(false)
   })
 })
