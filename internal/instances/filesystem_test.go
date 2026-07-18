@@ -95,6 +95,33 @@ func TestFilesystemResetStagesExistingDirectoryAndRecreatesEmptyDirectory(t *tes
 	}
 }
 
+func TestFilesystemResetPurgeFailureRestoresOldDirectoryWithoutCreatingVisibleNewDirectory(t *testing.T) {
+	ctx := context.Background()
+	fs := newTestFilesystem(t)
+	dir, err := fs.Ensure(ctx, 10)
+	if err != nil {
+		t.Fatalf("Ensure returned error: %v", err)
+	}
+	marker := filepath.Join(dir, "old.db")
+	if err := os.WriteFile(marker, []byte("old"), 0o600); err != nil {
+		t.Fatalf("write old file: %v", err)
+	}
+
+	injected := errors.New("injected purge failure")
+	fs.removeAll = func(path string) error {
+		if strings.Contains(path, string(os.PathSeparator)+".trash"+string(os.PathSeparator)) {
+			return injected
+		}
+		return os.RemoveAll(path)
+	}
+
+	if err := fs.Reset(ctx, 10); !errors.Is(err, injected) {
+		t.Fatalf("Reset error = %v, want injected", err)
+	}
+	assertDirExists(t, dir)
+	assertFileContent(t, marker, "old")
+}
+
 func TestFilesystemMissingDirectoryBehavior(t *testing.T) {
 	ctx := context.Background()
 	fs := newTestFilesystem(t)
@@ -144,6 +171,33 @@ func TestFilesystemRejectsPathsOutsideDataDir(t *testing.T) {
 	}
 }
 
+func TestFilesystemRestoreRejectsOriginalPathForDifferentInstance(t *testing.T) {
+	ctx := context.Background()
+	fs := newTestFilesystem(t)
+	dir, err := fs.Ensure(ctx, 21)
+	if err != nil {
+		t.Fatalf("Ensure returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "state"), []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	trash, err := fs.StageDelete(ctx, 21)
+	if err != nil {
+		t.Fatalf("StageDelete returned error: %v", err)
+	}
+	wrongOriginal, err := fs.InstanceDir(22)
+	if err != nil {
+		t.Fatalf("InstanceDir returned error: %v", err)
+	}
+	trash.OriginalPath = wrongOriginal
+
+	if err := fs.Restore(ctx, trash); err == nil {
+		t.Fatalf("Restore accepted OriginalPath for a different instance")
+	}
+	assertMissing(t, wrongOriginal)
+	assertDirExists(t, trash.TrashPath)
+}
+
 func TestFilesystemCleansTrashDirectoryAfterInjectedStageDeleteFailure(t *testing.T) {
 	ctx := context.Background()
 	fs := newTestFilesystem(t)
@@ -152,10 +206,9 @@ func TestFilesystemCleansTrashDirectoryAfterInjectedStageDeleteFailure(t *testin
 		t.Fatalf("Ensure returned error: %v", err)
 	}
 	injected := errors.New("injected rename failure")
-	filesystemRename = func(oldpath string, newpath string) error {
+	fs.rename = func(oldpath string, newpath string) error {
 		return injected
 	}
-	t.Cleanup(func() { filesystemRename = os.Rename })
 
 	trash, err := fs.StageDelete(ctx, 12)
 	if !errors.Is(err, injected) {
@@ -183,13 +236,12 @@ func TestFilesystemRestoreRollsBackWhenRecreateTrashParentFails(t *testing.T) {
 		t.Fatalf("StageDelete returned error: %v", err)
 	}
 	injected := errors.New("injected mkdir failure")
-	filesystemMkdirAll = func(path string, perm os.FileMode) error {
+	fs.mkdirAll = func(path string, perm os.FileMode) error {
 		if path == filepath.Join(fs.dataDir, ".trash") {
 			return injected
 		}
 		return os.MkdirAll(path, perm)
 	}
-	t.Cleanup(func() { filesystemMkdirAll = os.MkdirAll })
 
 	if err := fs.Restore(ctx, trash); !errors.Is(err, injected) {
 		t.Fatalf("Restore error = %v, want injected", err)

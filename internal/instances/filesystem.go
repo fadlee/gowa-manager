@@ -12,14 +12,11 @@ import (
 	"strings"
 )
 
-var (
-	filesystemMkdirAll  = os.MkdirAll
-	filesystemRemoveAll = os.RemoveAll
-	filesystemRename    = os.Rename
-)
-
 type Filesystem struct {
-	dataDir string
+	dataDir   string
+	mkdirAll  func(string, os.FileMode) error
+	removeAll func(string) error
+	rename    func(string, string) error
 }
 
 type Trash struct {
@@ -33,7 +30,12 @@ func NewFilesystem(dataDir string) (*Filesystem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Filesystem{dataDir: cleaned}, nil
+	return &Filesystem{
+		dataDir:   cleaned,
+		mkdirAll:  os.MkdirAll,
+		removeAll: os.RemoveAll,
+		rename:    os.Rename,
+	}, nil
 }
 
 func (f *Filesystem) InstanceDir(id int64) (string, error) {
@@ -48,7 +50,7 @@ func (f *Filesystem) Ensure(ctx context.Context, id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := filesystemMkdirAll(dir, 0o700); err != nil {
+	if err := f.mkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -76,16 +78,16 @@ func (f *Filesystem) StageDelete(ctx context.Context, id int64) (Trash, error) {
 	if err != nil {
 		return Trash{}, err
 	}
-	if err := filesystemMkdirAll(trashDir, 0o700); err != nil {
+	if err := f.mkdirAll(trashDir, 0o700); err != nil {
 		return Trash{}, err
 	}
 	trashPath, err := f.newTrashPath(id)
 	if err != nil {
-		_ = filesystemRemoveAll(trashDir)
+		_ = f.removeAll(trashDir)
 		return Trash{}, err
 	}
-	if err := filesystemRename(originalPath, trashPath); err != nil {
-		_ = filesystemRemoveAll(trashPath)
+	if err := f.rename(originalPath, trashPath); err != nil {
+		_ = f.removeAll(trashPath)
 		cleanupEmptyDir(trashDir)
 		return Trash{}, err
 	}
@@ -96,7 +98,7 @@ func (f *Filesystem) Restore(ctx context.Context, trash Trash) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	originalPath, err := f.requireUnderDataDir(trash.OriginalPath)
+	originalPath, err := f.requireExpectedOriginalPath(trash)
 	if err != nil {
 		return err
 	}
@@ -107,18 +109,18 @@ func (f *Filesystem) Restore(ctx context.Context, trash Trash) error {
 	if err := f.requireTrashPath(trashPath); err != nil {
 		return err
 	}
-	if err := filesystemMkdirAll(filepath.Dir(originalPath), 0o700); err != nil {
+	if err := f.mkdirAll(filepath.Dir(originalPath), 0o700); err != nil {
 		return err
 	}
-	if err := filesystemRename(trashPath, originalPath); err != nil {
+	if err := f.rename(trashPath, originalPath); err != nil {
 		return err
 	}
 	trashDir, err := f.safeJoin(".trash")
 	if err != nil {
 		return err
 	}
-	if err := filesystemMkdirAll(trashDir, 0o700); err != nil {
-		_ = filesystemRename(originalPath, trashPath)
+	if err := f.mkdirAll(trashDir, 0o700); err != nil {
+		_ = f.rename(originalPath, trashPath)
 		return err
 	}
 	return nil
@@ -135,32 +137,47 @@ func (f *Filesystem) Purge(ctx context.Context, trash Trash) error {
 	if err := f.requireTrashPath(trashPath); err != nil {
 		return err
 	}
-	if err := filesystemRemoveAll(trashPath); err != nil {
+	if err := f.removeAll(trashPath); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (f *Filesystem) Reset(ctx context.Context, id int64) error {
+	// Callers must serialize filesystem mutations for the same instance. Reset is
+	// deliberately ordered so a failed purge restores the staged state before any
+	// fresh visible instance directory is created.
 	trash, err := f.StageDelete(ctx, id)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
-	dir, ensureErr := f.Ensure(ctx, id)
-	if ensureErr != nil {
-		if trash != (Trash{}) {
-			_ = f.Restore(context.Background(), trash)
-		}
-		return ensureErr
-	}
 	if trash != (Trash{}) {
 		if purgeErr := f.Purge(ctx, trash); purgeErr != nil {
-			_ = filesystemRemoveAll(dir)
-			_ = f.Restore(context.Background(), trash)
+			if restoreErr := f.Restore(context.Background(), trash); restoreErr != nil {
+				return fmt.Errorf("purge failed: %w; restore failed: %v", purgeErr, restoreErr)
+			}
 			return purgeErr
 		}
 	}
+	if _, ensureErr := f.Ensure(ctx, id); ensureErr != nil {
+		return ensureErr
+	}
 	return nil
+}
+
+func (f *Filesystem) requireExpectedOriginalPath(trash Trash) (string, error) {
+	originalPath, err := f.requireUnderDataDir(trash.OriginalPath)
+	if err != nil {
+		return "", err
+	}
+	expectedPath, err := f.InstanceDir(trash.InstanceID)
+	if err != nil {
+		return "", err
+	}
+	if originalPath != expectedPath {
+		return "", fmt.Errorf("trash original path %q does not match instance %d path %q", originalPath, trash.InstanceID, expectedPath)
+	}
+	return originalPath, nil
 }
 
 func (f *Filesystem) newTrashPath(id int64) (string, error) {
