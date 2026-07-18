@@ -121,6 +121,65 @@ Source under test: `src/modules/system/versions.ts` (52.98% -> 100.00% lines)
   validation to produce 422. Catch block lines still execute (coverage achieved).
   This is a code issue in versions.ts, not a test issue.
 
+## 2.1 CLI tests — DONE
+
+Target file: `src/cli.test.ts` (new, by subagent)
+Source under test: `src/cli.ts` (19.73% -> 100.00% lines)
+
+### Tasks
+- [x] Test parseCliArgs defaults & env-var fallbacks (PORT, ADMIN_USERNAME, ADMIN_PASSWORD, DATA_DIR)
+- [x] Test CLI args take precedence over env vars; short-form flags
+- [x] Test port validation (non-numeric, below 1, above 65535, boundaries)
+- [x] Test username/password validation (empty, max length, boundary)
+- [x] Test missing-value errors for every flag
+- [x] Test unknown options & unexpected positional args
+- [x] Test --help/-h output format & exit code 0
+- [x] Test --version/-v output & exit code 0
+- [x] Test getConfig argv slicing & binary-path stripping
+- [x] Verify coverage of cli.ts > 70% lines (100.00%)
+
+### Notes
+- Used `mock.module('process', ...)` with a Proxy to override only the `exit`
+  export (Bun's named `exit` binding is not a live binding, so
+  `spyOn(process, 'exit')` cannot intercept it). Contained to the test file,
+  does not leak.
+
+## 2.2 Proxy Service edge case tests — DONE
+
+Target file: `src/modules/proxy/service.test.ts` (extended, by subagent)
+Source under test: `src/modules/proxy/service.ts` (66.86% -> 85.06% lines)
+
+### Tasks
+- [x] Test forwardRequest error paths (missing instance, stopped, no port, fetch errors)
+- [x] Test forwardRequest body handling (ArrayBuffer, JSON parse failure, URL stripping)
+- [x] Test forwardRequest binary content types (image/png, text/html)
+- [x] Test isInstanceAvailable for all failure modes
+- [x] Test getProxyStatus for missing/running/stopped instances
+- [x] Test getAvailableProxyTargets filtering
+- [x] Verify coverage of service.ts > 85% lines (85.06%)
+
+### Notes
+- 22 new tests appended to existing 11 (total 33).
+- `modifyJsonUrls` (lines 136-161) skipped — private unused method, no caller.
+
+## 2.3 Instances Module Index tests — DONE
+
+Target file: `src/modules/instances/index.test.ts` (new, by subagent)
+Source under test: `src/modules/instances/index.ts` (76.49% -> 100.00% lines)
+
+### Tasks
+- [x] Test create catch block (Error + non-Error throws)
+- [x] Test update/delete 404 paths
+- [x] Test status 404 path
+- [x] Test admin-link invalid-JSON catch + empty-credentials + magic-link + 404
+- [x] Test test-connection: 404, not-running, no-port, success, failed-status,
+      body truncation, empty body, invalid-config, fetch throws
+- [x] Verify coverage of index.ts > 90% lines (100.00%)
+
+### Notes
+- 20 tests in a separate file from routes.test.ts.
+- All spies created in beforeEach with mockRestore in afterEach.
+
 ## Next sprint candidates
 
 See BACKLOG.md sections 1.x (Resource Monitor, Auto-Updater, System Versions API)

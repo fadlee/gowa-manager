@@ -16,13 +16,16 @@
 
 ## Sprint 2026-W29 result (2026-07-18)
 
-- Aggregate: 91.93% funcs / 95.12% lines (+7.45% funcs / +6.86% lines vs baseline)
-- 253 tests pass, 0 fail, 584 expect() calls across 26 files (+82 tests)
+- Aggregate: 93.97% funcs / 97.22% lines (+9.49% funcs / +8.96% lines vs baseline)
+- 333 tests pass, 0 fail, 759 expect() calls across 28 files (+162 tests)
 - `process-manager.ts`: 21.43% -> 84.52% lines
 - `service.websocket.ts`: 21.82% -> 100.00% lines
 - `resource-monitor.ts`: 11.64% -> 86.73% lines
 - `auto-updater.ts`: 13.19% -> 98.18% lines
 - `versions.ts`: 52.98% -> 100.00% lines
+- `cli.ts`: 19.73% -> 100.00% lines
+- `proxy/service.ts`: 66.86% -> 85.06% lines
+- `instances/index.ts`: 76.49% -> 100.00% lines
 
 ---
 
@@ -65,20 +68,20 @@
 # 2. Lower-Priority Coverage (P2)
 
 ## 2.1 CLI — P2
-- [ ] Test `getConfig` parses data dir, port, admin creds from env + argv
-- [ ] Test default values when env/argv absent
-- [ ] Test CLI help output format
-- [ ] Test invalid flag handling
+- [x] Test `getConfig` parses data dir, port, admin creds from env + argv — shipped:2026-07-18
+- [x] Test default values when env/argv absent — shipped:2026-07-18
+- [x] Test CLI help output format — shipped:2026-07-18
+- [x] Test invalid flag handling — shipped:2026-07-18
 
 ## 2.2 Proxy Service Edge Cases — P2
-- [ ] Test `forwardRequest` timeout handling
-- [ ] Test `forwardRequest` with various binary content types
-- [ ] Test `isInstanceAvailable` for all failure modes
-- [ ] Test `getProxyStatus` shape for running/stopped instances
+- [x] Test `forwardRequest` timeout handling — shipped:2026-07-18
+- [x] Test `forwardRequest` with various binary content types — shipped:2026-07-18
+- [x] Test `isInstanceAvailable` for all failure modes — shipped:2026-07-18
+- [x] Test `getProxyStatus` shape for running/stopped instances — shipped:2026-07-18
 
 ## 2.3 Instances Module Index — P2
-- [ ] Test admin link generation edge cases (covered: 56-60, 75-76, 91-92)
-- [ ] Test lifecycle route error paths (covered: 205-210, 232, 253-299)
+- [x] Test admin link generation edge cases (covered: 56-60, 75-76, 91-92) — shipped:2026-07-18
+- [x] Test lifecycle route error paths (covered: 205-210, 232, 253-299) — shipped:2026-07-18
 
 # 3. Maintenance (P2)
 
