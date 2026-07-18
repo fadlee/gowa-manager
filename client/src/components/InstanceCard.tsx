@@ -148,8 +148,14 @@ export function InstanceCard({ instance }: InstanceCardProps) {
 
   // reserved for future color-coded thresholds if needed
 
-  const handleOpenProxy = () => {
-    if (status?.port) {
+  const handleOpenProxy = async () => {
+    if (!status?.port) return
+
+    try {
+      const { url } = await apiClient.createAdminLink(instance.id)
+      window.open(url, '_blank')
+    } catch (error) {
+      console.error('Failed to create admin link:', error)
       window.open(apiClient.getProxyUrl(instance.key), '_blank')
     }
   }

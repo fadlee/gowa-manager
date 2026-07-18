@@ -108,4 +108,10 @@ export namespace InstanceModel {
     body: t.Optional(t.String())
   })
   export type connectionTestResponse = typeof connectionTestResponse.static
+
+  export const adminLinkResponse = t.Object({
+    url: t.String(),
+    expiresAt: t.Optional(t.String())
+  })
+  export type adminLinkResponse = typeof adminLinkResponse.static
 }

@@ -4,6 +4,7 @@ import { ProxyModel } from './model'
 import { WebSocketProxyService } from './service.websocket'
 import { createProxyErrorResponse, createWebSocketConnectionId, createWebSocketProxyPath, normalizeProxyPath } from './utils'
 import { serializeWebSocketMessage } from './websocket-utils'
+import { clearMagicAdminCookie, createMagicAdminCookie, validateMagicAdminToken } from './magic-auth'
 
 // Create a shared handler function
 const handleProxyRequest = async (
@@ -14,6 +15,30 @@ const handleProxyRequest = async (
   headers: any
 ) => {
   try {
+    const url = new URL(request.url)
+    const autologin = url.searchParams.get('autologin')
+    if (autologin !== null) {
+      url.searchParams.delete('autologin')
+      const redirectUrl = `${url.pathname}${url.search}${url.hash}`
+
+      if (!validateMagicAdminToken(autologin, instanceKey)) {
+        return new Response('Invalid or expired admin link', {
+          status: 401,
+          headers: {
+            'set-cookie': clearMagicAdminCookie(instanceKey, request.url),
+          },
+        })
+      }
+
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: redirectUrl || `/${ProxyModel.prefix}/${instanceKey}/`,
+          'set-cookie': createMagicAdminCookie(instanceKey, autologin, request.url),
+        },
+      })
+    }
+
     // Check if instance is available
     if (!ProxyService.isInstanceAvailable(instanceKey)) {
       const status = ProxyService.getProxyStatus(instanceKey)

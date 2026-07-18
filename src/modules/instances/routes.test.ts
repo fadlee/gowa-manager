@@ -129,6 +129,75 @@ describe('instances routes', () => {
     expect(missingResponse.status).toBe(404)
   })
 
+  test('creates plain admin link when instance has no basic auth', async () => {
+    SystemService.getNextAvailablePort = async () => 18998
+    const app = createTestApp()
+    const headers = {
+      authorization: basicHeader('manager', 'secret'),
+      'content-type': 'application/json',
+    }
+
+    const createResponse = await app.handle(new Request('http://localhost/api/instances/', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'admin-link-no-auth' }),
+    }))
+    const created = await json(createResponse)
+    createdIds.push(created.id)
+
+    const response = await app.handle(new Request(`http://localhost/api/instances/${created.id}/admin-link`, {
+      method: 'POST',
+      headers,
+    }))
+    const body = await json(response)
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ url: `/app/${created.key}/` })
+  })
+
+  test('creates magic admin link when instance has basic auth', async () => {
+    SystemService.getNextAvailablePort = async () => 18997
+    const app = createTestApp()
+    const headers = {
+      authorization: basicHeader('manager', 'secret'),
+      'content-type': 'application/json',
+    }
+
+    const createResponse = await app.handle(new Request('http://localhost/api/instances/', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        name: 'admin-link-auth',
+        config: JSON.stringify({ flags: { basicAuth: [{ username: 'admin', password: 'secret' }] } }),
+      }),
+    }))
+    const created = await json(createResponse)
+    createdIds.push(created.id)
+
+    const response = await app.handle(new Request(`http://localhost/api/instances/${created.id}/admin-link`, {
+      method: 'POST',
+      headers,
+    }))
+    const body = await json(response)
+
+    expect(response.status).toBe(200)
+    expect(body.url).toStartWith(`/app/${created.key}/?autologin=`)
+    expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now())
+  })
+
+  test('returns 404 for missing admin link instance', async () => {
+    const app = createTestApp()
+    const headers = { authorization: basicHeader('manager', 'secret') }
+
+    const response = await app.handle(new Request('http://localhost/api/instances/999999/admin-link', {
+      method: 'POST',
+      headers,
+    }))
+
+    expect(response.status).toBe(404)
+    expect(await json(response)).toEqual({ error: 'Instance not found', success: false })
+  })
+
   test('returns 404 for missing instance', async () => {
     const app = createTestApp()
     const headers = { authorization: basicHeader('manager', 'secret') }

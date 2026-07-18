@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
+  applyInstanceHttpAuthHeader,
   applyInstanceWebSocketAuthHeader,
   getFirstInstanceBasicAuthHeader,
   shouldInjectInstanceWebSocketAuth,
 } from './auth-utils'
+import { createMagicAdminCookie, createMagicAdminToken } from './magic-auth'
 
 describe('proxy auth utils', () => {
   afterEach(() => {
@@ -97,5 +99,59 @@ describe('proxy auth utils', () => {
     )
 
     expect(headers).toEqual({})
+  })
+
+  test('adds HTTP authorization when magic admin cookie is valid', () => {
+    const { token } = createMagicAdminToken('ABC12345')
+    const cookie = createMagicAdminCookie('ABC12345', token, 'http://localhost/app/ABC12345/')
+
+    const headers = applyInstanceHttpAuthHeader(
+      { cookie },
+      {
+        key: 'ABC12345',
+        config: JSON.stringify({
+          flags: {
+            basicAuth: [{ username: 'admin', password: 'admin123' }],
+          },
+        }),
+      }
+    )
+
+    expect(headers.authorization).toBe(`Basic ${btoa('admin:admin123')}`)
+  })
+
+  test('does not override incoming HTTP authorization header', () => {
+    const { token } = createMagicAdminToken('ABC12345')
+    const cookie = createMagicAdminCookie('ABC12345', token, 'http://localhost/app/ABC12345/')
+
+    const headers = applyInstanceHttpAuthHeader(
+      { cookie, authorization: 'Basic existing' },
+      {
+        key: 'ABC12345',
+        config: JSON.stringify({
+          flags: {
+            basicAuth: [{ username: 'admin', password: 'admin123' }],
+          },
+        }),
+      }
+    )
+
+    expect(headers.authorization).toBe('Basic existing')
+  })
+
+  test('does not add HTTP authorization when magic cookie is invalid', () => {
+    const headers = applyInstanceHttpAuthHeader(
+      { cookie: 'gowa_admin_auth_ABC12345=invalid' },
+      {
+        key: 'ABC12345',
+        config: JSON.stringify({
+          flags: {
+            basicAuth: [{ username: 'admin', password: 'admin123' }],
+          },
+        }),
+      }
+    )
+
+    expect(headers.authorization).toBeUndefined()
   })
 })

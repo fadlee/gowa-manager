@@ -2,6 +2,7 @@ import { Elysia } from 'elysia'
 import { InstanceService } from './service'
 import { InstanceModel } from './model'
 import { DeviceClient } from './utils/device-client'
+import { createMagicAdminToken } from '../proxy/magic-auth'
 
 export const instancesModule = new Elysia({ prefix: '/api/instances' })
   // Get all instances
@@ -211,6 +212,39 @@ export const instancesModule = new Elysia({ prefix: '/api/instances' })
   }, {
     response: {
       200: InstanceModel.statusResponse,
+      404: InstanceModel.notFoundError
+    }
+  })
+
+  // Create a short-lived magic admin link for opening proxied GOWA admin without browser auth prompts
+  .post('/:id/admin-link', ({ params: { id }, set }) => {
+    const instance = InstanceService.getInstanceById(Number(id)) as any
+    if (!instance) {
+      set.status = 404
+      return { error: 'Instance not found', success: false }
+    }
+
+    let hasBasicAuth = false
+    try {
+      const config = JSON.parse(instance.config || '{}')
+      const firstAuth = config.flags?.basicAuth?.[0]
+      hasBasicAuth = Boolean(firstAuth?.username && firstAuth?.password)
+    } catch {
+      hasBasicAuth = false
+    }
+
+    if (!hasBasicAuth) {
+      return { url: `/app/${instance.key}/` }
+    }
+
+    const { token, expiresAt } = createMagicAdminToken(instance.key)
+    return {
+      url: `/app/${instance.key}/?autologin=${encodeURIComponent(token)}`,
+      expiresAt: expiresAt.toISOString(),
+    }
+  }, {
+    response: {
+      200: InstanceModel.adminLinkResponse,
       404: InstanceModel.notFoundError
     }
   })

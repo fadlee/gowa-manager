@@ -3,6 +3,7 @@ import { Elysia } from 'elysia'
 import { basicAuth } from '../../middlewares/auth'
 import { proxyModule } from './index'
 import { ProxyService } from './service'
+import { createMagicAdminToken, getMagicAdminCookieName } from './magic-auth'
 
 const originalIsInstanceAvailable = ProxyService.isInstanceAvailable
 const originalGetProxyStatus = ProxyService.getProxyStatus
@@ -159,6 +160,67 @@ describe('proxy route auth behavior', () => {
       method: 'GET',
       managerAuthSeen: false,
     })
+  })
+
+  test('sets magic admin cookie and redirects without autologin query', async () => {
+    const { token } = createMagicAdminToken('ABC12345')
+    const app = createTestApp()
+
+    const response = await app.handle(new Request(`http://localhost/app/ABC12345/?autologin=${token}&tab=admin`))
+
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe('/app/ABC12345/?tab=admin')
+    expect(response.headers.get('set-cookie')).toContain(`${getMagicAdminCookieName('ABC12345')}=`)
+  })
+
+  test('rejects invalid magic admin token', async () => {
+    const app = createTestApp()
+
+    const response = await app.handle(new Request('http://localhost/app/ABC12345/?autologin=invalid'))
+
+    expect(response.status).toBe(401)
+    expect(await response.text()).toBe('Invalid or expired admin link')
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0')
+  })
+
+  test('forwards injected auth when magic admin cookie is valid', async () => {
+    const { token } = createMagicAdminToken('ABC12345')
+    ProxyService.isInstanceAvailable = () => true
+    ProxyService.forwardRequest = originalForwardRequest
+    const app = createTestApp()
+
+    const { queries } = await import('../../db')
+    const originalGetInstanceByKey = queries.getInstanceByKey.get
+    const originalFetch = globalThis.fetch
+    queries.getInstanceByKey.get = (() => ({
+      id: 1,
+      key: 'ABC12345',
+      name: 'magic-auth-instance',
+      status: 'running',
+      port: 18080,
+      config: JSON.stringify({ flags: { basicAuth: [{ username: 'admin', password: 'secret' }] } }),
+      gowa_version: 'latest',
+      created_at: '',
+      updated_at: '',
+    })) as any
+
+    let forwardedAuthorization: string | undefined
+    globalThis.fetch = (async (_url, init) => {
+      forwardedAuthorization = (init?.headers as Record<string, string>).authorization
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json' } })
+    }) as typeof fetch
+
+    try {
+      const response = await app.handle(new Request('http://localhost/app/ABC12345/app/devices', {
+        headers: { cookie: `${getMagicAdminCookieName('ABC12345')}=${encodeURIComponent(token)}` },
+      }))
+
+      expect(response.status).toBe(200)
+      expect(forwardedAuthorization).toBe(`Basic ${btoa('admin:secret')}`)
+    } finally {
+      queries.getInstanceByKey.get = originalGetInstanceByKey
+      globalThis.fetch = originalFetch
+    }
   })
 
   test('keeps websocket route before wildcard proxy routes', () => {

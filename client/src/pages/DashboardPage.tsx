@@ -390,6 +390,16 @@ function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardS
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
+  const handleOpenAdmin = async () => {
+    try {
+      const { url } = await apiClient.createAdminLink(instance.id)
+      openUrl(url)
+    } catch (error) {
+      toast({ title: 'Failed to create admin link', description: error instanceof Error ? error.message : 'Opening the normal admin URL instead.', variant: 'error' })
+      openUrl(proxyUrl)
+    }
+  }
+
   const getStatusConfig = () => {
     if (isRunning) return {
       label: 'Running',
@@ -518,7 +528,7 @@ function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardS
               variant="outline"
               size="sm"
               className="h-8 px-2 text-xs ml-auto"
-              onClick={() => openUrl(proxyUrl)}
+              onClick={handleOpenAdmin}
               disabled={!status?.port}
             >
               <ExternalLink className="mr-1 w-3.5 h-3.5" />

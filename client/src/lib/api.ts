@@ -5,6 +5,7 @@ import type {
   InstanceStatus,
   InstanceDevicesResponse,
   ApiSuccess,
+  AdminLinkResponse,
   SystemStatus,
   VersionInfo,
 } from '../types';
@@ -100,6 +101,12 @@ class ApiClient {
 
   async getInstanceDevices(id: number): Promise<InstanceDevicesResponse> {
     return this.request<InstanceDevicesResponse>(`/instances/${id}/devices`);
+  }
+
+  async createAdminLink(id: number): Promise<AdminLinkResponse> {
+    return this.request<AdminLinkResponse>(`/instances/${id}/admin-link`, {
+      method: 'POST',
+    });
   }
 
   async testInstanceConnection(id: number): Promise<{ ok: boolean; status?: number; message: string; body?: string }> {

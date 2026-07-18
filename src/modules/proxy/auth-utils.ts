@@ -1,4 +1,7 @@
+import { hasValidMagicAdminCookie } from './magic-auth'
+
 type InstanceWithConfig = {
+  key?: string
   config?: string | null
 }
 
@@ -25,6 +28,23 @@ export function applyInstanceWebSocketAuthHeader(
   instance: InstanceWithConfig
 ): Record<string, string> {
   if (headers.authorization || !shouldInjectInstanceWebSocketAuth()) {
+    return headers
+  }
+
+  const authHeader = getFirstInstanceBasicAuthHeader(instance)
+  if (!authHeader) return headers
+
+  return {
+    ...headers,
+    authorization: authHeader,
+  }
+}
+
+export function applyInstanceHttpAuthHeader(
+  headers: Record<string, string>,
+  instance: InstanceWithConfig
+): Record<string, string> {
+  if (headers.authorization || !instance.key || !hasValidMagicAdminCookie(headers.cookie, instance.key)) {
     return headers
   }
 

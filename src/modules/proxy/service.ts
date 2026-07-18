@@ -1,5 +1,6 @@
 import { queries } from '../../db'
 import { ProxyModel } from './model'
+import { applyInstanceHttpAuthHeader } from './auth-utils'
 
 export abstract class ProxyService {
 
@@ -27,12 +28,12 @@ export abstract class ProxyService {
 
     try {
       // Prepare headers for forwarding
-      const forwardHeaders: Record<string, string> = {
+      const forwardHeaders: Record<string, string> = applyInstanceHttpAuthHeader({
         ...headers,
         'X-Forwarded-For': headers['x-forwarded-for'] || 'localhost',
         'X-Forwarded-Proto': 'http',
         'X-Forwarded-Host': headers.host || 'localhost'
-      }
+      }, instance)
       // Remove host header to avoid conflicts
       delete forwardHeaders.host
 

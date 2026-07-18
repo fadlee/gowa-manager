@@ -67,6 +67,11 @@ export interface ApiSuccess {
   message: string;
 }
 
+export interface AdminLinkResponse {
+  url: string;
+  expiresAt?: string;
+}
+
 // System Types
 export interface SystemStatus {
   status: string;
