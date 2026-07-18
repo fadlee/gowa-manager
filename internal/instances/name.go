@@ -3,6 +3,7 @@ package instances
 import (
 	"crypto/rand"
 	"math"
+	"math/big"
 	mathrand "math/rand"
 )
 
@@ -21,13 +22,14 @@ func RandomName(random func() float64) string {
 
 func GenerateKey() (string, error) {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	bytes := make([]byte, 8)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
 	key := make([]byte, 8)
-	for i, value := range bytes {
-		key[i] = alphabet[int(value)%len(alphabet)]
+	max := big.NewInt(int64(len(alphabet)))
+	for i := range key {
+		index, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		key[i] = alphabet[index.Int64()]
 	}
 	return string(key), nil
 }

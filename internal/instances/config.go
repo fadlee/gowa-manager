@@ -250,6 +250,10 @@ func mergeCreateConfig(base InstanceConfig, user InstanceConfig) InstanceConfig 
 
 func mergeFlags(base CLIFlags, user CLIFlags) CLIFlags {
 	merged := base
+	merged.Raw = cloneRaw(base.Raw)
+	for key, value := range user.Raw {
+		merged.Raw[key] = append(json.RawMessage(nil), value...)
+	}
 	if user.AccountValidation != nil {
 		merged.AccountValidation = user.AccountValidation
 	}

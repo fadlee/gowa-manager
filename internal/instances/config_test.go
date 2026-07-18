@@ -188,8 +188,8 @@ func TestConfigNormalizeUpdateConfigFallbacks(t *testing.T) {
 
 func TestConfigBuildCreateConfig(t *testing.T) {
 	assertJSONEqual(t,
-		BuildCreateConfig(ptrString(`{"flags":{"basePath":"/wrong","os":"Chrome"},"custom":{"keep":true}}`), "CREATE01"),
-		`{"args":["rest","--port=PORT"],"flags":{"accountValidation":true,"os":"Chrome","basePath":"/app/CREATE01"},"custom":{"keep":true}}`,
+		BuildCreateConfig(ptrString(`{"flags":{"basePath":"/wrong","os":"Chrome","unknownFlag":{"nested":true}},"custom":{"keep":true}}`), "CREATE01"),
+		`{"args":["rest","--port=PORT"],"flags":{"accountValidation":true,"os":"Chrome","basePath":"/app/CREATE01","unknownFlag":{"nested":true}},"custom":{"keep":true}}`,
 	)
 
 	assertJSONEqual(t,
