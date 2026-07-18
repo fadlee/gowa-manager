@@ -19,6 +19,7 @@ type Dependencies struct {
 	InstanceLifecycle InstanceLifecycle
 	DeviceClient      InstanceDeviceClient
 	ConnectionTester  InstanceConnectionTester
+	AdminLinkIssuer   AdminLinkIssuer
 }
 
 func New(deps Dependencies) http.Handler {

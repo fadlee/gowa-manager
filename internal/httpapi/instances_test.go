@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,19 +145,26 @@ func TestInstanceRoutes(t *testing.T) {
 		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/"})
 	})
 
-	t.Run("admin-link returns autologin link with expiry when basic auth exists", func(t *testing.T) {
+	t.Run("admin-link returns 503 for basic auth without issuer", func(t *testing.T) {
 		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) {
 			i.Config = `{"flags":{"basicAuth":[{"username":"admin","password":"secret"}]}}`
 		}))
 		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil)
+		assertStatus(t, rec, http.StatusServiceUnavailable)
+		assertBodyFields(t, rec, map[string]any{"success": false})
+	})
+
+	t.Run("admin-link returns issuer URL and expiry when basic auth exists", func(t *testing.T) {
+		expiresAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+		issuer := &fakeAdminLinkIssuer{link: AdminLink{URL: "/app/TESTKEY1/?autologin=issued-token", ExpiresAt: &expiresAt}}
+		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) {
+			i.Config = `{"flags":{"basicAuth":[{"username":"admin","password":"secret"}]}}`
+		}))
+		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil, withAdminLinkIssuer(issuer))
 		assertStatus(t, rec, http.StatusOK)
-		body := decodeBody(t, rec)
-		url, _ := body["url"].(string)
-		if !strings.HasPrefix(url, "/app/TESTKEY1/?autologin=") {
-			t.Fatalf("url = %q", url)
-		}
-		if _, err := time.Parse(time.RFC3339Nano, body["expiresAt"].(string)); err != nil {
-			t.Fatalf("expiresAt is not RFC3339: %v", err)
+		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/?autologin=issued-token", "expiresAt": "2026-01-01T12:00:00Z"})
+		if issuer.called != 1 {
+			t.Fatalf("issuer called %d times, want 1", issuer.called)
 		}
 	})
 
@@ -165,6 +173,36 @@ func TestInstanceRoutes(t *testing.T) {
 		rec := serveInstanceRequest(newFakeInstanceService(withInstance(instance, func(i *instances.Instance) { i.Status = "running" })), nil, nil, http.MethodPost, "/api/instances/1/test-connection", nil, withConnectionTester(conn))
 		assertStatus(t, rec, http.StatusOK)
 		assertBodyFields(t, rec, map[string]any{"ok": true, "status": float64(200), "body": `{"devices":[]}`})
+	})
+
+	t.Run("test-connection uses default tester without lazy handler mutation", func(t *testing.T) {
+		h := &instanceHandler{service: newFakeInstanceService(instance)}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/instances/1/test-connection", nil)
+		h.testConnection(rec, req, 1)
+		assertStatus(t, rec, http.StatusServiceUnavailable)
+		if h.connection != nil {
+			t.Fatal("testConnection lazily mutated handler connection")
+		}
+	})
+
+	t.Run("test-connection handles concurrent default tester requests", func(t *testing.T) {
+		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) { i.Status = "running" }))
+		handler := New(Dependencies{Instances: service})
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				rec := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, "/api/instances/1/test-connection", nil)
+				handler.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK {
+					t.Errorf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+				}
+			}()
+		}
+		wg.Wait()
 	})
 
 	t.Run("not found maps to legacy 404 shape", func(t *testing.T) {
@@ -195,6 +233,10 @@ func serveInstanceRequest(service *fakeInstanceService, lifecycle *fakeLifecycle
 
 func withConnectionTester(tester *fakeConnectionTester) func(*Dependencies) {
 	return func(deps *Dependencies) { deps.ConnectionTester = tester }
+}
+
+func withAdminLinkIssuer(issuer *fakeAdminLinkIssuer) func(*Dependencies) {
+	return func(deps *Dependencies) { deps.AdminLinkIssuer = issuer }
 }
 
 type fakeInstanceService struct {
@@ -261,6 +303,17 @@ type fakeConnectionTester struct {
 
 func (t *fakeConnectionTester) Test(context.Context, instances.Instance) instances.ConnectionTestResult {
 	return t.result
+}
+
+type fakeAdminLinkIssuer struct {
+	link   AdminLink
+	err    error
+	called int
+}
+
+func (i *fakeAdminLinkIssuer) CreateAdminLink(context.Context, instances.Instance) (AdminLink, error) {
+	i.called++
+	return i.link, i.err
 }
 
 func withInstance(instance instances.Instance, mutate func(*instances.Instance)) instances.Instance {

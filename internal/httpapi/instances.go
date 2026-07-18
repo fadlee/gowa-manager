@@ -2,9 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -50,6 +47,15 @@ type InstanceConnectionTester interface {
 	Test(context.Context, instances.Instance) instances.ConnectionTestResult
 }
 
+type AdminLink struct {
+	URL       string
+	ExpiresAt *time.Time
+}
+
+type AdminLinkIssuer interface {
+	CreateAdminLink(context.Context, instances.Instance) (AdminLink, error)
+}
+
 type instanceResponse struct {
 	ID           int64   `json:"id"`
 	Key          string  `json:"key"`
@@ -70,7 +76,11 @@ type instanceBody struct {
 }
 
 func registerInstanceRoutes(mux *http.ServeMux, deps Dependencies) {
-	h := &instanceHandler{service: deps.Instances, lifecycle: deps.InstanceLifecycle, devices: deps.DeviceClient, connection: deps.ConnectionTester}
+	connection := deps.ConnectionTester
+	if connection == nil {
+		connection = instances.NewConnectionTester(instances.ConnectionTesterOptions{})
+	}
+	h := &instanceHandler{service: deps.Instances, lifecycle: deps.InstanceLifecycle, devices: deps.DeviceClient, connection: connection, adminLinks: deps.AdminLinkIssuer}
 	mux.HandleFunc("/api/instances", h.collection)
 	mux.HandleFunc("/api/instances/", h.routes)
 }
@@ -80,6 +90,7 @@ type instanceHandler struct {
 	lifecycle  InstanceLifecycle
 	devices    InstanceDeviceClient
 	connection InstanceConnectionTester
+	adminLinks AdminLinkIssuer
 }
 
 func (h *instanceHandler) collection(w http.ResponseWriter, r *http.Request) {
@@ -289,8 +300,20 @@ func (h *instanceHandler) adminLink(w http.ResponseWriter, r *http.Request, id i
 		writeJSON(w, http.StatusOK, map[string]any{"url": "/app/" + item.Key + "/"})
 		return
 	}
-	token := randomToken()
-	writeJSON(w, http.StatusOK, map[string]any{"url": "/app/" + item.Key + "/?autologin=" + token, "expiresAt": time.Now().Add(5 * time.Minute).UTC().Format(time.RFC3339Nano)})
+	if h.adminLinks == nil {
+		h.writeError(w, instances.ErrRuntimeNotReady, "Admin link issuer not ready", false)
+		return
+	}
+	link, err := h.adminLinks.CreateAdminLink(r.Context(), item)
+	if err != nil {
+		h.writeError(w, err, "Failed to create admin link", false)
+		return
+	}
+	body := map[string]any{"url": link.URL}
+	if link.ExpiresAt != nil {
+		body["expiresAt"] = link.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *instanceHandler) testConnection(w http.ResponseWriter, r *http.Request, id int64) {
@@ -304,7 +327,8 @@ func (h *instanceHandler) testConnection(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if h.connection == nil {
-		h.connection = instances.NewConnectionTester(instances.ConnectionTesterOptions{})
+		h.writeError(w, instances.ErrRuntimeNotReady, "Connection tester not ready", false)
+		return
 	}
 	writeJSON(w, http.StatusOK, h.connection.Test(r.Context(), item))
 }
@@ -390,12 +414,4 @@ func hasBasicAuth(raw string) bool {
 	}
 	auth := config.Flags.BasicAuth[0]
 	return auth.Username != "" && auth.Password != ""
-}
-
-func randomToken() string {
-	var b [24]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(time.Now().UnixNano(), 10)))
-	}
-	return hex.EncodeToString(b[:])
 }
