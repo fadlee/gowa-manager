@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 const latestVersion = "latest"
@@ -16,6 +17,8 @@ type PortAllocator interface {
 
 type Lifecycle interface {
 	Stop(context.Context, int64) (Status, error)
+	// Status is reserved for runtime reconciliation paths that need to observe
+	// process state without mutating it.
 	Status(context.Context, int64) (Status, error)
 }
 
@@ -37,6 +40,13 @@ type Service struct {
 	lifecycle    Lifecycle
 	generateKey  func() (string, error)
 	generateName func() string
+	locksMu      sync.Mutex
+	locks        map[int64]*instanceLock
+}
+
+type instanceLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 type CreateRequest struct {
@@ -59,6 +69,7 @@ func NewService(repo Repository, fs InstanceFilesystem, ports PortAllocator, lif
 		lifecycle:    lifecycle,
 		generateKey:  GenerateKey,
 		generateName: func() string { return RandomName(nil) },
+		locks:        map[int64]*instanceLock{},
 	}
 }
 
@@ -107,6 +118,9 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (Instance, 
 }
 
 func (s *Service) Update(ctx context.Context, id int64, request UpdateRequest) (Instance, error) {
+	unlock := s.lockInstance(id)
+	defer unlock()
+
 	existing, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return Instance{}, err
@@ -131,6 +145,9 @@ func (s *Service) Update(ctx context.Context, id int64, request UpdateRequest) (
 }
 
 func (s *Service) Delete(ctx context.Context, id int64) error {
+	unlock := s.lockInstance(id)
+	defer unlock()
+
 	instance, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return err
@@ -139,16 +156,25 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 		return err
 	}
 	trash, err := s.fs.StageDelete(ctx, id)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 	if err := s.repo.Delete(ctx, id); err != nil {
+		if errors.Is(err, ErrNotFound) || trash == (Trash{}) {
+			return err
+		}
 		return errors.Join(err, s.fs.Restore(context.Background(), trash))
+	}
+	if trash == (Trash{}) {
+		return nil
 	}
 	return s.fs.Purge(ctx, trash)
 }
 
 func (s *Service) ResetData(ctx context.Context, id int64) error {
+	unlock := s.lockInstance(id)
+	defer unlock()
+
 	instance, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return err
@@ -157,20 +183,51 @@ func (s *Service) ResetData(ctx context.Context, id int64) error {
 		return err
 	}
 	trash, err := s.fs.StageDelete(ctx, id)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
 	if _, err := s.fs.Ensure(ctx, id); err != nil {
+		if trash == (Trash{}) {
+			return err
+		}
 		return errors.Join(err, s.fs.Restore(context.Background(), trash))
 	}
 	if _, err := s.repo.UpdateStatus(ctx, id, "stopped", nil); err != nil {
+		if trash == (Trash{}) {
+			return err
+		}
 		cleanupErr := s.removeReplacementAndRestore(ctx, id, trash)
 		return errors.Join(err, cleanupErr)
+	}
+	if trash == (Trash{}) {
+		return nil
 	}
 	if err := s.fs.Purge(ctx, trash); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s *Service) lockInstance(id int64) func() {
+	s.locksMu.Lock()
+	lock := s.locks[id]
+	if lock == nil {
+		lock = &instanceLock{}
+		s.locks[id] = lock
+	}
+	lock.refs++
+	s.locksMu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		s.locksMu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(s.locks, id)
+		}
+		s.locksMu.Unlock()
+	}
 }
 
 func (s *Service) removeReplacementAndRestore(ctx context.Context, id int64, trash Trash) error {

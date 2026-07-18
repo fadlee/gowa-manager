@@ -3,9 +3,12 @@ package instances
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestServiceCreateGeneratesNameKeyPortConfigVersionAndDirectory(t *testing.T) {
@@ -226,6 +229,24 @@ func TestServiceDeleteReturnsRepositoryAndRestoreFailures(t *testing.T) {
 	}
 }
 
+func TestServiceDeleteTreatsMissingDirectoryAsAbsent(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{stageErr: ErrNotFound}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7113}, nil)
+	created := mustFakeCreate(t, ctx, repo, CreateInput{Key: "DELMISS1", Name: "delete-missing", Config: `{}`, GOWAVersion: "latest"})
+
+	if err := service.Delete(ctx, created.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if _, ok := repo.items[created.ID]; ok || !reflect.DeepEqual(repo.deleted, []int64{created.ID}) {
+		t.Fatalf("Delete() missing dir repo state items=%#v deleted=%#v", repo.items, repo.deleted)
+	}
+	if len(fs.purged) != 0 || len(fs.restored) != 0 {
+		t.Fatalf("Delete() missing dir filesystem purged=%#v restored=%#v", fs.purged, fs.restored)
+	}
+}
+
 func TestServiceResetStoppedStagesUpdatesStatusEnsuresAndPurges(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
@@ -259,6 +280,26 @@ func TestServiceResetStoppedStagesUpdatesStatusEnsuresAndPurges(t *testing.T) {
 	}
 	if err := service.ResetData(ctx, created.ID+1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ResetData() missing error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestServiceResetTreatsMissingDirectoryAsAbsent(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{stageErr: ErrNotFound}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7201}, nil)
+	created := mustFakeCreate(t, ctx, repo, CreateInput{Key: "RSTMISS1", Name: "reset-missing", Config: `{}`, GOWAVersion: "latest"})
+	repo.items[created.ID] = withStatus(created, "error", stringPtr("boom"))
+
+	if err := service.ResetData(ctx, created.ID); err != nil {
+		t.Fatalf("ResetData() error = %v", err)
+	}
+	got := repo.items[created.ID]
+	if got.Status != "stopped" || got.ErrorMessage != nil {
+		t.Fatalf("ResetData() missing dir status/error = %#v", got)
+	}
+	if !reflect.DeepEqual(fs.ensured, []int64{created.ID}) || len(fs.purged) != 0 || len(fs.restored) != 0 {
+		t.Fatalf("ResetData() missing dir filesystem ensured=%#v purged=%#v restored=%#v", fs.ensured, fs.purged, fs.restored)
 	}
 }
 
@@ -413,7 +454,73 @@ func TestServiceDeleteAndResetStopRunningInstanceBeforeStagingFiles(t *testing.T
 	}
 }
 
+func TestServiceSerializesDeleteAndResetForSameInstance(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := newBlockingFilesystem()
+	lifecycle := &fakeLifecycle{}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7301}, lifecycle)
+	created := mustFakeCreate(t, ctx, repo, CreateInput{Key: "SERIAL01", Name: "serial", Config: `{}`, GOWAVersion: "latest"})
+	repo.items[created.ID] = withStatus(created, "running", nil)
+
+	deleteDone := make(chan error, 1)
+	go func() { deleteDone <- service.Delete(ctx, created.ID) }()
+	fs.waitForStage(t)
+
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- service.ResetData(ctx, created.ID) }()
+	fs.assertNoSecondStage(t)
+	fs.releaseStage()
+
+	if err := <-deleteDone; err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if err := <-resetDone; !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ResetData() after serialized delete error = %v, want ErrNotFound", err)
+	}
+	if fs.maxActive != 1 {
+		t.Fatalf("StageDelete max active = %d, want 1", fs.maxActive)
+	}
+}
+
+func TestServiceWithRealFilesystemHandlesMissingDirectoryDeleteAndReset(t *testing.T) {
+	ctx := context.Background()
+	fs, err := NewFilesystem(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFilesystem() error = %v", err)
+	}
+
+	repo := newFakeRepository()
+	deleteService := NewService(repo, fs, &fakePortAllocator{next: 7400}, nil)
+	toDelete := mustFakeCreate(t, ctx, repo, CreateInput{Key: "REALDEL1", Name: "real-delete", Config: `{}`, GOWAVersion: "latest"})
+	if err := deleteService.Delete(ctx, toDelete.ID); err != nil {
+		t.Fatalf("Delete() missing real directory error = %v", err)
+	}
+	if _, ok := repo.items[toDelete.ID]; ok {
+		t.Fatalf("Delete() left repo row for missing real directory: %#v", repo.items[toDelete.ID])
+	}
+
+	resetService := NewService(repo, fs, &fakePortAllocator{next: 7401}, nil)
+	toReset := mustFakeCreate(t, ctx, repo, CreateInput{Key: "REALRST1", Name: "real-reset", Config: `{}`, GOWAVersion: "latest"})
+	repo.items[toReset.ID] = withStatus(toReset, "error", stringPtr("boom"))
+	if err := resetService.ResetData(ctx, toReset.ID); err != nil {
+		t.Fatalf("ResetData() missing real directory error = %v", err)
+	}
+	got := repo.items[toReset.ID]
+	if got.Status != "stopped" || got.ErrorMessage != nil {
+		t.Fatalf("ResetData() missing real directory status/error = %#v", got)
+	}
+	dir, err := fs.InstanceDir(toReset.ID)
+	if err != nil {
+		t.Fatalf("InstanceDir() error = %v", err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Fatalf("ResetData() directory stat = (%#v, %v), want existing directory", info, err)
+	}
+}
+
 type fakeRepository struct {
+	mu              sync.Mutex
 	nextID          int64
 	items           map[int64]Instance
 	createErr       error
@@ -430,6 +537,8 @@ func newFakeRepository() *fakeRepository {
 }
 
 func (r *fakeRepository) List(context.Context) ([]Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	instances := make([]Instance, 0, len(r.items))
 	for _, instance := range r.items {
 		instances = append(instances, instance)
@@ -438,6 +547,8 @@ func (r *fakeRepository) List(context.Context) ([]Instance, error) {
 }
 
 func (r *fakeRepository) FindByID(_ context.Context, id int64) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	instance, ok := r.items[id]
 	if !ok {
 		return Instance{}, ErrNotFound
@@ -446,6 +557,8 @@ func (r *fakeRepository) FindByID(_ context.Context, id int64) (Instance, error)
 }
 
 func (r *fakeRepository) FindByKey(_ context.Context, key string) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, instance := range r.items {
 		if instance.Key == key {
 			return instance, nil
@@ -455,6 +568,8 @@ func (r *fakeRepository) FindByKey(_ context.Context, key string) (Instance, err
 }
 
 func (r *fakeRepository) Create(_ context.Context, input CreateInput) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.createErr != nil {
 		return Instance{}, r.createErr
 	}
@@ -470,6 +585,8 @@ func (r *fakeRepository) Create(_ context.Context, input CreateInput) (Instance,
 }
 
 func (r *fakeRepository) Update(_ context.Context, input UpdateInput) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.updateErr != nil {
 		return Instance{}, r.updateErr
 	}
@@ -490,6 +607,8 @@ func (r *fakeRepository) Update(_ context.Context, input UpdateInput) (Instance,
 }
 
 func (r *fakeRepository) UpdateStatus(_ context.Context, id int64, status string, errorMessage *string) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.updateStatusErr != nil {
 		return Instance{}, r.updateStatusErr
 	}
@@ -504,6 +623,8 @@ func (r *fakeRepository) UpdateStatus(_ context.Context, id int64, status string
 }
 
 func (r *fakeRepository) ClearError(_ context.Context, id int64) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.clearErrorCalls++
 	if r.clearErrorErr != nil {
 		return Instance{}, r.clearErrorErr
@@ -518,6 +639,8 @@ func (r *fakeRepository) ClearError(_ context.Context, id int64) (Instance, erro
 }
 
 func (r *fakeRepository) UpdatePort(_ context.Context, id int64, port *int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	instance, ok := r.items[id]
 	if !ok {
 		return ErrNotFound
@@ -528,6 +651,8 @@ func (r *fakeRepository) UpdatePort(_ context.Context, id int64, port *int) erro
 }
 
 func (r *fakeRepository) Delete(_ context.Context, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.deleted = append(r.deleted, id)
 	if r.deleteErr != nil {
 		return r.deleteErr
@@ -540,6 +665,7 @@ func (r *fakeRepository) Delete(_ context.Context, id int64) error {
 }
 
 type fakeFilesystem struct {
+	mu         sync.Mutex
 	ensureErr  error
 	stageErr   error
 	restoreErr error
@@ -552,6 +678,8 @@ type fakeFilesystem struct {
 }
 
 func (f *fakeFilesystem) Ensure(_ context.Context, id int64) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.events = append(f.events, "ensure")
 	f.ensured = append(f.ensured, id)
 	if f.ensureErr != nil {
@@ -561,6 +689,8 @@ func (f *fakeFilesystem) Ensure(_ context.Context, id int64) (string, error) {
 }
 
 func (f *fakeFilesystem) StageDelete(_ context.Context, id int64) (Trash, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.events = append(f.events, "stage")
 	f.staged = append(f.staged, id)
 	if f.stageErr != nil {
@@ -570,12 +700,16 @@ func (f *fakeFilesystem) StageDelete(_ context.Context, id int64) (Trash, error)
 }
 
 func (f *fakeFilesystem) Restore(_ context.Context, trash Trash) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.events = append(f.events, "restore")
 	f.restored = append(f.restored, trash)
 	return f.restoreErr
 }
 
 func (f *fakeFilesystem) Purge(_ context.Context, trash Trash) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.events = append(f.events, "purge")
 	f.purged = append(f.purged, trash)
 	return f.purgeErr
@@ -597,6 +731,7 @@ func (p *fakePortAllocator) Next(context.Context) (int, error) {
 }
 
 type fakeLifecycle struct {
+	mu      sync.Mutex
 	status  Status
 	err     error
 	stopErr error
@@ -604,16 +739,93 @@ type fakeLifecycle struct {
 }
 
 func (l *fakeLifecycle) Status(context.Context, int64) (Status, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.status, l.err
 }
 
 func (l *fakeLifecycle) Stop(_ context.Context, id int64) (Status, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.stopped = append(l.stopped, id)
 	return Status{State: "stopped"}, l.stopErr
 }
 
+type blockingFilesystem struct {
+	stageEntered chan struct{}
+	release      chan struct{}
+
+	mu        sync.Mutex
+	active    int
+	maxActive int
+}
+
+func newBlockingFilesystem() *blockingFilesystem {
+	return &blockingFilesystem{stageEntered: make(chan struct{}, 2), release: make(chan struct{})}
+}
+
+func (f *blockingFilesystem) Ensure(context.Context, int64) (string, error) {
+	return "dir", nil
+}
+
+func (f *blockingFilesystem) StageDelete(context.Context, int64) (Trash, error) {
+	f.mu.Lock()
+	f.active++
+	if f.active > f.maxActive {
+		f.maxActive = f.active
+	}
+	f.mu.Unlock()
+
+	f.stageEntered <- struct{}{}
+	<-f.release
+
+	f.mu.Lock()
+	f.active--
+	f.mu.Unlock()
+	return Trash{InstanceID: 1, OriginalPath: "original", TrashPath: "trash"}, nil
+}
+
+func (f *blockingFilesystem) Restore(context.Context, Trash) error {
+	return nil
+}
+
+func (f *blockingFilesystem) Purge(context.Context, Trash) error {
+	return nil
+}
+
+func (f *blockingFilesystem) waitForStage(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.stageEntered:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for StageDelete")
+	}
+}
+
+func (f *blockingFilesystem) assertNoSecondStage(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.stageEntered:
+		t.Fatal("second StageDelete started before first mutation completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func (f *blockingFilesystem) releaseStage() {
+	f.release <- struct{}{}
+}
+
 func newTestService() *Service {
 	return NewService(newFakeRepository(), &fakeFilesystem{}, &fakePortAllocator{next: 6000}, nil)
+}
+
+func mustFakeCreate(t *testing.T, ctx context.Context, repo *fakeRepository, input CreateInput) Instance {
+	t.Helper()
+	instance, err := repo.Create(ctx, input)
+	if err != nil {
+		t.Fatalf("Create(%#v) error = %v", input, err)
+	}
+	return instance
 }
 
 func withStatus(instance Instance, status string, message *string) Instance {
