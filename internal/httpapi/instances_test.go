@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -98,18 +99,36 @@ func TestInstanceRoutes(t *testing.T) {
 
 	for _, action := range []string{"start", "stop", "kill", "restart"} {
 		t.Run(action+" returns injected lifecycle status", func(t *testing.T) {
-			life := &fakeLifecycleRoutes{status: InstanceStatus{ID: 1, Name: "test-instance", Status: "running", Port: &port, PID: 4321, Uptime: 10}}
+			pid := 4321
+			life := &fakeLifecycleRoutes{status: InstanceStatus{ID: 1, Name: "test-instance", Status: "running", Port: &port, PID: &pid, Uptime: 10}}
 			rec := serveInstanceRequest(newFakeInstanceService(instance), life, nil, http.MethodPost, "/api/instances/1/"+action, nil)
 			assertStatus(t, rec, http.StatusOK)
 			assertBodyFields(t, rec, map[string]any{"id": float64(1), "status": "running", "pid": float64(4321), "uptime": float64(10)})
 		})
 	}
 
+	for _, action := range []string{"stop", "kill"} {
+		t.Run(action+" stopped response includes null pid", func(t *testing.T) {
+			life := &fakeLifecycleRoutes{status: InstanceStatus{ID: 1, Name: "test-instance", Status: "stopped", Port: &port}}
+			rec := serveInstanceRequest(newFakeInstanceService(instance), life, nil, http.MethodPost, "/api/instances/1/"+action, nil)
+			assertStatus(t, rec, http.StatusOK)
+			assertBodyFields(t, rec, map[string]any{"status": "stopped", "pid": nil})
+		})
+	}
+
 	t.Run("status returns injected lifecycle status", func(t *testing.T) {
-		life := &fakeLifecycleRoutes{status: InstanceStatus{ID: 1, Name: "test-instance", Status: "running", Port: &port, PID: 4321, Uptime: 10}}
+		pid := 4321
+		life := &fakeLifecycleRoutes{status: InstanceStatus{ID: 1, Name: "test-instance", Status: "running", Port: &port, PID: &pid, Uptime: 10}}
 		rec := serveInstanceRequest(newFakeInstanceService(instance), life, nil, http.MethodGet, "/api/instances/1/status", nil)
 		assertStatus(t, rec, http.StatusOK)
 		assertBodyFields(t, rec, map[string]any{"status": "running"})
+	})
+
+	t.Run("lifecycle generic error maps to sanitized 500", func(t *testing.T) {
+		life := &fakeLifecycleRoutes{err: errors.New("process failed")}
+		rec := serveInstanceRequest(newFakeInstanceService(instance), life, nil, http.MethodPost, "/api/instances/1/start", nil)
+		assertStatus(t, rec, http.StatusInternalServerError)
+		assertJSON(t, rec, map[string]any{"error": "process failed", "success": false})
 	})
 
 	t.Run("lifecycle runtime not ready maps to 503", func(t *testing.T) {

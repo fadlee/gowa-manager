@@ -30,7 +30,7 @@ type InstanceStatus struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Port   *int   `json:"port"`
-	PID    int    `json:"pid,omitempty"`
+	PID    *int   `json:"pid"`
 	Uptime int64  `json:"uptime,omitempty"`
 }
 
@@ -269,7 +269,7 @@ func (h *instanceHandler) lifecycleRoute(w http.ResponseWriter, r *http.Request,
 		status, err = h.lifecycle.Status(r.Context(), id)
 	}
 	if err != nil {
-		h.writeError(w, err, "Failed to "+action+" instance", true)
+		h.writeError(w, err, "Failed to "+action+" instance", false)
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
