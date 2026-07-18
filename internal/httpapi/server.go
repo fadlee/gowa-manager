@@ -3,6 +3,7 @@ package httpapi
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ type Dependencies struct {
 	Logger         *slog.Logger
 	AllowedOrigins []string
 	TestPanicRoute bool
+	StaticFS       fs.FS
 }
 
 func New(deps Dependencies) http.Handler {
@@ -24,6 +26,9 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Not found"})
 	})
+	if deps.StaticFS != nil {
+		mux.Handle("/", staticHandler(deps.StaticFS))
+	}
 	return recoverMiddleware(requestIDMiddleware(corsMiddleware(mux, deps.AllowedOrigins), deps.Logger), deps.Logger)
 }
 

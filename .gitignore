@@ -21,4 +21,6 @@ src/version.ts
 /dist-go/
 /.contract-tmp/
 /spike/
+/internal/static/web/*
+!/internal/static/web/.gitkeep
 *.bun-build
