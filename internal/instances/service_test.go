@@ -97,6 +97,22 @@ func TestServiceCreateMapsConflictAndCompensatesFilesystem(t *testing.T) {
 	}
 }
 
+func TestServiceCreateReturnsPortAllocatorFailureBeforeDBOrFilesystem(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{}
+	ports := &fakePortAllocator{err: errors.New("no ports")}
+	service := NewService(repo, fs, ports, nil)
+	service.generateKey = func() (string, error) { return "NOPORT01", nil }
+
+	if _, err := service.Create(ctx, CreateRequest{Name: "no-port"}); !strings.Contains(err.Error(), "no ports") {
+		t.Fatalf("Create() port error = %v", err)
+	}
+	if len(repo.items) != 0 || len(fs.ensured) != 0 || ports.calls != 1 {
+		t.Fatalf("Create() side effects after port failure: items=%#v ensured=%#v calls=%d", repo.items, fs.ensured, ports.calls)
+	}
+}
+
 func TestServiceUpdatePreservesKeyPortAndDefaults(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService()
@@ -155,7 +171,62 @@ func TestServiceDeleteStoppedStagesDeletesPurgesAndRestoresOnRepoFailure(t *test
 	}
 }
 
-func TestServiceResetStoppedStagesUpdatesStatusClearsErrorPurgesAndEnsures(t *testing.T) {
+func TestServiceDeleteReturnsStageAndPurgeFailures(t *testing.T) {
+	ctx := context.Background()
+
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{stageErr: errors.New("stage failed")}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7110}, nil)
+	service.generateKey = func() (string, error) { return "DELSTG01", nil }
+	created, err := service.Create(ctx, CreateRequest{Name: "delete-stage-fail"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if err := service.Delete(ctx, created.ID); !strings.Contains(err.Error(), "stage failed") {
+		t.Fatalf("Delete() stage error = %v", err)
+	}
+	if len(repo.deleted) != 0 || len(fs.purged) != 0 || len(fs.restored) != 0 {
+		t.Fatalf("Delete() side effects after stage failure deleted=%#v purged=%#v restored=%#v", repo.deleted, fs.purged, fs.restored)
+	}
+
+	repo = newFakeRepository()
+	fs = &fakeFilesystem{purgeErr: errors.New("purge failed")}
+	service = NewService(repo, fs, &fakePortAllocator{next: 7111}, nil)
+	service.generateKey = func() (string, error) { return "DELPRG01", nil }
+	created, err = service.Create(ctx, CreateRequest{Name: "delete-purge-fail"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if err := service.Delete(ctx, created.ID); !strings.Contains(err.Error(), "purge failed") {
+		t.Fatalf("Delete() purge error = %v", err)
+	}
+	if len(repo.items) != 0 || len(fs.purged) != 1 || len(fs.restored) != 0 {
+		t.Fatalf("Delete() purge failure commit state items=%#v purged=%#v restored=%#v", repo.items, fs.purged, fs.restored)
+	}
+}
+
+func TestServiceDeleteReturnsRepositoryAndRestoreFailures(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{restoreErr: errors.New("restore failed")}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7112}, nil)
+	service.generateKey = func() (string, error) { return "DELRST01", nil }
+	created, err := service.Create(ctx, CreateRequest{Name: "delete-restore-fail"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	repo.deleteErr = errors.New("delete failed")
+
+	err = service.Delete(ctx, created.ID)
+	if err == nil || !strings.Contains(err.Error(), "delete failed") || !strings.Contains(err.Error(), "restore failed") {
+		t.Fatalf("Delete() joined error = %v", err)
+	}
+	if len(fs.restored) != 1 || len(fs.purged) != 0 {
+		t.Fatalf("Delete() restore failure restored=%#v purged=%#v", fs.restored, fs.purged)
+	}
+}
+
+func TestServiceResetStoppedStagesUpdatesStatusEnsuresAndPurges(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
 	fs := &fakeFilesystem{}
@@ -167,6 +238,7 @@ func TestServiceResetStoppedStagesUpdatesStatusClearsErrorPurgesAndEnsures(t *te
 	}
 	repo.items[created.ID] = withStatus(repo.items[created.ID], "error", stringPtr("boom"))
 	fs.ensured = nil
+	fs.events = nil
 
 	if err := service.ResetData(ctx, created.ID); err != nil {
 		t.Fatalf("ResetData() error = %v", err)
@@ -175,11 +247,132 @@ func TestServiceResetStoppedStagesUpdatesStatusClearsErrorPurgesAndEnsures(t *te
 	if got.Status != "stopped" || got.ErrorMessage != nil {
 		t.Fatalf("ResetData() status/error = %#v", got)
 	}
+	if repo.clearErrorCalls != 0 {
+		t.Fatalf("ResetData() ClearError calls = %d, want 0", repo.clearErrorCalls)
+	}
 	if !reflect.DeepEqual(fs.staged, []int64{created.ID}) || len(fs.purged) != 1 || !reflect.DeepEqual(fs.ensured, []int64{created.ID}) {
 		t.Fatalf("ResetData() filesystem staged=%#v purged=%#v ensured=%#v", fs.staged, fs.purged, fs.ensured)
 	}
+	wantEvents := []string{"stage", "ensure", "purge"}
+	if !reflect.DeepEqual(fs.events, wantEvents) {
+		t.Fatalf("ResetData() filesystem events = %#v, want %#v", fs.events, wantEvents)
+	}
 	if err := service.ResetData(ctx, created.ID+1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ResetData() missing error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestServiceResetCompensatesFilesystemWhenUpdateStatusFails(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7210}, nil)
+	service.generateKey = func() (string, error) { return "RSTDB001", nil }
+	created, err := service.Create(ctx, CreateRequest{Name: "reset-db-fail"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	before := withStatus(repo.items[created.ID], "error", stringPtr("boom"))
+	repo.items[created.ID] = before
+	fs.ensured = nil
+	fs.events = nil
+	repo.updateStatusErr = errors.New("status failed")
+
+	if err := service.ResetData(ctx, created.ID); !strings.Contains(err.Error(), "status failed") {
+		t.Fatalf("ResetData() update status error = %v", err)
+	}
+	if got := repo.items[created.ID]; got != before {
+		t.Fatalf("ResetData() changed DB on update failure: got=%#v want=%#v", got, before)
+	}
+	if len(fs.restored) != 1 || len(fs.ensured) != 0 || len(fs.purged) != 0 {
+		t.Fatalf("ResetData() compensation restored=%#v ensured=%#v purged=%#v", fs.restored, fs.ensured, fs.purged)
+	}
+}
+
+func TestServiceResetRestoresTrashWhenEnsureFails(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{ensureErr: errors.New("ensure failed")}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7211}, nil)
+	service.generateKey = func() (string, error) { return "RSTENS01", nil }
+	created, err := service.Create(ctx, CreateRequest{Name: "seed"})
+	if err == nil {
+		t.Fatalf("Create() with failing ensure error = nil")
+	}
+	fs.ensureErr = nil
+	created, err = service.Create(ctx, CreateRequest{Name: "reset-ensure-fail"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	before := repo.items[created.ID]
+	fs.ensureErr = errors.New("ensure failed")
+	fs.ensured = nil
+	fs.events = nil
+
+	if err := service.ResetData(ctx, created.ID); !strings.Contains(err.Error(), "ensure failed") {
+		t.Fatalf("ResetData() ensure error = %v", err)
+	}
+	if got := repo.items[created.ID]; got.Status != before.Status || got.ErrorMessage != before.ErrorMessage {
+		t.Fatalf("ResetData() DB after ensure failure = %#v, want status/error from %#v", got, before)
+	}
+	if len(fs.restored) != 1 || len(fs.purged) != 0 {
+		t.Fatalf("ResetData() ensure compensation restored=%#v purged=%#v", fs.restored, fs.purged)
+	}
+	if !reflect.DeepEqual(fs.events, []string{"stage", "ensure", "restore"}) {
+		t.Fatalf("ResetData() events = %#v", fs.events)
+	}
+}
+
+func TestServiceResetReturnsPurgeFailureAfterCommitWithoutRestore(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7212}, nil)
+	service.generateKey = func() (string, error) { return "RSTPRG01", nil }
+	created, err := service.Create(ctx, CreateRequest{Name: "reset-purge-fail"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	repo.items[created.ID] = withStatus(repo.items[created.ID], "error", stringPtr("boom"))
+	fs.purgeErr = errors.New("purge failed")
+	fs.ensured = nil
+	fs.events = nil
+
+	if err := service.ResetData(ctx, created.ID); !strings.Contains(err.Error(), "purge failed") {
+		t.Fatalf("ResetData() purge error = %v", err)
+	}
+	got := repo.items[created.ID]
+	if got.Status != "stopped" || got.ErrorMessage != nil {
+		t.Fatalf("ResetData() DB was not committed before purge failure: %#v", got)
+	}
+	if len(fs.ensured) != 1 || len(fs.restored) != 0 || len(fs.purged) != 1 {
+		t.Fatalf("ResetData() purge failure filesystem ensured=%#v restored=%#v purged=%#v", fs.ensured, fs.restored, fs.purged)
+	}
+}
+
+func TestServiceResetStageFailureDoesNotTouchDBOrCommitFilesystem(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7213}, nil)
+	service.generateKey = func() (string, error) { return "RSTSTG01", nil }
+	created, err := service.Create(ctx, CreateRequest{Name: "reset-stage-fail"})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	before := withStatus(repo.items[created.ID], "error", stringPtr("boom"))
+	repo.items[created.ID] = before
+	fs.stageErr = errors.New("stage failed")
+	fs.ensured = nil
+
+	if err := service.ResetData(ctx, created.ID); !strings.Contains(err.Error(), "stage failed") {
+		t.Fatalf("ResetData() stage error = %v", err)
+	}
+	if got := repo.items[created.ID]; got != before {
+		t.Fatalf("ResetData() changed DB on stage failure: got=%#v want=%#v", got, before)
+	}
+	if len(fs.ensured) != 0 || len(fs.purged) != 0 || len(fs.restored) != 0 {
+		t.Fatalf("ResetData() filesystem after stage failure ensured=%#v purged=%#v restored=%#v", fs.ensured, fs.purged, fs.restored)
 	}
 }
 
@@ -224,6 +417,7 @@ type fakeRepository struct {
 	deleteErr       error
 	updateStatusErr error
 	clearErrorErr   error
+	clearErrorCalls int
 	deleted         []int64
 }
 
@@ -306,6 +500,7 @@ func (r *fakeRepository) UpdateStatus(_ context.Context, id int64, status string
 }
 
 func (r *fakeRepository) ClearError(_ context.Context, id int64) (Instance, error) {
+	r.clearErrorCalls++
 	if r.clearErrorErr != nil {
 		return Instance{}, r.clearErrorErr
 	}

@@ -162,14 +162,13 @@ func (s *Service) ResetData(ctx context.Context, id int64) error {
 	if _, err := s.repo.UpdateStatus(ctx, id, "stopped", nil); err != nil {
 		return errors.Join(err, s.fs.Restore(context.Background(), trash))
 	}
-	if _, err := s.repo.ClearError(ctx, id); err != nil {
+	if _, err := s.fs.Ensure(ctx, id); err != nil {
 		return errors.Join(err, s.fs.Restore(context.Background(), trash))
 	}
 	if err := s.fs.Purge(ctx, trash); err != nil {
 		return err
 	}
-	_, err = s.fs.Ensure(ctx, id)
-	return err
+	return nil
 }
 
 func (s *Service) stopIfRunning(ctx context.Context, instance Instance) error {
