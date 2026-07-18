@@ -29,6 +29,14 @@ type InstanceFilesystem interface {
 	Purge(context.Context, Trash) error
 }
 
+type DeviceCacheCleaner interface {
+	ClearCache(int64)
+}
+
+type noopDeviceCacheCleaner struct{}
+
+func (noopDeviceCacheCleaner) ClearCache(int64) {}
+
 type Status struct {
 	State string
 }
@@ -38,6 +46,7 @@ type Service struct {
 	fs           InstanceFilesystem
 	ports        PortAllocator
 	lifecycle    Lifecycle
+	deviceCache  DeviceCacheCleaner
 	generateKey  func() (string, error)
 	generateName func() string
 	locksMu      sync.Mutex
@@ -67,6 +76,7 @@ func NewService(repo Repository, fs InstanceFilesystem, ports PortAllocator, lif
 		fs:           fs,
 		ports:        ports,
 		lifecycle:    lifecycle,
+		deviceCache:  noopDeviceCacheCleaner{},
 		generateKey:  GenerateKey,
 		generateName: func() string { return RandomName(nil) },
 		locks:        map[int64]*instanceLock{},
@@ -165,6 +175,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 		}
 		return errors.Join(err, s.fs.Restore(context.Background(), trash))
 	}
+	s.clearDeviceCache(id)
 	if trash == (Trash{}) {
 		return nil
 	}
@@ -199,6 +210,7 @@ func (s *Service) ResetData(ctx context.Context, id int64) error {
 		cleanupErr := s.removeReplacementAndRestore(ctx, id, trash)
 		return errors.Join(err, cleanupErr)
 	}
+	s.clearDeviceCache(id)
 	if trash == (Trash{}) {
 		return nil
 	}
@@ -248,6 +260,16 @@ func (s *Service) stopIfRunning(ctx context.Context, instance Instance) error {
 	if s.lifecycle == nil {
 		return ErrRuntimeNotReady
 	}
-	_, err := s.lifecycle.Stop(ctx, instance.ID)
-	return err
+	if _, err := s.lifecycle.Stop(ctx, instance.ID); err != nil {
+		return err
+	}
+	s.clearDeviceCache(instance.ID)
+	return nil
+}
+
+func (s *Service) clearDeviceCache(id int64) {
+	if s.deviceCache == nil {
+		return
+	}
+	s.deviceCache.ClearCache(id)
 }

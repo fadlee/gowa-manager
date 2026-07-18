@@ -66,6 +66,7 @@ func (t *ConnectionTester) Test(ctx context.Context, instance Instance) Connecti
 	} else if len(bodyText) > 600 {
 		bodyText = bodyText[:600] + "..."
 	}
+	bodyText = sanitizeConnectionError(bodyText, instance)
 	message := "Failed to connect to the GOWA API."
 	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 		message = "Successfully connected to the GOWA API."
@@ -76,6 +77,9 @@ func (t *ConnectionTester) Test(ctx context.Context, instance Instance) Connecti
 func sanitizeConnectionError(message string, instance Instance) string {
 	config := ParseConfig(instance.Config)
 	for _, auth := range config.Flags.BasicAuth {
+		if auth.Username != "" || auth.Password != "" {
+			message = strings.ReplaceAll(message, "Basic "+basicAuthToken(auth.Username, auth.Password), "Basic [redacted]")
+		}
 		if auth.Username != "" {
 			message = strings.ReplaceAll(message, auth.Username, "[redacted]")
 		}
@@ -87,4 +91,13 @@ func sanitizeConnectionError(message string, instance Instance) string {
 		return "Connection failed before receiving a response."
 	}
 	return message
+}
+
+func basicAuthToken(username string, password string) string {
+	req, err := http.NewRequest(http.MethodGet, "http://localhost", nil)
+	if err != nil {
+		return ""
+	}
+	req.SetBasicAuth(username, password)
+	return strings.TrimPrefix(req.Header.Get("Authorization"), "Basic ")
 }

@@ -475,7 +475,9 @@ func TestServiceDeleteAndResetStopRunningInstanceBeforeStagingFiles(t *testing.T
 			repo := newFakeRepository()
 			fs := &fakeFilesystem{}
 			lifecycle := &fakeLifecycle{status: Status{State: "running"}}
+			cache := &fakeDeviceCacheCleaner{}
 			service := NewService(repo, fs, &fakePortAllocator{next: 7300}, lifecycle)
+			service.deviceCache = cache
 			service.generateKey = func() (string, error) { return "RUNNING1", nil }
 			created, err := service.Create(ctx, CreateRequest{Name: operation})
 			if err != nil {
@@ -496,6 +498,39 @@ func TestServiceDeleteAndResetStopRunningInstanceBeforeStagingFiles(t *testing.T
 			}
 			if len(fs.events) == 0 || fs.events[0] != "stage" {
 				t.Fatalf("filesystem events = %#v, want staging after stop", fs.events)
+			}
+			if !reflect.DeepEqual(cache.cleared, []int64{created.ID, created.ID}) {
+				t.Fatalf("ClearCache calls = %#v, want [%d %d]", cache.cleared, created.ID, created.ID)
+			}
+		})
+	}
+}
+
+func TestServiceClearsDeviceCacheAfterStoppedDeleteAndReset(t *testing.T) {
+	ctx := context.Background()
+	for _, operation := range []string{"delete", "reset"} {
+		t.Run(operation, func(t *testing.T) {
+			repo := newFakeRepository()
+			fs := &fakeFilesystem{}
+			cache := &fakeDeviceCacheCleaner{}
+			service := NewService(repo, fs, &fakePortAllocator{next: 7302}, nil)
+			service.deviceCache = cache
+			service.generateKey = func() (string, error) { return "CACHE001", nil }
+			created, err := service.Create(ctx, CreateRequest{Name: operation})
+			if err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+
+			if operation == "delete" {
+				err = service.Delete(ctx, created.ID)
+			} else {
+				err = service.ResetData(ctx, created.ID)
+			}
+			if err != nil {
+				t.Fatalf("%s error = %v", operation, err)
+			}
+			if !reflect.DeepEqual(cache.cleared, []int64{created.ID}) {
+				t.Fatalf("ClearCache calls = %#v, want [%d]", cache.cleared, created.ID)
 			}
 		})
 	}
@@ -796,6 +831,14 @@ func (l *fakeLifecycle) Stop(_ context.Context, id int64) (Status, error) {
 	defer l.mu.Unlock()
 	l.stopped = append(l.stopped, id)
 	return Status{State: "stopped"}, l.stopErr
+}
+
+type fakeDeviceCacheCleaner struct {
+	cleared []int64
+}
+
+func (c *fakeDeviceCacheCleaner) ClearCache(id int64) {
+	c.cleared = append(c.cleared, id)
 }
 
 type blockingFilesystem struct {

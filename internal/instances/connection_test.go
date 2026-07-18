@@ -67,18 +67,18 @@ func TestConnectionTesterUnavailableInstanceDoesNotFetch(t *testing.T) {
 }
 
 func TestConnectionTesterSendsOptionalBasicAuthAndDoesNotLeakSecretOnError(t *testing.T) {
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:p:a:ss"))
 	server := newDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
-		want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:p:a:ss"))
 		if r.Header.Get("Authorization") != want {
 			t.Fatalf("Authorization = %q, want %q", r.Header.Get("Authorization"), want)
 		}
-		http.Error(w, "secret p:a:ss", http.StatusForbidden)
+		http.Error(w, "secret user p:a:ss "+want, http.StatusForbidden)
 	})
 	defer server.Close()
 	tester := NewConnectionTester(ConnectionTesterOptions{HTTPClient: server.Client()})
 
 	got := tester.Test(context.Background(), runningInstance(server, `{"flags":{"basicAuth":[{"username":"user","password":"p:a:ss"}]}}`))
-	if got.OK || strings.Contains(got.Message, "p:a:ss") {
+	if got.OK || strings.Contains(got.Message, "p:a:ss") || strings.Contains(got.Body, "user") || strings.Contains(got.Body, "p:a:ss") || strings.Contains(got.Body, want) {
 		t.Fatalf("Test() = %#v", got)
 	}
 }
