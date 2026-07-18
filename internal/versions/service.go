@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 )
 
 type Installer interface {
@@ -80,12 +81,12 @@ func (s *Service) GetAvailableVersions(ctx context.Context, limit int) ([]Versio
 	}
 
 	result := []VersionInfo{}
-	latestTag := releases[0].TagName
+	latestTag := latestReleaseTag(releases)
 	latestInfo, latestInstalled := installedByVersion[latestTag]
 	result = append(result, VersionInfo{Version: "latest", Path: s.GetVersionBinaryPath("latest"), Installed: latestInstalled, IsLatest: true, Size: latestInfo.Size, InstalledAt: latestInfo.InstalledAt})
-	for i, release := range releases {
+	for _, release := range releases {
 		info, ok := installedByVersion[release.TagName]
-		entry := VersionInfo{Version: release.TagName, Path: s.GetVersionBinaryPath(release.TagName), Installed: ok, IsLatest: i == 0}
+		entry := VersionInfo{Version: release.TagName, Path: s.GetVersionBinaryPath(release.TagName), Installed: ok, IsLatest: release.TagName == latestTag}
 		if ok {
 			entry.Size = info.Size
 			entry.InstalledAt = info.InstalledAt
@@ -97,11 +98,11 @@ func (s *Service) GetAvailableVersions(ctx context.Context, limit int) ([]Versio
 
 func (s *Service) IsVersionAvailable(ctx context.Context, version string) (bool, error) {
 	if version == "latest" {
-		releases, err := s.releases.ListReleases(ctx, 1)
+		releases, err := s.releases.ListReleases(ctx, 10)
 		if err != nil || len(releases) == 0 {
 			return false, nil
 		}
-		_, err = os.Stat(s.GetVersionBinaryPath(releases[0].TagName))
+		_, err = os.Stat(s.GetVersionBinaryPath(latestReleaseTag(releases)))
 		return err == nil, nil
 	}
 	_, err := os.Stat(s.GetVersionBinaryPath(version))
@@ -215,6 +216,36 @@ func compareVersions(a, b string) int {
 		}
 	}
 	return strings.Compare(a, b)
+}
+
+func latestReleaseTag(releases []GitHubRelease) string {
+	if len(releases) == 0 {
+		return ""
+	}
+	latest := releases[0]
+	latestPublishedAt := parsePublishedAt(latest.PublishedAt)
+	for _, release := range releases[1:] {
+		publishedAt := parsePublishedAt(release.PublishedAt)
+		if !publishedAt.IsZero() || !latestPublishedAt.IsZero() {
+			if publishedAt.After(latestPublishedAt) {
+				latest = release
+				latestPublishedAt = publishedAt
+			}
+			continue
+		}
+		if compareVersions(release.TagName, latest.TagName) > 0 {
+			latest = release
+		}
+	}
+	return latest.TagName
+}
+
+func parsePublishedAt(value string) time.Time {
+	publishedAt, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return publishedAt
 }
 
 func versionParts(version string) []int {

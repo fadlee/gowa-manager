@@ -103,6 +103,56 @@ func TestGetAvailableVersionsMergesGitHubReleasesWithInstalledMetadata(t *testin
 	}
 }
 
+func TestGetAvailableVersionsDeterminesLatestFromOutOfOrderPublishedAt(t *testing.T) {
+	dataDir := t.TempDir()
+	writeBinary(t, dataDir, "v2.0.0", []byte("installed"), time.Now())
+	releases := &fakeReleaseLister{releases: []GitHubRelease{
+		{TagName: "v1.9.0", PublishedAt: "2026-01-01T00:00:00Z"},
+		{TagName: "v2.0.0", PublishedAt: "2026-02-01T00:00:00Z"},
+	}}
+	service := NewService(dataDir, releases)
+
+	available, err := service.GetAvailableVersions(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("GetAvailableVersions() error = %v", err)
+	}
+
+	if available[0].Version != "latest" || !available[0].Installed || !available[0].IsLatest || available[0].Size != int64(len("installed")) {
+		t.Fatalf("latest entry = %+v, want installed v2.0.0 metadata", available[0])
+	}
+	if available[1].Version != "v1.9.0" || available[1].IsLatest {
+		t.Fatalf("first release = %+v, want non-latest v1.9.0", available[1])
+	}
+	if available[2].Version != "v2.0.0" || !available[2].Installed || !available[2].IsLatest {
+		t.Fatalf("second release = %+v, want installed latest release", available[2])
+	}
+}
+
+func TestGetAvailableVersionsDeterminesLatestByVersionWhenPublishedAtMissing(t *testing.T) {
+	dataDir := t.TempDir()
+	writeBinary(t, dataDir, "v1.10.0", []byte("installed"), time.Now())
+	releases := &fakeReleaseLister{releases: []GitHubRelease{
+		{TagName: "v1.9.0"},
+		{TagName: "v1.10.0"},
+	}}
+	service := NewService(dataDir, releases)
+
+	available, err := service.GetAvailableVersions(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("GetAvailableVersions() error = %v", err)
+	}
+
+	if available[0].Version != "latest" || !available[0].Installed {
+		t.Fatalf("latest entry = %+v, want installed v1.10.0 metadata", available[0])
+	}
+	if available[1].Version != "v1.9.0" || available[1].IsLatest {
+		t.Fatalf("first release = %+v, want non-latest v1.9.0", available[1])
+	}
+	if available[2].Version != "v1.10.0" || !available[2].IsLatest {
+		t.Fatalf("second release = %+v, want latest v1.10.0", available[2])
+	}
+}
+
 func TestGetAvailableVersionsReturnsEmptyOnAPIFailure(t *testing.T) {
 	service := NewService(t.TempDir(), &fakeReleaseLister{err: errors.New("api down")})
 	available, err := service.GetAvailableVersions(context.Background(), 10)
@@ -123,6 +173,20 @@ func TestIsVersionAvailableChecksExplicitAndActualLatestRelease(t *testing.T) {
 	if err != nil || !explicit {
 		t.Fatalf("explicit available = %v, err = %v, want true nil", explicit, err)
 	}
+	latest, err := service.IsVersionAvailable(context.Background(), "latest")
+	if err != nil || !latest {
+		t.Fatalf("latest available = %v, err = %v, want true nil", latest, err)
+	}
+}
+
+func TestIsVersionAvailableLatestDeterminesLatestFromOutOfOrderReleases(t *testing.T) {
+	dataDir := t.TempDir()
+	writeBinary(t, dataDir, "v2.0.0", []byte("binary"), time.Now())
+	service := NewService(dataDir, &fakeReleaseLister{releases: []GitHubRelease{
+		{TagName: "v1.9.0", PublishedAt: "2026-01-01T00:00:00Z"},
+		{TagName: "v2.0.0", PublishedAt: "2026-02-01T00:00:00Z"},
+	}})
+
 	latest, err := service.IsVersionAvailable(context.Background(), "latest")
 	if err != nil || !latest {
 		t.Fatalf("latest available = %v, err = %v, want true nil", latest, err)

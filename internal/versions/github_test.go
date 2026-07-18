@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strconv"
 	"testing"
 )
@@ -52,28 +51,41 @@ func TestGitHubClientReturnsErrorForAPIStatus(t *testing.T) {
 	}
 }
 
-func TestSelectAssetForCurrentPlatform(t *testing.T) {
+func TestSelectAssetForPlatform(t *testing.T) {
 	assets := []GitHubAsset{
 		{Name: "gowa-linux-arm64.tar.gz", BrowserDownloadURL: "arm64"},
 		{Name: "gowa-windows-amd64.zip", BrowserDownloadURL: "win"},
 		{Name: "gowa-linux-amd64.tar.gz", BrowserDownloadURL: "linux"},
 	}
 
-	asset, ok := SelectAssetForPlatform(assets, runtime.GOOS, runtime.GOARCH)
-	if !ok {
-		t.Fatalf("SelectAssetForPlatform() ok = false for %s/%s", runtime.GOOS, runtime.GOARCH)
+	tests := []struct {
+		name string
+		goos string
+		arch string
+		want string
+		ok   bool
+	}{
+		{name: "linux amd64", goos: "linux", arch: "amd64", want: "linux", ok: true},
+		{name: "linux arm64", goos: "linux", arch: "arm64", want: "arm64", ok: true},
+		{name: "windows amd64", goos: "windows", arch: "amd64", want: "win", ok: true},
+		{name: "windows arm64 unsupported", goos: "windows", arch: "arm64"},
+		{name: "darwin amd64 unsupported", goos: "darwin", arch: "amd64"},
+		{name: "linux arm unsupported", goos: "linux", arch: "arm"},
 	}
-	if asset.BrowserDownloadURL == "" {
-		t.Fatalf("selected asset has empty download URL")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			asset, ok := SelectAssetForPlatform(assets, tt.goos, tt.arch)
+			if ok != tt.ok {
+				t.Fatalf("ok = %v, want %v", ok, tt.ok)
+			}
+			if asset.BrowserDownloadURL != tt.want {
+				t.Fatalf("download URL = %q, want %q", asset.BrowserDownloadURL, tt.want)
+			}
+		})
 	}
 }
 
 func assetNameForRuntime() string {
-	if runtime.GOOS == "windows" {
-		return "gowa-windows-amd64.zip"
-	}
-	if runtime.GOARCH == "arm64" {
-		return "gowa-linux-arm64.tar.gz"
-	}
 	return "gowa-linux-amd64.tar.gz"
 }
