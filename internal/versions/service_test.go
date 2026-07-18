@@ -153,6 +153,51 @@ func TestGetAvailableVersionsDeterminesLatestByVersionWhenPublishedAtMissing(t *
 	}
 }
 
+func TestGetAvailableVersionsLatestAliasUsesLatestReleaseTagPathWhenNotInstalled(t *testing.T) {
+	dataDir := t.TempDir()
+	writeBinary(t, dataDir, "v1.0.0", []byte("installed"), time.Now())
+	releases := &fakeReleaseLister{releases: []GitHubRelease{
+		{TagName: "v1.0.0", PublishedAt: "2026-01-01T00:00:00Z"},
+		{TagName: "v2.0.0", PublishedAt: "2026-02-01T00:00:00Z"},
+	}}
+	service := NewService(dataDir, releases)
+
+	available, err := service.GetAvailableVersions(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("GetAvailableVersions() error = %v", err)
+	}
+
+	wantPath := filepath.Join(dataDir, "bin", "versions", "v2.0.0", binaryName())
+	if available[0].Version != "latest" || available[0].Installed || available[0].Path != wantPath {
+		t.Fatalf("latest entry = %+v, want uninstalled alias path %q", available[0], wantPath)
+	}
+}
+
+func TestGetAvailableVersionsLatestMixedPublishedAtPrefersValidDate(t *testing.T) {
+	dataDir := t.TempDir()
+	writeBinary(t, dataDir, "v1.0.0", []byte("installed"), time.Now())
+	releases := &fakeReleaseLister{releases: []GitHubRelease{
+		{TagName: "v9.9.9", PublishedAt: "not-a-date"},
+		{TagName: "v1.0.0", PublishedAt: "2026-01-01T00:00:00Z"},
+	}}
+	service := NewService(dataDir, releases)
+
+	available, err := service.GetAvailableVersions(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("GetAvailableVersions() error = %v", err)
+	}
+
+	if available[0].Version != "latest" || !available[0].Installed {
+		t.Fatalf("latest entry = %+v, want installed v1.0.0 selected from valid date", available[0])
+	}
+	if available[1].Version != "v9.9.9" || available[1].IsLatest {
+		t.Fatalf("first release = %+v, want invalid-date release not latest", available[1])
+	}
+	if available[2].Version != "v1.0.0" || !available[2].IsLatest {
+		t.Fatalf("second release = %+v, want valid-date release latest", available[2])
+	}
+}
+
 func TestGetAvailableVersionsReturnsEmptyOnAPIFailure(t *testing.T) {
 	service := NewService(t.TempDir(), &fakeReleaseLister{err: errors.New("api down")})
 	available, err := service.GetAvailableVersions(context.Background(), 10)
@@ -204,6 +249,33 @@ func TestIsVersionAvailableLatestReturnsFalseOnAPIFailure(t *testing.T) {
 	}
 	if available {
 		t.Fatalf("latest available = true, want false on API failure")
+	}
+}
+
+func TestVersionPathValidationRejectsTraversal(t *testing.T) {
+	dataDir := t.TempDir()
+	service := NewService(dataDir, nil)
+	outsideDir := filepath.Join(dataDir, "outside")
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	marker := filepath.Join(outsideDir, "marker.txt")
+	if err := os.WriteFile(marker, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := service.RemoveVersion(filepath.Join("..", "..", "outside")); err == nil {
+		t.Fatalf("RemoveVersion(traversal) error = nil, want error")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("outside marker removed or inaccessible: %v", err)
+	}
+	if _, err := service.GetVersionBinaryPathSafe(filepath.Join("..", "..", "outside")); err == nil {
+		t.Fatalf("GetVersionBinaryPathSafe(traversal) error = nil, want error")
+	}
+	available, err := service.IsVersionAvailable(context.Background(), filepath.Join("..", "..", "outside"))
+	if err == nil || available {
+		t.Fatalf("IsVersionAvailable(traversal) = %v, %v; want false error", available, err)
 	}
 }
 

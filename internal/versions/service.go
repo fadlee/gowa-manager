@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
 )
+
+var versionTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$`)
 
 type Installer interface {
 	Install(context.Context, string) error
@@ -31,14 +34,22 @@ func NewService(dataDir string, releases ReleaseLister) *Service {
 }
 
 func (s *Service) GetVersionBinaryPath(version string) string {
+	path, err := s.GetVersionBinaryPathSafe(version)
+	if err != nil {
+		return filepath.Join(s.versionsDir(), "invalid", binaryNameForRuntime())
+	}
+	return path
+}
+
+func (s *Service) GetVersionBinaryPathSafe(version string) (string, error) {
 	if version == "latest" {
 		if latest := s.resolveLatestVersion(); latest != "" {
 			version = latest
 		} else {
-			return filepath.Join(s.dataDir, "bin", binaryNameForRuntime())
+			return filepath.Join(s.dataDir, "bin", binaryNameForRuntime()), nil
 		}
 	}
-	return filepath.Join(s.versionsDir(), version, binaryNameForRuntime())
+	return s.versionBinaryPath(version)
 }
 
 func (s *Service) GetInstalledVersions() ([]VersionInfo, error) {
@@ -83,7 +94,11 @@ func (s *Service) GetAvailableVersions(ctx context.Context, limit int) ([]Versio
 	result := []VersionInfo{}
 	latestTag := latestReleaseTag(releases)
 	latestInfo, latestInstalled := installedByVersion[latestTag]
-	result = append(result, VersionInfo{Version: "latest", Path: s.GetVersionBinaryPath("latest"), Installed: latestInstalled, IsLatest: true, Size: latestInfo.Size, InstalledAt: latestInfo.InstalledAt})
+	latestPath, err := s.versionBinaryPath(latestTag)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, VersionInfo{Version: "latest", Path: latestPath, Installed: latestInstalled, IsLatest: true, Size: latestInfo.Size, InstalledAt: latestInfo.InstalledAt})
 	for _, release := range releases {
 		info, ok := installedByVersion[release.TagName]
 		entry := VersionInfo{Version: release.TagName, Path: s.GetVersionBinaryPath(release.TagName), Installed: ok, IsLatest: release.TagName == latestTag}
@@ -102,10 +117,18 @@ func (s *Service) IsVersionAvailable(ctx context.Context, version string) (bool,
 		if err != nil || len(releases) == 0 {
 			return false, nil
 		}
-		_, err = os.Stat(s.GetVersionBinaryPath(latestReleaseTag(releases)))
+		path, err := s.versionBinaryPath(latestReleaseTag(releases))
+		if err != nil {
+			return false, err
+		}
+		_, err = os.Stat(path)
 		return err == nil, nil
 	}
-	_, err := os.Stat(s.GetVersionBinaryPath(version))
+	path, err := s.versionBinaryPath(version)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(path)
 	return err == nil, nil
 }
 
@@ -127,10 +150,14 @@ func (s *Service) RemoveVersion(version string) error {
 	if version == "latest" {
 		return errors.New("cannot remove the latest version alias")
 	}
+	path, err := s.versionDir(version)
+	if err != nil {
+		return err
+	}
 	if s.activeVersion() == version {
 		return fmt.Errorf("cannot remove active version %s", version)
 	}
-	return os.RemoveAll(filepath.Join(s.versionsDir(), version))
+	return os.RemoveAll(path)
 }
 
 func (s *Service) Cleanup(keepCount int) ([]string, error) {
@@ -160,6 +187,46 @@ func (s *Service) Cleanup(keepCount int) ([]string, error) {
 
 func (s *Service) versionsDir() string {
 	return filepath.Join(s.dataDir, "bin", "versions")
+}
+
+func (s *Service) versionBinaryPath(version string) (string, error) {
+	dir, err := s.versionDir(version)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, binaryNameForRuntime()), nil
+}
+
+func (s *Service) versionDir(version string) (string, error) {
+	if err := validateVersionTag(version); err != nil {
+		return "", err
+	}
+	base, err := filepath.Abs(s.versionsDir())
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.Abs(filepath.Join(base, version))
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("version path escapes versions directory: %q", version)
+	}
+	return path, nil
+}
+
+func validateVersionTag(version string) error {
+	if version == "" {
+		return errors.New("version cannot be empty")
+	}
+	if filepath.IsAbs(version) || strings.ContainsAny(version, `/\`) || strings.Contains(version, "..") {
+		return fmt.Errorf("invalid version tag: %q", version)
+	}
+	if !versionTagPattern.MatchString(version) {
+		return fmt.Errorf("invalid version tag: %q", version)
+	}
+	return nil
 }
 
 func (s *Service) resolveLatestVersion() string {
@@ -227,7 +294,7 @@ func latestReleaseTag(releases []GitHubRelease) string {
 	for _, release := range releases[1:] {
 		publishedAt := parsePublishedAt(release.PublishedAt)
 		if !publishedAt.IsZero() || !latestPublishedAt.IsZero() {
-			if publishedAt.After(latestPublishedAt) {
+			if latestPublishedAt.IsZero() || (!publishedAt.IsZero() && publishedAt.After(latestPublishedAt)) {
 				latest = release
 				latestPublishedAt = publishedAt
 			}

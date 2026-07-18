@@ -53,9 +53,12 @@ func TestGitHubClientReturnsErrorForAPIStatus(t *testing.T) {
 
 func TestSelectAssetForPlatform(t *testing.T) {
 	assets := []GitHubAsset{
-		{Name: "gowa-linux-arm64.tar.gz", BrowserDownloadURL: "arm64"},
+		{Name: "gowa-linux-arm64.zip.sha256", BrowserDownloadURL: "checksum"},
+		{Name: "gowa-linux-arm64.tar.gz", BrowserDownloadURL: "tarball"},
+		{Name: "gowa-linux-arm64.zip", BrowserDownloadURL: "arm64"},
 		{Name: "gowa-windows-amd64.zip", BrowserDownloadURL: "win"},
-		{Name: "gowa-linux-amd64.tar.gz", BrowserDownloadURL: "linux"},
+		{Name: "gowa-linux-amd64-checksums.zip", BrowserDownloadURL: "bad-checksum"},
+		{Name: "gowa-linux-amd64.zip", BrowserDownloadURL: "linux"},
 	}
 
 	tests := []struct {

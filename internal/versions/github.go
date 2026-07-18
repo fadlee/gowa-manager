@@ -83,9 +83,23 @@ func SelectAssetForPlatform(assets []GitHubAsset, goos, goarch string) (GitHubAs
 func selectAsset(assets []GitHubAsset, osName, arch string) (GitHubAsset, bool) {
 	for _, asset := range assets {
 		name := strings.ToLower(asset.Name)
-		if strings.Contains(name, osName) && strings.Contains(name, arch) {
+		if !strings.HasSuffix(name, ".zip") || strings.Contains(name, "checksum") || strings.Contains(name, "sha256") {
+			continue
+		}
+		if assetNameHasToken(name, osName) && assetNameHasToken(name, arch) {
 			return asset, true
 		}
 	}
 	return GitHubAsset{}, false
+}
+
+func assetNameHasToken(name, token string) bool {
+	for _, part := range strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.'
+	}) {
+		if part == token {
+			return true
+		}
+	}
+	return false
 }
