@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 type SQLiteRepository struct {
@@ -19,7 +22,7 @@ func (r *SQLiteRepository) List(ctx context.Context) ([]Instance, error) {
 	rows, err := r.db.QueryContext(ctx, `
 SELECT id, key, name, port, status, config, gowa_version, error_message, created_at, updated_at
 FROM instances
-ORDER BY created_at DESC`)
+ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -123,21 +126,27 @@ func scanOneInstance(scanner instanceScanner) (Instance, error) {
 func scanInstance(scanner instanceScanner) (Instance, error) {
 	var instance Instance
 	var port sql.NullInt64
+	var status sql.NullString
+	var config sql.NullString
+	var gowaVersion sql.NullString
 	var errorMessage sql.NullString
 	if err := scanner.Scan(
 		&instance.ID,
 		&instance.Key,
 		&instance.Name,
 		&port,
-		&instance.Status,
-		&instance.Config,
-		&instance.GOWAVersion,
+		&status,
+		&config,
+		&gowaVersion,
 		&errorMessage,
 		&instance.CreatedAt,
 		&instance.UpdatedAt,
 	); err != nil {
 		return Instance{}, err
 	}
+	instance.Status = nullStringDefault(status, "stopped")
+	instance.Config = nullStringDefault(config, "{}")
+	instance.GOWAVersion = nullStringDefault(gowaVersion, "latest")
 	if port.Valid {
 		value := int(port.Int64)
 		instance.Port = &value
@@ -146,6 +155,13 @@ func scanInstance(scanner instanceScanner) (Instance, error) {
 		instance.ErrorMessage = &errorMessage.String
 	}
 	return instance, nil
+}
+
+func nullStringDefault(value sql.NullString, fallback string) string {
+	if !value.Valid || value.String == "" {
+		return fallback
+	}
+	return value.String
 }
 
 func requireAffected(result sql.Result) error {
@@ -170,6 +186,10 @@ func mapSQLiteError(err error) error {
 }
 
 func isUniqueConstraintError(err error) bool {
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE {
+		return true
+	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "constraint") && strings.Contains(message, "unique")
 }

@@ -4,29 +4,63 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/fadlee/gowa-manager/internal/database"
 )
 
-func TestSQLiteRepositoryListOrdersByCreatedAtDescending(t *testing.T) {
+func TestSQLiteRepositoryListOrdersByCreatedAtDescendingThenIDDescending(t *testing.T) {
 	ctx := context.Background()
 	repo, closeDB := newSQLiteRepository(t, ctx)
 	defer closeDB()
 
 	first := mustCreateInstance(t, ctx, repo, CreateInput{Key: "FIRST", Name: "first", Port: intPtr(5001), Config: `{"n":1}`, GOWAVersion: "v1"})
-	time.Sleep(1100 * time.Millisecond)
 	second := mustCreateInstance(t, ctx, repo, CreateInput{Key: "SECOND", Name: "second", Port: intPtr(5002), Config: `{"n":2}`, GOWAVersion: "v2"})
+	third := mustCreateInstance(t, ctx, repo, CreateInput{Key: "THIRD", Name: "third", Port: intPtr(5003), Config: `{"n":3}`, GOWAVersion: "v3"})
+
+	mustExec(t, ctx, repo, `UPDATE instances SET created_at = '2026-07-19 10:00:00', updated_at = '2026-07-19 10:00:00' WHERE id IN (?, ?)`, first.ID, second.ID)
+	mustExec(t, ctx, repo, `UPDATE instances SET created_at = '2026-07-19 10:00:01', updated_at = '2026-07-19 10:00:01' WHERE id = ?`, third.ID)
 
 	instances, err := repo.List(ctx)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(instances) != 2 {
-		t.Fatalf("List() returned %d instances, want 2: %#v", len(instances), instances)
+	if len(instances) != 3 {
+		t.Fatalf("List() returned %d instances, want 3: %#v", len(instances), instances)
 	}
-	if instances[0].ID != second.ID || instances[1].ID != first.ID {
-		t.Fatalf("List() order IDs = [%d, %d], want [%d, %d]", instances[0].ID, instances[1].ID, second.ID, first.ID)
+	if instances[0].ID != third.ID || instances[1].ID != second.ID || instances[2].ID != first.ID {
+		t.Fatalf("List() order IDs = [%d, %d, %d], want [%d, %d, %d]", instances[0].ID, instances[1].ID, instances[2].ID, third.ID, second.ID, first.ID)
+	}
+}
+
+func TestSQLiteRepositoryScansNullableTextDefaults(t *testing.T) {
+	ctx := context.Background()
+	repo, closeDB := newSQLiteRepository(t, ctx)
+	defer closeDB()
+
+	mustExec(t, ctx, repo, `
+INSERT INTO instances (key, name, port, status, config, gowa_version, created_at, updated_at)
+VALUES ('NULLABLE', 'nullable', NULL, NULL, NULL, NULL, 'manual-created', 'manual-updated')`)
+
+	instance, err := repo.FindByKey(ctx, "NULLABLE")
+	if err != nil {
+		t.Fatalf("FindByKey() error = %v", err)
+	}
+	if instance.Status != "stopped" || instance.Config != "{}" || instance.GOWAVersion != "latest" {
+		t.Fatalf("FindByKey() nullable defaults = status %q config %q gowa_version %q", instance.Status, instance.Config, instance.GOWAVersion)
+	}
+	if instance.CreatedAt != "manual-created" || instance.UpdatedAt != "manual-updated" {
+		t.Fatalf("FindByKey() timestamps = created %q updated %q", instance.CreatedAt, instance.UpdatedAt)
+	}
+
+	mustExec(t, ctx, repo, `
+INSERT INTO instances (key, name, port, status, config, gowa_version)
+VALUES ('EMPTY', 'empty', NULL, '', '', '')`)
+	empty, err := repo.FindByKey(ctx, "EMPTY")
+	if err != nil {
+		t.Fatalf("FindByKey() empty error = %v", err)
+	}
+	if empty.Status != "stopped" || empty.Config != "{}" || empty.GOWAVersion != "latest" {
+		t.Fatalf("FindByKey() empty defaults = status %q config %q gowa_version %q", empty.Status, empty.Config, empty.GOWAVersion)
 	}
 }
 
@@ -177,6 +211,17 @@ func mustCreateInstance(t *testing.T, ctx context.Context, repo Repository, inpu
 		t.Fatalf("Create(%#v) error = %v", input, err)
 	}
 	return instance
+}
+
+func mustExec(t *testing.T, ctx context.Context, repo Repository, query string, args ...any) {
+	t.Helper()
+	sqliteRepo, ok := repo.(*SQLiteRepository)
+	if !ok {
+		t.Fatalf("repo type = %T, want *SQLiteRepository", repo)
+	}
+	if _, err := sqliteRepo.db.ExecContext(ctx, query, args...); err != nil {
+		t.Fatalf("Exec(%q) error = %v", query, err)
+	}
 }
 
 func assertSameInstance(t *testing.T, got, want Instance) {
