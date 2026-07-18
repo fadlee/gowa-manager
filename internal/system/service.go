@@ -18,10 +18,11 @@ type InstanceLister interface {
 }
 
 type SystemService struct {
-	repo           InstanceLister
-	dataDir        string
-	managerVersion string
-	started        time.Time
+	repo                    InstanceLister
+	dataDir                 string
+	managerVersion          string
+	started                 time.Time
+	isInstancePortAvailable func(int) bool
 }
 
 type SystemStatus struct {
@@ -47,10 +48,11 @@ type PortRange struct {
 
 func NewSystemService(repo InstanceLister, dataDir, managerVersion string) *SystemService {
 	return &SystemService{
-		repo:           repo,
-		dataDir:        dataDir,
-		managerVersion: managerVersion,
-		started:        time.Now(),
+		repo:                    repo,
+		dataDir:                 dataDir,
+		managerVersion:          managerVersion,
+		started:                 time.Now(),
+		isInstancePortAvailable: IsPortAvailable,
 	}
 }
 
@@ -61,7 +63,7 @@ func (s *SystemService) GetSystemStatus(ctx context.Context) (SystemStatus, erro
 	}
 	status := SystemStatus{ManagerVersion: s.managerVersion}
 	status.TotalInstances = len(instances)
-	highestPort := 0
+	allocated := map[int]bool{}
 	for _, instance := range instances {
 		switch instance.Status {
 		case "running":
@@ -71,14 +73,18 @@ func (s *SystemService) GetSystemStatus(ctx context.Context) (SystemStatus, erro
 		}
 		if instance.Port != nil {
 			status.AllocatedPorts++
-			if *instance.Port > highestPort {
-				highestPort = *instance.Port
-			}
+			allocated[*instance.Port] = true
 		}
 	}
 	status.NextAvailablePort = minInstancePort
-	if highestPort >= minInstancePort {
-		status.NextAvailablePort = highestPort + 1
+	for port := minInstancePort; port <= maxInstancePort; port++ {
+		if allocated[port] {
+			continue
+		}
+		if s.isInstancePortAvailable(port) {
+			status.NextAvailablePort = port
+			break
+		}
 	}
 	status.Uptime = time.Since(s.started).Milliseconds()
 	return status, nil

@@ -45,14 +45,31 @@ func TestGetSystemStatusCountsInstancesAndReportsMetadata(t *testing.T) {
 	if status.AllocatedPorts != 2 {
 		t.Fatalf("AllocatedPorts = %d, want 2", status.AllocatedPorts)
 	}
-	if status.NextAvailablePort != 8003 {
-		t.Fatalf("NextAvailablePort = %d, want 8003", status.NextAvailablePort)
+	if status.NextAvailablePort != 8001 {
+		t.Fatalf("NextAvailablePort = %d, want 8001", status.NextAvailablePort)
 	}
 	if status.Uptime < 1000 || status.Uptime > 5000 {
 		t.Fatalf("Uptime = %d, want milliseconds near 1500", status.Uptime)
 	}
 	if status.ManagerVersion != "v1.2.3" {
 		t.Fatalf("ManagerVersion = %q, want v1.2.3", status.ManagerVersion)
+	}
+}
+
+func TestGetSystemStatusNextAvailablePortSkipsAllocatedAndUnavailablePorts(t *testing.T) {
+	port8000 := 8000
+	service := NewSystemService(fakeInstanceLister{instances: []instances.Instance{
+		{Port: &port8000},
+	}}, "./data", "dev")
+	service.isInstancePortAvailable = func(port int) bool { return port != 8001 }
+
+	status, err := service.GetSystemStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetSystemStatus() error = %v", err)
+	}
+
+	if status.NextAvailablePort != 8002 {
+		t.Fatalf("NextAvailablePort = %d, want 8002", status.NextAvailablePort)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 )
 
 var ErrNoAvailablePort = errors.New("no available port")
@@ -12,10 +13,12 @@ var ErrNoAvailablePort = errors.New("no available port")
 type PortAllocator struct {
 	repo        InstanceLister
 	isAvailable func(int) bool
+	mu          sync.Mutex
+	reserved    map[int]bool
 }
 
 func NewPortAllocator(repo InstanceLister) *PortAllocator {
-	return &PortAllocator{repo: repo, isAvailable: IsPortAvailable}
+	return &PortAllocator{repo: repo, isAvailable: IsPortAvailable, reserved: map[int]bool{}}
 }
 
 func IsPortAvailable(port int) bool {
@@ -30,6 +33,9 @@ func IsHTTPPortAvailable(port int) bool {
 }
 
 func (p *PortAllocator) Next(ctx context.Context) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	instances, err := p.repo.List(ctx)
 	if err != nil {
 		return 0, err
@@ -40,11 +46,12 @@ func (p *PortAllocator) Next(ctx context.Context) (int, error) {
 			allocated[*instance.Port] = true
 		}
 	}
-	for port := minInstancePort; port <= 65535; port++ {
-		if allocated[port] {
+	for port := minInstancePort; port <= maxInstancePort; port++ {
+		if allocated[port] || p.reserved[port] {
 			continue
 		}
 		if p.isAvailable(port) {
+			p.reserved[port] = true
 			return port, nil
 		}
 	}
