@@ -34,8 +34,8 @@ func TestInstallerDownloadsSelectsAssetExtractsAndRenamesAtomically(t *testing.T
 	if err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
-	if result.Version != "v1.2.3" || result.Path != filepath.Join(dataDir, "bin", "versions", "v1.2.3", binaryName()) || result.SHA256 == "" || result.Size != int64(len(zipBody)) {
-		t.Fatalf("result = %+v, want version path checksum and downloaded size", result)
+	if result.Version != "v1.2.3" || result.Path != filepath.Join(dataDir, "bin", "versions", "v1.2.3", binaryName()) || result.SHA256 == "" || result.Size != int64(len("installed-binary")) {
+		t.Fatalf("result = %+v, want version path checksum and installed binary size", result)
 	}
 	if requests != 1 {
 		t.Fatalf("requests = %d, want 1", requests)
@@ -91,6 +91,36 @@ func TestInstallerRejectsZipSlipAndCleansStaging(t *testing.T) {
 	}
 	if _, err := os.Stat(outside); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("outside file stat err = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "bin", "versions", "v1.2.3", binaryName())); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("final binary stat err = %v, want not exist", err)
+	}
+	assertNoInstallerTemps(t, dataDir)
+}
+
+func TestInstallerRejectsWindowsStyleZipSlipAndCleansStaging(t *testing.T) {
+	dataDir := t.TempDir()
+	outside := filepath.Join(dataDir, "evil")
+	installer := installerWithZip(t, dataDir, makeZip(t, map[string][]byte{"..\\evil": []byte("bad"), binaryName(): []byte("ok")}))
+
+	if _, err := installer.Install(context.Background(), "v1.2.3"); err == nil {
+		t.Fatalf("Install(windows zip slip) error = nil, want error")
+	}
+	if _, err := os.Stat(outside); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside file stat err = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "bin", "versions", "v1.2.3", binaryName())); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("final binary stat err = %v, want not exist", err)
+	}
+	assertNoInstallerTemps(t, dataDir)
+}
+
+func TestInstallerRejectsSpecialZipEntriesAndCleansStaging(t *testing.T) {
+	dataDir := t.TempDir()
+	installer := installerWithZip(t, dataDir, makeZipWithSymlink(t, "link", "target"))
+
+	if _, err := installer.Install(context.Background(), "v1.2.3"); err == nil {
+		t.Fatalf("Install(symlink entry) error = nil, want error")
 	}
 	if _, err := os.Stat(filepath.Join(dataDir, "bin", "versions", "v1.2.3", binaryName())); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("final binary stat err = %v, want not exist", err)
@@ -156,6 +186,27 @@ func TestInstallerRemoveAndCleanupKeepCount(t *testing.T) {
 	}
 }
 
+func TestInstallerCleanupProtectsActiveVersionWithSmallKeepCount(t *testing.T) {
+	dataDir := t.TempDir()
+	installer := NewInstaller(dataDir, nil, nil)
+	installer.ActiveVersion = "v1.0.0"
+	base := time.Now()
+	writeBinary(t, dataDir, "v1.0.0", []byte("active"), base.Add(-3*time.Hour))
+	writeBinary(t, dataDir, "v2.0.0", []byte("newest"), base)
+	writeBinary(t, dataDir, "v1.5.0", []byte("old"), base.Add(-2*time.Hour))
+
+	removed, err := installer.Cleanup(1)
+	if err != nil {
+		t.Fatalf("Cleanup() error = %v", err)
+	}
+	if len(removed) != 1 || removed[0] != "v1.5.0" {
+		t.Fatalf("removed = %+v, want [v1.5.0]", removed)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "bin", "versions", "v1.0.0", binaryName())); err != nil {
+		t.Fatalf("active binary removed: %v", err)
+	}
+}
+
 func installerWithZip(t *testing.T, dataDir string, zipBody []byte) *VersionInstaller {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +231,38 @@ func makeZip(t *testing.T, files map[string][]byte) []byte {
 		if _, err := w.Write(contents); err != nil {
 			t.Fatalf("zip Write(%q) error = %v", name, err)
 		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip Close() error = %v", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Seek() error = %v", err)
+	}
+	body, err := io.ReadAll(tmp)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	return body
+}
+
+func makeZipWithSymlink(t *testing.T, name, target string) []byte {
+	t.Helper()
+	tmp, err := os.CreateTemp(t.TempDir(), "release-*.zip")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	zw := zip.NewWriter(tmp)
+	header := &zip.FileHeader{Name: name}
+	header.SetMode(os.ModeSymlink | 0o777)
+	w, err := zw.CreateHeader(header)
+	if err != nil {
+		t.Fatalf("zip CreateHeader(%q) error = %v", name, err)
+	}
+	if _, err := w.Write([]byte(target)); err != nil {
+		t.Fatalf("zip Write(%q) error = %v", name, err)
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatalf("zip Close() error = %v", err)

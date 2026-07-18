@@ -31,9 +31,10 @@ type InstallResult struct {
 }
 
 type VersionInstaller struct {
-	dataDir  string
-	releases ReleaseLister
-	client   *http.Client
+	dataDir       string
+	releases      ReleaseLister
+	client        *http.Client
+	ActiveVersion string
 }
 
 func NewInstaller(dataDir string, releases ReleaseLister, client *http.Client) *VersionInstaller {
@@ -79,7 +80,7 @@ func (i *VersionInstaller) Install(ctx context.Context, version string) (Install
 	defer os.RemoveAll(tmpDir)
 
 	zipPath := filepath.Join(tmpDir, "release.zip")
-	checksum, size, err := i.download(ctx, asset.BrowserDownloadURL, zipPath)
+	checksum, _, err := i.download(ctx, asset.BrowserDownloadURL, zipPath)
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -100,6 +101,10 @@ func (i *VersionInstaller) Install(ctx context.Context, version string) (Install
 			return InstallResult{}, err
 		}
 	}
+	binaryInfo, err := os.Stat(binaryPath)
+	if err != nil {
+		return InstallResult{}, err
+	}
 
 	finalDir := filepath.Dir(finalPath)
 	if err := os.Rename(stageDir, finalDir); err != nil {
@@ -108,7 +113,7 @@ func (i *VersionInstaller) Install(ctx context.Context, version string) (Install
 		}
 		return InstallResult{}, err
 	}
-	return InstallResult{Version: version, Path: finalPath, SHA256: checksum, Size: size}, nil
+	return InstallResult{Version: version, Path: finalPath, SHA256: checksum, Size: binaryInfo.Size()}, nil
 }
 
 func (i *VersionInstaller) Remove(version string) error {
@@ -127,6 +132,9 @@ func (i *VersionInstaller) Cleanup(keepCount int) ([]string, error) {
 	sort.SliceStable(installed, func(a, b int) bool { return installed[a].InstalledAt.After(installed[b].InstalledAt) })
 	removed := []string{}
 	for idx, version := range installed {
+		if version.Version == i.ActiveVersion {
+			continue
+		}
 		if idx < keepCount {
 			continue
 		}
@@ -184,6 +192,9 @@ func extractZip(zipPath, dest string) error {
 	}
 	total := uint64(0)
 	for _, file := range reader.File {
+		if strings.Contains(file.Name, "\\") {
+			return fmt.Errorf("archive path contains unsupported separator: %s", file.Name)
+		}
 		name := filepath.Clean(file.Name)
 		if filepath.IsAbs(name) || strings.HasPrefix(name, "..") || strings.Contains(name, string(filepath.Separator)+".."+string(filepath.Separator)) {
 			return fmt.Errorf("archive path escapes staging: %s", file.Name)
@@ -196,7 +207,11 @@ func extractZip(zipPath, dest string) error {
 		if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
 			return fmt.Errorf("archive path escapes staging: %s", file.Name)
 		}
-		if file.FileInfo().IsDir() {
+		mode := file.FileInfo().Mode()
+		if mode.Type() != 0 && !mode.IsDir() {
+			return fmt.Errorf("archive contains unsupported file type: %s", file.Name)
+		}
+		if mode.IsDir() {
 			if err := os.MkdirAll(target, 0o755); err != nil {
 				return err
 			}
