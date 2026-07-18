@@ -1,2 +1,2 @@
 // Auto-generated from git tags. Do not edit manually.
-export const MANAGER_VERSION = '1.8.0'
+export const MANAGER_VERSION = '1.8.1'

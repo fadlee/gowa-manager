@@ -13,7 +13,9 @@ WORKDIR /app
 # Copy pre-built binaries and select the one matching the build platform.
 # buildx sets TARGETARCH=amd64|arm64; binaries are named accordingly.
 COPY binaries/ ./binaries/
-RUN mv ./binaries/gowa-manager-linux-${TARGETARCH} ./gowa-manager && rm -rf ./binaries
+RUN mv ./binaries/gowa-manager-linux-${TARGETARCH} ./gowa-manager \
+  && chmod +x ./gowa-manager \
+  && rm -rf ./binaries
 
 # Create data/bin directory
 RUN mkdir -p data/bin
