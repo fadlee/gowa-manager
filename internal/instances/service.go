@@ -3,6 +3,7 @@ package instances
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 const latestVersion = "latest"
@@ -159,16 +160,28 @@ func (s *Service) ResetData(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.repo.UpdateStatus(ctx, id, "stopped", nil); err != nil {
-		return errors.Join(err, s.fs.Restore(context.Background(), trash))
-	}
 	if _, err := s.fs.Ensure(ctx, id); err != nil {
 		return errors.Join(err, s.fs.Restore(context.Background(), trash))
+	}
+	if _, err := s.repo.UpdateStatus(ctx, id, "stopped", nil); err != nil {
+		cleanupErr := s.removeReplacementAndRestore(ctx, id, trash)
+		return errors.Join(err, cleanupErr)
 	}
 	if err := s.fs.Purge(ctx, trash); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s *Service) removeReplacementAndRestore(ctx context.Context, id int64, trash Trash) error {
+	replacementTrash, err := s.fs.StageDelete(ctx, id)
+	if err != nil {
+		return errors.Join(fmt.Errorf("remove replacement failed: %w", err), s.fs.Restore(context.Background(), trash))
+	}
+	if err := s.fs.Purge(ctx, replacementTrash); err != nil {
+		return errors.Join(fmt.Errorf("purge replacement failed: %w", err), s.fs.Restore(context.Background(), trash))
+	}
+	return s.fs.Restore(context.Background(), trash)
 }
 
 func (s *Service) stopIfRunning(ctx context.Context, instance Instance) error {

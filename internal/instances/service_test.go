@@ -284,8 +284,11 @@ func TestServiceResetCompensatesFilesystemWhenUpdateStatusFails(t *testing.T) {
 	if got := repo.items[created.ID]; got != before {
 		t.Fatalf("ResetData() changed DB on update failure: got=%#v want=%#v", got, before)
 	}
-	if len(fs.restored) != 1 || len(fs.ensured) != 0 || len(fs.purged) != 0 {
+	if len(fs.restored) != 1 || len(fs.ensured) != 1 || len(fs.staged) != 2 || len(fs.purged) != 1 {
 		t.Fatalf("ResetData() compensation restored=%#v ensured=%#v purged=%#v", fs.restored, fs.ensured, fs.purged)
+	}
+	if !reflect.DeepEqual(fs.events, []string{"stage", "ensure", "stage", "purge", "restore"}) {
+		t.Fatalf("ResetData() events = %#v", fs.events)
 	}
 }
 
@@ -304,7 +307,8 @@ func TestServiceResetRestoresTrashWhenEnsureFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	before := repo.items[created.ID]
+	before := withStatus(repo.items[created.ID], "error", stringPtr("boom"))
+	repo.items[created.ID] = before
 	fs.ensureErr = errors.New("ensure failed")
 	fs.ensured = nil
 	fs.events = nil
@@ -312,7 +316,7 @@ func TestServiceResetRestoresTrashWhenEnsureFails(t *testing.T) {
 	if err := service.ResetData(ctx, created.ID); !strings.Contains(err.Error(), "ensure failed") {
 		t.Fatalf("ResetData() ensure error = %v", err)
 	}
-	if got := repo.items[created.ID]; got.Status != before.Status || got.ErrorMessage != before.ErrorMessage {
+	if got := repo.items[created.ID]; got != before {
 		t.Fatalf("ResetData() DB after ensure failure = %#v, want status/error from %#v", got, before)
 	}
 	if len(fs.restored) != 1 || len(fs.purged) != 0 {
