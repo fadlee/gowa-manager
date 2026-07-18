@@ -247,6 +247,29 @@ func TestServiceDeleteTreatsMissingDirectoryAsAbsent(t *testing.T) {
 	}
 }
 
+func TestServiceDeleteRunningTreatsMissingDirectoryAsAbsent(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{stageErr: ErrNotFound}
+	lifecycle := &fakeLifecycle{status: Status{State: "running"}}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7114}, lifecycle)
+	created := mustFakeCreate(t, ctx, repo, CreateInput{Key: "DELRUNM1", Name: "delete-running-missing", Config: `{}`, GOWAVersion: "latest"})
+	repo.items[created.ID] = withStatus(created, "running", nil)
+
+	if err := service.Delete(ctx, created.ID); err != nil {
+		t.Fatalf("Delete() running missing dir error = %v", err)
+	}
+	if !reflect.DeepEqual(lifecycle.stopped, []int64{created.ID}) {
+		t.Fatalf("Stop calls = %#v, want [%d]", lifecycle.stopped, created.ID)
+	}
+	if _, ok := repo.items[created.ID]; ok || !reflect.DeepEqual(repo.deleted, []int64{created.ID}) {
+		t.Fatalf("Delete() running missing dir repo state items=%#v deleted=%#v", repo.items, repo.deleted)
+	}
+	if !reflect.DeepEqual(fs.staged, []int64{created.ID}) || len(fs.purged) != 0 || len(fs.restored) != 0 {
+		t.Fatalf("Delete() running missing dir filesystem staged=%#v purged=%#v restored=%#v", fs.staged, fs.purged, fs.restored)
+	}
+}
+
 func TestServiceResetStoppedStagesUpdatesStatusEnsuresAndPurges(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
@@ -300,6 +323,30 @@ func TestServiceResetTreatsMissingDirectoryAsAbsent(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fs.ensured, []int64{created.ID}) || len(fs.purged) != 0 || len(fs.restored) != 0 {
 		t.Fatalf("ResetData() missing dir filesystem ensured=%#v purged=%#v restored=%#v", fs.ensured, fs.purged, fs.restored)
+	}
+}
+
+func TestServiceResetRunningTreatsMissingDirectoryAsAbsent(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepository()
+	fs := &fakeFilesystem{stageErr: ErrNotFound}
+	lifecycle := &fakeLifecycle{status: Status{State: "running"}}
+	service := NewService(repo, fs, &fakePortAllocator{next: 7202}, lifecycle)
+	created := mustFakeCreate(t, ctx, repo, CreateInput{Key: "RSTRUNM1", Name: "reset-running-missing", Config: `{}`, GOWAVersion: "latest"})
+	repo.items[created.ID] = withStatus(created, "running", stringPtr("boom"))
+
+	if err := service.ResetData(ctx, created.ID); err != nil {
+		t.Fatalf("ResetData() running missing dir error = %v", err)
+	}
+	if !reflect.DeepEqual(lifecycle.stopped, []int64{created.ID}) {
+		t.Fatalf("Stop calls = %#v, want [%d]", lifecycle.stopped, created.ID)
+	}
+	got := repo.items[created.ID]
+	if got.Status != "stopped" || got.ErrorMessage != nil {
+		t.Fatalf("ResetData() running missing dir status/error = %#v", got)
+	}
+	if !reflect.DeepEqual(fs.staged, []int64{created.ID}) || !reflect.DeepEqual(fs.ensured, []int64{created.ID}) || len(fs.purged) != 0 || len(fs.restored) != 0 {
+		t.Fatalf("ResetData() running missing dir filesystem staged=%#v ensured=%#v purged=%#v restored=%#v", fs.staged, fs.ensured, fs.purged, fs.restored)
 	}
 }
 
