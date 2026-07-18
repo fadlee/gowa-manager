@@ -289,14 +289,19 @@ func latestReleaseTag(releases []GitHubRelease) string {
 	if len(releases) == 0 {
 		return ""
 	}
+	allPublishedAtValid := true
+	for _, release := range releases {
+		if parsePublishedAt(release.PublishedAt).IsZero() {
+			allPublishedAtValid = false
+			break
+		}
+	}
+
 	latest := releases[0]
-	latestPublishedAt := parsePublishedAt(latest.PublishedAt)
 	for _, release := range releases[1:] {
-		publishedAt := parsePublishedAt(release.PublishedAt)
-		if !publishedAt.IsZero() || !latestPublishedAt.IsZero() {
-			if latestPublishedAt.IsZero() || (!publishedAt.IsZero() && publishedAt.After(latestPublishedAt)) {
+		if allPublishedAtValid {
+			if parsePublishedAt(release.PublishedAt).After(parsePublishedAt(latest.PublishedAt)) {
 				latest = release
-				latestPublishedAt = publishedAt
 			}
 			continue
 		}

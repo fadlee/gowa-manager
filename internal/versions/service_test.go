@@ -173,11 +173,12 @@ func TestGetAvailableVersionsLatestAliasUsesLatestReleaseTagPathWhenNotInstalled
 	}
 }
 
-func TestGetAvailableVersionsLatestMixedPublishedAtPrefersValidDate(t *testing.T) {
+func TestGetAvailableVersionsLatestMixedPublishedAtFallsBackToVersion(t *testing.T) {
 	dataDir := t.TempDir()
-	writeBinary(t, dataDir, "v1.0.0", []byte("installed"), time.Now())
+	writeBinary(t, dataDir, "v9.9.9", []byte("installed"), time.Now())
 	releases := &fakeReleaseLister{releases: []GitHubRelease{
-		{TagName: "v9.9.9", PublishedAt: "not-a-date"},
+		{TagName: "v1.0.0", PublishedAt: "2026-02-01T00:00:00Z"},
+		{TagName: "v9.9.9"},
 		{TagName: "v1.0.0", PublishedAt: "2026-01-01T00:00:00Z"},
 	}}
 	service := NewService(dataDir, releases)
@@ -188,13 +189,16 @@ func TestGetAvailableVersionsLatestMixedPublishedAtPrefersValidDate(t *testing.T
 	}
 
 	if available[0].Version != "latest" || !available[0].Installed {
-		t.Fatalf("latest entry = %+v, want installed v1.0.0 selected from valid date", available[0])
+		t.Fatalf("latest entry = %+v, want installed v9.9.9 selected by version fallback", available[0])
 	}
-	if available[1].Version != "v9.9.9" || available[1].IsLatest {
-		t.Fatalf("first release = %+v, want invalid-date release not latest", available[1])
+	if available[1].Version != "v1.0.0" || available[1].IsLatest {
+		t.Fatalf("first release = %+v, want non-latest v1.0.0", available[1])
 	}
-	if available[2].Version != "v1.0.0" || !available[2].IsLatest {
-		t.Fatalf("second release = %+v, want valid-date release latest", available[2])
+	if available[2].Version != "v9.9.9" || !available[2].IsLatest {
+		t.Fatalf("second release = %+v, want latest v9.9.9", available[2])
+	}
+	if available[3].Version != "v1.0.0" || available[3].IsLatest {
+		t.Fatalf("third release = %+v, want non-latest v1.0.0", available[3])
 	}
 }
 
