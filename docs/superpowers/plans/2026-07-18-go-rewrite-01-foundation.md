@@ -6,7 +6,7 @@
 
 **Architecture:** Add Go beside the unchanged Bun backend. Use `cmd/gowa-manager-go` as the executable entry point and focused packages under `internal/`. This plan deliberately stops before domain write APIs and process supervision; it produces a safe shell and the test infrastructure required by later plans.
 
-**Tech Stack:** Go 1.24, `net/http`, `log/slog`, `embed`, `modernc.org/sqlite`, `github.com/gofrs/flock`, Bun test runner for the baseline, Go `testing`/`httptest`.
+**Tech Stack:** Go 1.24, `net/http`, `log/slog`, `embed`, `github.com/gofrs/flock`, Bun test runner for the baseline, Go `testing`/`httptest`. The SQLite driver (default `modernc.org/sqlite`) and WebSocket library (default `github.com/coder/websocket`) are validated and pinned by the Task 2 spike before any code depends on them.
 
 ---
 
@@ -20,6 +20,7 @@
 ## File structure
 
 - Create `go.mod`, `go.sum`: Go module and pinned dependencies.
+- Create `docs/superpowers/spikes/2026-07-18-go-rewrite-tech-spikes.md`: recorded driver/library/journal-mode decisions from the Task 2 spike.
 - Create `cmd/gowa-manager-go/main.go`: thin process entry point.
 - Create `internal/buildinfo/version.go`: manager version injected by build flags.
 - Create `internal/config/config.go`, `internal/config/config_test.go`: CLI/env parsing and validation.
@@ -93,7 +94,50 @@ git add go.mod cmd/gowa-manager-go internal/buildinfo .gitignore
 git commit -m "chore: initialize Go backend module"
 ```
 
-### Task 2: Implement compatible CLI and environment parsing
+### Task 2: De-risk the SQLite driver, WebSocket library, and journal-mode baseline
+
+**Rationale:** Two technology choices (the pure-Go SQLite driver and the WebSocket library) and one unknown (the journal mode/pragmas of live Bun databases) are the highest-risk assumptions in the whole rewrite. The design flags the SQLite driver as "subject to an early compatibility spike." Resolve all three here, before Task 5 builds real database code and before Plan 04 builds the proxy, so a late incompatibility cannot force a rewrite. This task is a throwaway investigation plus a committed decision record; it does not add production code or dependencies to the root module.
+
+**Files:**
+- Create: `docs/superpowers/spikes/2026-07-18-go-rewrite-tech-spikes.md` (committed findings and decisions)
+- Create: `spike/` (throwaway experiments with their own `go.mod`; gitignored, never committed)
+- Modify: `.gitignore`
+
+- [ ] **Step 1: Record the Bun database journal-mode and pragma baseline**
+
+The current Bun backend opens SQLite with `new Database(path)` and no options in `src/db.ts`, so it neither enables WAL nor sets `busy_timeout`, and it relies heavily on `INSERT/UPDATE ... RETURNING *`. Confirm the actual runtime state rather than assuming it.
+
+Against a database created by the running Bun backend (and, if available, a sanitized copy of a real `gowa.db`), record `PRAGMA journal_mode`, `PRAGMA busy_timeout`, `PRAGMA foreign_keys`, `PRAGMA encoding`, and `PRAGMA user_version`. Capture the exact statement shapes from `src/db.ts` that the Go driver must support, especially every `RETURNING *` query. Write the results into the spike document.
+
+- [ ] **Step 2: Prove SQLite driver compatibility (default `modernc.org/sqlite`)**
+
+In `spike/sqlite/` (its own throwaway module), prove against the driver that:
+
+- it opens a database created by `bun:sqlite` without migration;
+- `INSERT ... RETURNING *` and `UPDATE ... RETURNING *` return the expected rows;
+- `busy_timeout=5000` is honored;
+- two concurrent writers behave correctly under the journal mode recorded in Step 1 (no corruption, no unexpected `SQLITE_BUSY` beyond the timeout);
+- `PRAGMA integrity_check` returns `ok` after Go writes;
+- `bun:sqlite` can reopen the same file afterward and read back Go-written values.
+
+If `modernc.org/sqlite` fails any hard requirement, record the failure and evaluate the documented fallback (a cgo driver such as `github.com/mattn/go-sqlite3`) together with its cross-compilation cost for Linux amd64/arm64 and Windows amd64. **Do not start Task 5 until a driver is chosen and recorded.** Pin a reviewed version published at least 7 days ago.
+
+- [ ] **Step 3: Evaluate the WebSocket bridging library**
+
+In `spike/websocket/` (throwaway module), evaluate the candidate library (default `github.com/coder/websocket`) for the behavior Plan 04 needs: client dial and server upgrade, text and binary frames, ping/pong, close code/reason propagation, `context` cancellation, and pure-Go build with no cgo. Confirm the currently maintained version and API surface. Record the chosen library and version so Plan 04 does not re-litigate the decision.
+
+- [ ] **Step 4: Write the decision record and gate later plans**
+
+`docs/superpowers/spikes/2026-07-18-go-rewrite-tech-spikes.md` must state: the chosen SQLite driver and pinned version; the chosen WebSocket library and pinned version; the recorded journal mode, `busy_timeout`, and encoding; and every caveat later plans must honor (for example "do not enable WAL in the first release", "preserve `RETURNING`", and any WebSocket message-size limit). Add `/spike/` to `.gitignore`. Do not commit the throwaway `spike/` code, and do not add these dependencies to the root `go.mod` yet — Task 5 and Plan 04 add them where they are actually used.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/superpowers/spikes/2026-07-18-go-rewrite-tech-spikes.md .gitignore
+git commit -m "docs: record Go rewrite technology spikes"
+```
+
+### Task 3: Implement compatible CLI and environment parsing
 
 **Files:**
 - Create: `internal/config/config.go`
@@ -157,7 +201,7 @@ git add internal/config cmd/gowa-manager-go
 git commit -m "feat: add compatible Go CLI configuration"
 ```
 
-### Task 3: Add exclusive data-directory ownership
+### Task 4: Add exclusive data-directory ownership
 
 **Files:**
 - Create: `internal/ownership/lock.go`
@@ -200,7 +244,7 @@ git add go.mod go.sum internal/ownership
 git commit -m "feat: lock Go manager data directory"
 ```
 
-### Task 4: Implement compatible SQLite initialization
+### Task 5: Implement compatible SQLite initialization
 
 **Files:**
 - Create: `internal/database/database.go`
@@ -235,9 +279,9 @@ Run: `go test ./internal/database -v`
 
 Expected: FAIL because `Open` is undefined.
 
-- [ ] **Step 3: Implement using `modernc.org/sqlite`**
+- [ ] **Step 3: Implement using the driver chosen in the Task 2 spike (default `modernc.org/sqlite`)**
 
-Expose:
+Use the driver, version, journal mode, and pragmas recorded in `docs/superpowers/spikes/2026-07-18-go-rewrite-tech-spikes.md`. Expose:
 
 ```go
 type DB struct { SQL *sql.DB }
@@ -265,7 +309,7 @@ git add go.mod go.sum internal/database
 git commit -m "feat: initialize compatible SQLite database"
 ```
 
-### Task 5: Build the HTTP shell and health contract
+### Task 6: Build the HTTP shell and health contract
 
 **Files:**
 - Create: `internal/httpapi/server.go`
@@ -305,7 +349,7 @@ git add internal/httpapi
 git commit -m "feat: add Go HTTP server shell"
 ```
 
-### Task 6: Embed and serve the React production build
+### Task 7: Embed and serve the React production build
 
 **Files:**
 - Create: `internal/static/assets.go`
@@ -343,7 +387,7 @@ git add internal/static internal/httpapi web/.gitkeep scripts/build-go.ts
 git commit -m "feat: embed frontend in Go server"
 ```
 
-### Task 7: Wire application startup and graceful HTTP shutdown
+### Task 8: Wire application startup and graceful HTTP shutdown
 
 **Files:**
 - Create: `internal/app/app.go`
@@ -394,7 +438,7 @@ git add internal/app cmd/gowa-manager-go
 git commit -m "feat: wire Go application lifecycle"
 ```
 
-### Task 8: Establish reusable contract normalization
+### Task 9: Establish reusable contract normalization
 
 **Files:**
 - Create: `test/contract/README.md`
@@ -429,7 +473,7 @@ git add test/contract internal/testutil
 git commit -m "test: add backend contract test foundation"
 ```
 
-### Task 9: Add developer commands and foundation verification
+### Task 10: Add developer commands and foundation verification
 
 **Files:**
 - Modify: `package.json`
@@ -466,6 +510,7 @@ git commit -m "docs: add experimental Go backend workflow"
 
 Before starting Plan 02:
 
+- technology spikes are recorded: SQLite driver, WebSocket library, and the Bun journal-mode/pragma baseline are decided and documented, with `modernc.org/sqlite` (or a recorded fallback) proven against a Bun-created database;
 - Go shell builds on the developer OS.
 - CLI compatibility tests pass.
 - SQLite can be reopened by Bun after Go writes.

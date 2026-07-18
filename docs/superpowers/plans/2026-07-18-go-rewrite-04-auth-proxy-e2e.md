@@ -6,7 +6,7 @@
 
 **Architecture:** Management APIs are wrapped by constant-time Basic Auth middleware while public health/auth/proxy routing preserves current route order. HTTP proxying builds on `httputil.ReverseProxy`; WebSocket proxying uses one upstream connection per client and explicit bidirectional cancellation. Authentication and URL rewriting remain isolated pure utilities with exhaustive parity tests.
 
-**Tech Stack:** Go 1.24, `net/http`, `httputil.ReverseProxy`, `github.com/coder/websocket` (or another reviewed minimal library chosen at implementation), `crypto/hmac`, Playwright/browser E2E, Go test fixtures.
+**Tech Stack:** Go 1.24, `net/http`, `httputil.ReverseProxy`, the WebSocket library pinned by the Plan 01 Task 2 spike (default `github.com/coder/websocket`), `crypto/hmac`, Playwright/browser E2E, Go test fixtures.
 
 ---
 
@@ -194,7 +194,7 @@ Cover text and binary messages, large payloads, query and safe headers, subproto
 
 - [ ] **Step 3: Implement with a reviewed WebSocket library**
 
-At execution time, verify the current maintained version and API before pinning. Run one copy loop in each direction under shared cancellation; close both sides idempotently. Bound message size consistently with the Bun behavior or document/test the agreed safe compatibility limit.
+Use the library and version already decided in the Plan 01 Task 2 spike (`docs/superpowers/spikes/2026-07-18-go-rewrite-tech-spikes.md`, default `github.com/coder/websocket`); only re-verify the maintained version/API if the spike record is stale or the pinned version has been yanked. Run one copy loop in each direction under shared cancellation; close both sides idempotently. Bound message size consistently with the Bun behavior or document/test the agreed safe compatibility limit.
 
 - [ ] **Step 4: Stress and leak test**
 
