@@ -1,11 +1,30 @@
 package main
 
-import "os"
+import (
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/fadlee/gowa-manager/internal/config"
+)
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
 }
 
-func run() int {
+func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+	_, action, err := config.Parse(args, getenv)
+	if err != nil {
+		fmt.Fprintln(stderr, err.Error())
+		return 1
+	}
+	switch action {
+	case config.ActionHelp:
+		fmt.Fprint(stdout, config.HelpText())
+		return 0
+	case config.ActionVersion:
+		fmt.Fprintln(stdout, config.VersionText())
+		return 0
+	}
 	return 0
 }
