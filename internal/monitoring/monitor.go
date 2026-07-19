@@ -71,6 +71,8 @@ func New(opts MonitorOptions) *Monitor {
 	}
 	ttl := opts.DiskCacheTTL
 	if ttl <= 0 {
+		// Disk usage walks the instance data directory; keep the cache short so
+		// reset/delete changes are reflected quickly without traversing every poll.
 		ttl = 5 * time.Second
 	}
 	now := opts.Now

@@ -534,6 +534,66 @@ func TestServiceClearsDeviceCacheAfterStoppedDeleteAndReset(t *testing.T) {
 	}
 }
 
+func TestServiceClearsMonitorCacheAfterStoppedDeleteAndReset(t *testing.T) {
+	ctx := context.Background()
+	for _, operation := range []string{"delete", "reset"} {
+		t.Run(operation, func(t *testing.T) {
+			repo := newFakeRepository()
+			fs := &fakeFilesystem{}
+			cache := &fakeMonitorCacheCleaner{}
+			service := NewService(repo, fs, &fakePortAllocator{next: 7303}, nil, WithMonitorCacheCleaner(cache))
+			service.generateKey = func() (string, error) { return "MONCLR01", nil }
+			created, err := service.Create(ctx, CreateRequest{Name: operation})
+			if err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+
+			if operation == "delete" {
+				err = service.Delete(ctx, created.ID)
+			} else {
+				err = service.ResetData(ctx, created.ID)
+			}
+			if err != nil {
+				t.Fatalf("%s error = %v", operation, err)
+			}
+			if !reflect.DeepEqual(cache.cleared, []int64{created.ID}) {
+				t.Fatalf("Clear calls = %#v, want [%d]", cache.cleared, created.ID)
+			}
+		})
+	}
+}
+
+func TestServiceClearsMonitorCacheWhenDeleteAndResetStopRunningInstance(t *testing.T) {
+	ctx := context.Background()
+	for _, operation := range []string{"delete", "reset"} {
+		t.Run(operation, func(t *testing.T) {
+			repo := newFakeRepository()
+			fs := &fakeFilesystem{}
+			lifecycle := &fakeLifecycle{status: Status{State: "running"}}
+			cache := &fakeMonitorCacheCleaner{}
+			service := NewService(repo, fs, &fakePortAllocator{next: 7304}, lifecycle, WithMonitorCacheCleaner(cache))
+			service.generateKey = func() (string, error) { return "MONRUN01", nil }
+			created, err := service.Create(ctx, CreateRequest{Name: operation})
+			if err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+			repo.items[created.ID] = withStatus(repo.items[created.ID], "running", nil)
+
+			if operation == "delete" {
+				err = service.Delete(ctx, created.ID)
+			} else {
+				err = service.ResetData(ctx, created.ID)
+			}
+			if err != nil {
+				t.Fatalf("%s error = %v", operation, err)
+			}
+			if !reflect.DeepEqual(cache.cleared, []int64{created.ID, created.ID}) {
+				t.Fatalf("Clear calls = %#v, want [%d %d]", cache.cleared, created.ID, created.ID)
+			}
+		})
+	}
+}
+
 func TestServiceSerializesDeleteAndResetForSameInstance(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeRepository()
@@ -836,6 +896,14 @@ type fakeDeviceCacheCleaner struct {
 }
 
 func (c *fakeDeviceCacheCleaner) ClearCache(id int64) {
+	c.cleared = append(c.cleared, id)
+}
+
+type fakeMonitorCacheCleaner struct {
+	cleared []int64
+}
+
+func (c *fakeMonitorCacheCleaner) Clear(id int64) {
 	c.cleared = append(c.cleared, id)
 }
 
