@@ -27,6 +27,17 @@ type Dependencies struct {
 	Versions          VersionService
 	VersionInstaller  VersionInstaller
 	Readiness         ReadinessProbe
+	// InstanceDirResolver resolves an instance ID to its on-disk directory.
+	// Optional: used by the app layer to wire the cleanup scheduler; not
+	// consulted by any HTTP route. Defined locally to avoid an import cycle
+	// with the scheduler package.
+	InstanceDirResolver InstanceDirResolver
+}
+
+// InstanceDirResolver resolves an instance ID to its data directory path.
+// Implementations include *instances.Filesystem.
+type InstanceDirResolver interface {
+	InstanceDir(id int64) (string, error)
 }
 
 func New(deps Dependencies) http.Handler {

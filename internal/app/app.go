@@ -349,6 +349,7 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		AutoUpdate:        autoupdate,
 		Versions:          versionServiceAdapter{service: versionService},
 		VersionInstaller:  versionInstaller,
+		InstanceDirResolver: filesystem,
 	}, nil
 }
 
@@ -540,15 +541,16 @@ func buildDefaultSchedulers(interval time.Duration) func(context.Context, httpap
 		// Cleanup runner: daily midnight UTC.
 		var cleanupJob scheduler.Job
 		if deps.Instances != nil {
+			// Prefer the real filesystem resolver wired by buildHTTPDeps;
+			// fall back to a nil-safe resolver only when deps don't
+			// expose one (degraded builds).
+			resolver := scheduler.DirResolver(nilResolver{})
+			if deps.InstanceDirResolver != nil {
+				resolver = depsDirResolver{svc: deps.InstanceDirResolver}
+			}
 			cleanup := scheduler.NewCleanup(scheduler.CleanupOptions{
-				Lister: lister,
-				// DirResolver is not available from the httpapi deps interfaces;
-				// the cleanup job will log missing-dir as a no-op per instance.
-				// In production (buildHTTPDeps) the resolver is wired via the
-				// instances.Filesystem, but the httpapi.Dependencies do not
-				// expose it. We use a nil-safe resolver that returns an error
-				// per instance, which cleanup logs and skips.
-				Resolver: nilResolver{},
+				Lister:   lister,
+				Resolver: resolver,
 				Logger:   deps.Logger,
 			})
 			cleanupJob = func(ctx context.Context) error {
@@ -590,6 +592,13 @@ type nilResolver struct{}
 
 func (nilResolver) InstanceDir(id int64) (string, error) {
 	return "", fmt.Errorf("no directory resolver available")
+}
+
+// depsDirResolver adapts httpapi.InstanceDirResolver to scheduler.DirResolver.
+type depsDirResolver struct{ svc httpapi.InstanceDirResolver }
+
+func (d depsDirResolver) InstanceDir(id int64) (string, error) {
+	return d.svc.InstanceDir(id)
 }
 
 // depsVersionLister adapts httpapi.VersionService to scheduler.VersionLister.
