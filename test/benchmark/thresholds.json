@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GOWA Manager Go-vs-Bun Acceptance Thresholds",
+  "description": "Numeric tolerances that gate the Go backend against the captured Bun baseline. Each threshold expresses the maximum acceptable deviation of the Go measurement from the Bun baseline. A scenario fails if Go exceeds the tolerance. Thresholds are expressed as percentages unless noted otherwise. 'informational' scenarios have no threshold and never cause a failure.",
+  "note": "Threshold values require owner approval. These are initial proposals based on observed variance in local benchmark runs. Do NOT relax thresholds to make a failure disappear — a failure must be reported as a blocked release with measured regressions.",
+  "approvalRequired": true,
+  "rationale": "Tolerances were derived from observed run-to-run variance in the Bun baseline (3 samples per scenario on a local Windows machine). Scenarios with higher variance (cold startup, WebSocket) received wider tolerances; scenarios with low variance (idle RSS, proxy throughput) received tighter tolerances. The idle RSS threshold is 0% because the Go backend must not consume more memory than Bun at idle — this is a hard requirement, not a tolerance.",
+  "metadataMatch": {
+    "required": ["os", "arch", "cpu", "cpuCount"],
+    "description": "Machine metadata must match between Bun and Go baselines. OS, architecture, CPU model, and CPU count must all be identical. A mismatch rejects the comparison entirely."
+  },
+  "scenarios": {
+    "coldStartup": {
+      "metric": "median",
+      "unit": "ms",
+      "type": "relative",
+      "maxPercentRegression": 50,
+      "rationale": "Cold startup is dominated by process initialization and first-request JIT/compile overhead, which varies significantly run-to-run (observed ~5% variance even within 5 samples). 50% tolerance accommodates Go's potentially different startup characteristics (compiled binary vs Bun runtime) while still catching catastrophic regressions."
+    },
+    "idleRss": {
+      "metric": "median",
+      "unit": "bytes",
+      "type": "absoluteNoWorse",
+      "maxPercentRegression": 0,
+      "rationale": "Go must not exceed Bun's idle RSS. This is a hard requirement — the Go backend is expected to be leaner at idle due to being a compiled binary without a JS runtime. 0% tolerance means Go RSS must be <= Bun RSS."
+    },
+    "crudLatency": {
+      "metric": "p95",
+      "unit": "ms",
+      "type": "relative",
+      "maxPercentRegression": 30,
+      "rationale": "CRUD operations are SQLite-bound with low variance (observed p95 spread ~10-15%). 30% tolerance allows for Go's database driver differences (modernc.org/sqlite vs Bun's bun:sqlite) while catching meaningful regressions."
+    },
+    "proxyHttpThroughput": {
+      "metric": "median",
+      "unit": "req/s",
+      "type": "relativeNoRegression",
+      "maxPercentRegression": 20,
+      "rationale": "HTTP proxy throughput is the core function of GOWA Manager. Observed variance in the Bun baseline was ~7% across 3 samples. 20% tolerance allows for Go's net/http stack differences while ensuring no material throughput regression. 'No regression' means Go throughput must be >= 80% of Bun throughput."
+    },
+    "proxyHttpLatency": {
+      "metric": "p95",
+      "unit": "ms",
+      "type": "relative",
+      "maxPercentRegression": 25,
+      "rationale": "Proxy latency p95 showed ~12% variance in the baseline. 25% tolerance accommodates Go's HTTP handling overhead while catching significant latency regressions."
+    },
+    "webSocketThroughput": {
+      "metric": "median",
+      "unit": "msg/s",
+      "type": "relative",
+      "maxPercentRegression": 30,
+      "rationale": "WebSocket throughput showed ~3% variance in the baseline but WebSocket proxying involves more moving parts (gorilla/coder.websocket vs Bun's native WS). 30% tolerance allows for library-level differences while ensuring stable behavior."
+    },
+    "webSocketLatency": {
+      "metric": "p95",
+      "unit": "ms",
+      "type": "relative",
+      "maxPercentRegression": 30,
+      "rationale": "WebSocket per-message latency p95. Same rationale as throughput — library differences justify a wider tolerance."
+    },
+    "monitoringCostCpu": {
+      "metric": "median",
+      "unit": "%",
+      "type": "relative",
+      "maxPercentRegression": 30,
+      "rationale": "Monitoring CPU cost is inherently noisy (observed 0-0.6% in baseline). 30% tolerance on a near-zero value is generous but the absolute threshold also guards against runaway CPU. If Bun CPU is 0%, Go must also be effectively idle (< 2% absolute)."
+    },
+    "gracefulShutdown": {
+      "metric": "median",
+      "unit": "ms",
+      "type": "absoluteBound",
+      "absoluteMaxMs": 5000,
+      "rationale": "Graceful shutdown must be bounded — the process must exit within 5 seconds of SIGTERM/SIGINT. This is an absolute bound, not relative to Bun, because shutdown duration is a correctness/operational requirement. (Note: the Bun baseline showed ~10s which itself may need investigation, but the Go backend must meet the 5s bound regardless.)"
+    },
+    "executableSize": {
+      "type": "informational",
+      "rationale": "Go and Bun produce fundamentally different binary types (Go compiled binary vs Bun standalone bundle). Size differences are expected and not a gating factor."
+    },
+    "dockerImageSize": {
+      "type": "informational",
+      "rationale": "Docker image size depends on the base image and build approach, which differ between Go and Bun. Informational only."
+    }
+  },
+  "leakDetection": {
+    "description": "Leak detection thresholds for repeated load runs. Compares beginning vs. end metrics after 1,000 HTTP requests, 500 WebSocket cycles, and 100 process start/stop cycles.",
+    "goroutines": {
+      "maxDelta": 20,
+      "rationale": "Goroutine count must not grow by more than 20 after all load cycles. Allows for runtime/scheduler goroutine fluctuation while catching true leaks."
+    },
+    "rss": {
+      "maxPercentGrowth": 10,
+      "rationale": "RSS may grow slightly due to runtime caching and GC behavior, but >10% growth after load cycles indicates a leak."
+    },
+    "fds": {
+      "maxDelta": 20,
+      "rationale": "File descriptor / handle count must not grow by more than 20. Allows for OS-level FD caching while catching descriptor leaks."
+    }
+  }
+}

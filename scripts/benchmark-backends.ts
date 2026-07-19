@@ -169,6 +169,32 @@ const IDLE_STABILIZATION_SECONDS = 5
 // Statistics helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Remove a directory recursively, retrying on Windows where the OS may
+ * hold file locks briefly after process exit (EBUSY). If the directory
+ * still cannot be removed after all retries, the error is swallowed
+ * (best-effort cleanup) to avoid masking the actual benchmark results.
+ */
+async function rmSyncRetry(path: string): Promise<void> {
+  const maxAttempts = 10
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      rmSync(path, { recursive: true, force: true })
+      return
+    } catch {
+      if (attempt < maxAttempts - 1) {
+        await Bun.sleep(1000)
+      }
+    }
+  }
+  // Final best-effort attempt — swallow error to avoid masking results.
+  try {
+    rmSync(path, { recursive: true, force: true })
+  } catch {
+    // Leave it for the OS to clean up; the temp dir is in tmpdir().
+  }
+}
+
 function median(values: number[]): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
@@ -302,6 +328,9 @@ async function startBackend(
     env: {
       ...process.env,
       NODE_ENV: 'production',
+      // Enable the Go backend's /metrics endpoint so leak detection tests
+      // can query goroutine counts via Prometheus text format.
+      ...(backend === 'go' ? { GOWA_METRICS_ENABLED: '1' } : {}),
     },
   })
 
@@ -668,7 +697,7 @@ async function benchColdStartup(
       await waitForHealth(port)
     } finally {
       await killBackend(mp)
-      rmSync(dataDir, { recursive: true, force: true })
+      await rmSyncRetry(dataDir)
     }
   }
 
@@ -683,7 +712,7 @@ async function benchColdStartup(
       samples.push(elapsed)
     } finally {
       await killBackend(mp)
-      rmSync(dataDir, { recursive: true, force: true })
+      await rmSyncRetry(dataDir)
     }
     process.stdout.write(`  cold startup [${i + 1}/${COLD_STARTUP_SAMPLES}] ${samples[samples.length - 1].toFixed(1)} ms\n`)
   }
@@ -711,7 +740,7 @@ async function benchIdleRss(backend: 'bun' | 'go'): Promise<SizeScenario> {
       process.stdout.write(`  idle rss [${i + 1}/${rssRuns}] ${(rss / 1024 / 1024).toFixed(1)} MB\n`)
     } finally {
       await killBackend(mp)
-      rmSync(dataDir, { recursive: true, force: true })
+      await rmSyncRetry(dataDir)
     }
   }
 
@@ -1152,7 +1181,7 @@ async function benchGracefulShutdown(
     } catch {
       await killBackend(mp)
     }
-    rmSync(dataDir, { recursive: true, force: true })
+    await rmSyncRetry(dataDir)
   }
 
   return durationScenario(samples, 'ms')
@@ -1216,7 +1245,7 @@ async function benchExecutableSize(backend: 'bun' | 'go'): Promise<SizeScenario>
     process.stdout.write(`  executable size: ${(size / 1024 / 1024).toFixed(1)} MB\n`)
     return sizeScenario([size], 'bytes')
   } finally {
-    rmSync(tmpDir, { recursive: true, force: true })
+    await rmSyncRetry(tmpDir)
   }
 }
 
@@ -1486,7 +1515,7 @@ async function main(): Promise<void> {
     try {
       await killBackend(mainProc)
     } catch {}
-    rmSync(mainDataDir, { recursive: true, force: true })
+    await rmSyncRetry(mainDataDir)
   }
 }
 

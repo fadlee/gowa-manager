@@ -18,6 +18,7 @@ src/version.ts
 /gowa-manager
 /gowa-manager-go
 /gowa-manager-go.exe
+/gowa-manager-go.exe~
 /dist-go/
 /.contract-tmp/
 /spike/
