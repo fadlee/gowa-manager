@@ -40,8 +40,14 @@ log() { printf '%s\n' "$1" >&2; }
 
 # Compute SHA-256 of a file and print just the hex digest.  Strips the
 # leading backslash that some sha256sum implementations emit in text mode.
+# Uses a safe two-branch pattern (no eval) to avoid command injection when
+# file paths contain special characters.
 compute_sha() {
-  _h=$(eval "$SHA_CMD \"$1\"" 2>/dev/null | awk '{print $1}')
+  if [ "$SHA_CMD" = "sha256sum" ]; then
+    _h=$(sha256sum "$1" 2>/dev/null | awk '{print $1}')
+  else
+    _h=$(shasum -a 256 "$1" 2>/dev/null | awk '{print $1}')
+  fi
   # Strip a leading backslash (text-mode indicator on some platforms).
   _h=${_h#\\}
   [ -n "$_h" ] || _h="error"
@@ -91,6 +97,29 @@ START_TS=$(now_iso)
 if [ -z "$BACKUP_DIR" ]; then
   BACKUP_DIR="./backup/$(date -u '+%Y%m%d-%H%M%S')"
 fi
+
+# ---------------------------------------------------------------------------
+# Initialise output accumulators (defined before verify mode so that the
+# verify branch can call add_error before its own definitions would appear).
+# ---------------------------------------------------------------------------
+ERRORS=""
+FILES_JSON=""
+add_error() {
+  if [ -z "$ERRORS" ]; then
+    ERRORS=$(jstr "$1")
+  else
+    ERRORS="$ERRORS,$(jstr "$1")"
+  fi
+}
+add_file() {
+  # $1=relative path  $2=sha256  $3=size
+  _entry="{\"path\":$(jstr "$1"),\"sha256\":$(jstr "$2"),\"size\":$3}"
+  if [ -z "$FILES_JSON" ]; then
+    FILES_JSON="$_entry"
+  else
+    FILES_JSON="$FILES_JSON,$_entry"
+  fi
+}
 
 # ---------------------------------------------------------------------------
 # Verify mode: re-read the manifest and re-hash all files.  No backup is
@@ -186,28 +215,6 @@ EOF
   fi
   exit $verify_exit
 fi
-
-# ---------------------------------------------------------------------------
-# Initialise output accumulators
-# ---------------------------------------------------------------------------
-ERRORS=""
-FILES_JSON=""
-add_error() {
-  if [ -z "$ERRORS" ]; then
-    ERRORS=$(jstr "$1")
-  else
-    ERRORS="$ERRORS,$(jstr "$1")"
-  fi
-}
-add_file() {
-  # $1=relative path  $2=sha256  $3=size
-  _entry="{\"path\":$(jstr "$1"),\"sha256\":$(jstr "$2"),\"size\":$3}"
-  if [ -z "$FILES_JSON" ]; then
-    FILES_JSON="$_entry"
-  else
-    FILES_JSON="$FILES_JSON,$_entry"
-  fi
-}
 
 # ---------------------------------------------------------------------------
 # Validate prerequisites

@@ -60,7 +60,7 @@ $startTs = Now-Iso
 
 # Default backup dir with timestamp.
 if (-not $BackupDir) {
-  $BackupDir = "./backup/$(Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')"
+  $BackupDir = "./backup/$((Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))"
 }
 
 # ---------------------------------------------------------------------------
@@ -260,7 +260,9 @@ if (Test-Path $dbPath -PathType Leaf) {
   $dbDest = Join-Path $BackupDir $dbBackupName
   if ($journalMode -eq 'wal') {
     # Use SQLite online backup API via the .backup command.
-    $backupCmd = ".backup '$dbDest'"
+    # Escape single quotes in the path to prevent SQLite command injection.
+    $escapedDest = $dbDest -replace "'", "''"
+    $backupCmd = ".backup '$escapedDest'"
     $null = & $SqliteBin $dbPath $backupCmd 2>$null
     if ($LASTEXITCODE -eq 0 -and (Test-Path $dbDest)) {
       $method = 'online_backup'

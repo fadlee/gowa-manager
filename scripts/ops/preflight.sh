@@ -72,7 +72,13 @@ compute_sha() {
     printf 'error'
     return
   fi
-  _h=$(eval "$SHA_CMD \"$1\"" 2>/dev/null | awk '{print $1}')
+  # Use a safe two-branch pattern (no eval) to avoid command injection
+  # when file paths contain special characters.
+  if [ "$SHA_CMD" = "sha256sum" ]; then
+    _h=$(sha256sum "$1" 2>/dev/null | awk '{print $1}')
+  else
+    _h=$(shasum -a 256 "$1" 2>/dev/null | awk '{print $1}')
+  fi
   # Strip a leading backslash (text-mode indicator on some platforms).
   _h=${_h#\\}
   [ -n "$_h" ] || _h="error"

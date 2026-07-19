@@ -40,6 +40,7 @@ param(
 
   [string]$SqliteBin = 'sqlite3',
 
+  [Alias('min-space')]
   [long]$MinSpace = 10485760
 )
 
