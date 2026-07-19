@@ -60,7 +60,7 @@ type Monitor struct {
 }
 
 type diskEntry struct {
-	value *float64
+	value float64
 	at    time.Time
 }
 
@@ -139,18 +139,18 @@ func (m *Monitor) disk(ctx context.Context, instanceID int64, dataDir string) *f
 	m.mu.Lock()
 	if entry, ok := m.disks[instanceID]; ok && now.Sub(entry.at) < m.ttl {
 		m.mu.Unlock()
-		return entry.value
+		value := entry.value
+		return &value
 	}
 	m.mu.Unlock()
 	value, err := m.sampler.DiskUsageMB(ctx, dataDir)
-	var ptr *float64
-	if err == nil {
-		ptr = &value
+	if err != nil {
+		return nil
 	}
 	m.mu.Lock()
-	m.disks[instanceID] = diskEntry{value: ptr, at: now}
+	m.disks[instanceID] = diskEntry{value: value, at: now}
 	m.mu.Unlock()
-	return ptr
+	return &value
 }
 
 type GopsutilSampler struct{}

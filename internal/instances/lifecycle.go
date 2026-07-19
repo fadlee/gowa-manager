@@ -46,6 +46,7 @@ type LifecycleOptions struct {
 	Supervisor      ProcessSupervisor
 	DeviceCache     DeviceCacheCleaner
 	Monitor         ProcessMonitor
+	MonitorTimeout  time.Duration
 	Now             func() time.Time
 	Sleep           func(context.Context, time.Duration) error
 }
@@ -61,16 +62,17 @@ type LifecycleStatus struct {
 }
 
 type LifecycleService struct {
-	repo       Repository
-	fs         InstanceFilesystem
-	ports      PortAllocator
-	checker    PortChecker
-	versions   VersionResolver
-	supervisor ProcessSupervisor
-	cache      DeviceCacheCleaner
-	monitor    ProcessMonitor
-	now        func() time.Time
-	sleep      func(context.Context, time.Duration) error
+	repo           Repository
+	fs             InstanceFilesystem
+	ports          PortAllocator
+	checker        PortChecker
+	versions       VersionResolver
+	supervisor     ProcessSupervisor
+	cache          DeviceCacheCleaner
+	monitor        ProcessMonitor
+	monitorTimeout time.Duration
+	now            func() time.Time
+	sleep          func(context.Context, time.Duration) error
 
 	mu      sync.Mutex
 	startMu map[int64]*startLock
@@ -99,7 +101,11 @@ func NewLifecycleService(opts LifecycleOptions) *LifecycleService {
 			}
 		}
 	}
-	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, now: now, sleep: sleep, startMu: make(map[int64]*startLock)}
+	monitorTimeout := opts.MonitorTimeout
+	if monitorTimeout <= 0 {
+		monitorTimeout = 200 * time.Millisecond
+	}
+	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, monitorTimeout: monitorTimeout, now: now, sleep: sleep, startMu: make(map[int64]*startLock)}
 }
 
 func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus, error) {
@@ -338,7 +344,9 @@ func (s *LifecycleService) statusFrom(ctx context.Context, instance Instance, sn
 				dataDir = dir
 			}
 		}
-		if resources, ok := s.monitor.Resources(ctx, instance.ID, snapshot.PID, dataDir); ok {
+		monitorCtx, cancel := context.WithTimeout(ctx, s.monitorTimeout)
+		defer cancel()
+		if resources, ok := s.monitor.Resources(monitorCtx, instance.ID, snapshot.PID, dataDir); ok {
 			status.Resources = &resources
 		}
 	}

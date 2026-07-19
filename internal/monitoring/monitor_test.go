@@ -41,7 +41,7 @@ func TestMonitorOmitsResourcesForMissingOrExitedPID(t *testing.T) {
 	}
 }
 
-func TestMonitorOmitsDiskOnFilesystemErrorAndCachesDiskTraversal(t *testing.T) {
+func TestMonitorOmitsDiskOnFilesystemErrorAndDoesNotCacheError(t *testing.T) {
 	now := time.Unix(10, 0)
 	sampler := &fakeSampler{processes: map[int]ProcessSample{10: {PID: 10, CPUPercent: 1, MemoryMB: 2, MemoryPercent: 3}}, diskErr: errors.New("denied")}
 	m := New(MonitorOptions{Sampler: sampler, HistoryLimit: 5, DiskCacheTTL: time.Second, Now: func() time.Time { return now }})
@@ -53,13 +53,23 @@ func TestMonitorOmitsDiskOnFilesystemErrorAndCachesDiskTraversal(t *testing.T) {
 	sampler.diskErr = nil
 	sampler.diskMB = 42
 	res, ok = m.Resources(context.Background(), 1, 10, `dir`)
-	if !ok || res.DiskMB != nil || sampler.diskCalls != 1 {
-		t.Fatalf("cached error Resources = %+v ok %v diskCalls %d, want omitted cached disk", res, ok, sampler.diskCalls)
-	}
-	now = now.Add(time.Second + time.Nanosecond)
-	res, ok = m.Resources(context.Background(), 1, 10, `dir`)
 	if !ok || res.DiskMB == nil || *res.DiskMB != 42 || sampler.diskCalls != 2 {
-		t.Fatalf("expired cache Resources = %+v ok %v diskCalls %d, want disk 42", res, ok, sampler.diskCalls)
+		t.Fatalf("retry after error Resources = %+v ok %v diskCalls %d, want disk 42", res, ok, sampler.diskCalls)
+	}
+}
+
+func TestMonitorCachesSuccessfulZeroDiskUsage(t *testing.T) {
+	sampler := &fakeSampler{processes: map[int]ProcessSample{10: {PID: 10, CPUPercent: 1, MemoryMB: 2, MemoryPercent: 3}}, diskMB: 0}
+	m := New(MonitorOptions{Sampler: sampler, HistoryLimit: 5, DiskCacheTTL: time.Second})
+
+	res, ok := m.Resources(context.Background(), 1, 10, `dir`)
+	if !ok || res.DiskMB == nil || *res.DiskMB != 0 {
+		t.Fatalf("Resources = %+v ok %v, want zero disk", res, ok)
+	}
+	sampler.diskErr = errors.New("transient")
+	res, ok = m.Resources(context.Background(), 1, 10, `dir`)
+	if !ok || res.DiskMB == nil || *res.DiskMB != 0 || sampler.diskCalls != 1 {
+		t.Fatalf("cached zero Resources = %+v ok %v diskCalls %d, want cached zero", res, ok, sampler.diskCalls)
 	}
 }
 

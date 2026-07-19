@@ -283,6 +283,27 @@ func TestLifecycleStatusIncludesMonitorResourcesForManagedRunningPID(t *testing.
 	}
 }
 
+func TestLifecycleStatusOmitsResourcesWhenMonitorExceedsTimeout(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	lc.monitorTimeout = 10 * time.Millisecond
+	deps.repo.instances[1] = testInstance(1, "running", 3000)
+	deps.monitor.blockUntilCanceled = true
+	deps.monitor.resources = monitoring.Resources{CPUPercent: 12.5, MemoryMB: 128, MemoryPercent: 25}
+	deps.monitor.ok = true
+	deps.supervisor.status = map[int64]supervisor.ProcessSnapshot{1: {InstanceID: 1, State: supervisor.StateRunning, PID: 4321, StartedAt: deps.now()}}
+
+	status, err := lc.Status(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Status error = %v", err)
+	}
+	if status.Resources != nil {
+		t.Fatalf("resources = %+v, want omitted after monitor timeout", status.Resources)
+	}
+	if deps.monitor.ctxErr == nil || !errors.Is(deps.monitor.ctxErr, context.DeadlineExceeded) {
+		t.Fatalf("monitor ctx err = %v, want deadline exceeded", deps.monitor.ctxErr)
+	}
+}
+
 func TestLifecycleStatusToleratesMonitorFailureAndSkipsNonRunningPID(t *testing.T) {
 	lc, deps := newTestLifecycle(t)
 	deps.repo.instances[1] = testInstance(1, "running", 3000)
@@ -573,18 +594,25 @@ type fakeLifecycleCache struct{ cleared []int64 }
 func (c *fakeLifecycleCache) ClearCache(id int64) { c.cleared = append(c.cleared, id) }
 
 type fakeLifecycleMonitor struct {
-	resources  monitoring.Resources
-	ok         bool
-	calls      int
-	instanceID int64
-	pid        int
-	cleared    []int64
+	resources          monitoring.Resources
+	ok                 bool
+	calls              int
+	instanceID         int64
+	pid                int
+	cleared            []int64
+	blockUntilCanceled bool
+	ctxErr             error
 }
 
-func (m *fakeLifecycleMonitor) Resources(_ context.Context, instanceID int64, pid int, _ string) (monitoring.Resources, bool) {
+func (m *fakeLifecycleMonitor) Resources(ctx context.Context, instanceID int64, pid int, _ string) (monitoring.Resources, bool) {
 	m.calls++
 	m.instanceID = instanceID
 	m.pid = pid
+	if m.blockUntilCanceled {
+		<-ctx.Done()
+		m.ctxErr = ctx.Err()
+		return monitoring.Resources{}, false
+	}
 	return m.resources, m.ok
 }
 
