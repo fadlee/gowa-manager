@@ -19,6 +19,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/instances"
 	"github.com/fadlee/gowa-manager/internal/ownership"
 	staticassets "github.com/fadlee/gowa-manager/internal/static"
+	"github.com/fadlee/gowa-manager/internal/supervisor"
 	"github.com/fadlee/gowa-manager/internal/system"
 	"github.com/fadlee/gowa-manager/internal/versions"
 )
@@ -159,18 +160,18 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		return httpapi.Dependencies{}, err
 	}
 	portAllocator := system.NewPortAllocator(repo)
-	lifecycle := runtimeNotReadyLifecycle{}
-	serviceLifecycle := runtimeNotReadyInstanceLifecycle{}
 	deviceClient := instances.NewDeviceClient(instances.DeviceClientOptions{})
 	releases := versions.NewGitHubClient("", nil)
 	versionService := versions.NewService(opts.DataDir, releases)
 	versionInstaller := versions.NewInstaller(opts.DataDir, releases, nil)
-	instanceService := instances.NewService(repo, filesystem, portAllocator, serviceLifecycle, instances.WithDeviceCacheCleaner(deviceClient))
+	processSupervisor := supervisor.New(supervisor.SupervisorConfig{})
+	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient})
+	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient))
 	return httpapi.Dependencies{
 		Logger:            opts.Logger,
 		StaticFS:          staticassets.FS(),
 		Instances:         instanceService,
-		InstanceLifecycle: lifecycle,
+		InstanceLifecycle: appHTTPLifecycle{service: lifecycle},
 		DeviceClient:      deviceClient,
 		ConnectionTester:  instances.NewConnectionTester(instances.ConnectionTesterOptions{}),
 		AdminLinkIssuer:   runtimeNotReadyAdminLinks{},
@@ -192,36 +193,42 @@ func dbFromCloser(closer Closer) (*database.DB, bool) {
 	return nil, false
 }
 
-type runtimeNotReadyLifecycle struct{}
+type appHTTPLifecycle struct{ service *instances.LifecycleService }
 
-func (runtimeNotReadyLifecycle) Start(context.Context, int64) (httpapi.InstanceStatus, error) {
-	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+func (a appHTTPLifecycle) Start(ctx context.Context, id int64) (httpapi.InstanceStatus, error) {
+	return toHTTPInstanceStatus(a.service.Start(ctx, id))
 }
 
-func (runtimeNotReadyLifecycle) Stop(context.Context, int64) (httpapi.InstanceStatus, error) {
-	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+func (a appHTTPLifecycle) Stop(ctx context.Context, id int64) (httpapi.InstanceStatus, error) {
+	return toHTTPInstanceStatus(a.service.Stop(ctx, id))
 }
 
-func (runtimeNotReadyLifecycle) Kill(context.Context, int64) (httpapi.InstanceStatus, error) {
-	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+func (a appHTTPLifecycle) Kill(ctx context.Context, id int64) (httpapi.InstanceStatus, error) {
+	return toHTTPInstanceStatus(a.service.Kill(ctx, id))
 }
 
-func (runtimeNotReadyLifecycle) Restart(context.Context, int64) (httpapi.InstanceStatus, error) {
-	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+func (a appHTTPLifecycle) Restart(ctx context.Context, id int64) (httpapi.InstanceStatus, error) {
+	return toHTTPInstanceStatus(a.service.Restart(ctx, id))
 }
 
-func (runtimeNotReadyLifecycle) Status(context.Context, int64) (httpapi.InstanceStatus, error) {
-	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+func (a appHTTPLifecycle) Status(ctx context.Context, id int64) (httpapi.InstanceStatus, error) {
+	return toHTTPInstanceStatus(a.service.Status(ctx, id))
 }
 
-type runtimeNotReadyInstanceLifecycle struct{}
+type appServiceLifecycle struct{ service *instances.LifecycleService }
 
-func (runtimeNotReadyInstanceLifecycle) Stop(context.Context, int64) (instances.Status, error) {
-	return instances.Status{}, instances.ErrRuntimeNotReady
+func (a appServiceLifecycle) Stop(ctx context.Context, id int64) (instances.Status, error) {
+	status, err := a.service.Stop(ctx, id)
+	return instances.Status{State: status.Status}, err
 }
 
-func (runtimeNotReadyInstanceLifecycle) Status(context.Context, int64) (instances.Status, error) {
-	return instances.Status{}, instances.ErrRuntimeNotReady
+func (a appServiceLifecycle) Status(ctx context.Context, id int64) (instances.Status, error) {
+	status, err := a.service.Status(ctx, id)
+	return instances.Status{State: status.Status}, err
+}
+
+func toHTTPInstanceStatus(status instances.LifecycleStatus, err error) (httpapi.InstanceStatus, error) {
+	return httpapi.InstanceStatus{ID: status.ID, Name: status.Name, Status: status.Status, Port: status.Port, PID: status.PID, Uptime: status.Uptime}, err
 }
 
 type runtimeNotReadyAdminLinks struct{}
@@ -233,6 +240,12 @@ func (runtimeNotReadyAdminLinks) CreateAdminLink(context.Context, instances.Inst
 type appPortChecker struct{}
 
 func (appPortChecker) IsPortAvailable(port int) bool { return system.IsPortAvailable(port) }
+
+type appVersionResolver struct{ service *versions.Service }
+
+func (a appVersionResolver) ResolveVersionPath(_ context.Context, version string) (string, error) {
+	return a.service.GetVersionBinaryPathSafe(version)
+}
 
 type versionServiceAdapter struct{ service *versions.Service }
 

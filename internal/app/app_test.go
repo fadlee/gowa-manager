@@ -273,7 +273,7 @@ func TestBuildHTTPDepsWiresConfiguredDataPaths(t *testing.T) {
 	}
 }
 
-func TestBuildHTTPDepsLifecycleRoutesReturnRuntimeNotReady(t *testing.T) {
+func TestBuildHTTPDepsWiresRealLifecycleStatusRoute(t *testing.T) {
 	ctx := context.Background()
 	dataDir := t.TempDir()
 	db, err := database.Open(ctx, dataDir)
@@ -289,14 +289,18 @@ func TestBuildHTTPDepsLifecycleRoutesReturnRuntimeNotReady(t *testing.T) {
 	handler := httpapi.New(deps)
 	created := createInstanceViaHandler(t, handler, "runtime")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/instances/"+int64Text(created.ID)+"/start", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/instances/"+int64Text(created.ID)+"/status", nil)
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
-	if resp.Code != http.StatusServiceUnavailable {
-		t.Fatalf("start status = %d body = %s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status route status = %d body = %s", resp.Code, resp.Body.String())
 	}
-	if !bytes.Contains(resp.Body.Bytes(), []byte(instances.ErrRuntimeNotReady.Error())) {
-		t.Fatalf("start body = %s, want runtime-not-ready error", resp.Body.String())
+	var status httpapi.InstanceStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status.ID != created.ID || status.Name != "runtime" || status.Status != "stopped" || status.PID != nil {
+		t.Fatalf("status body = %#v, want stopped lifecycle status", status)
 	}
 }
 
