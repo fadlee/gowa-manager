@@ -1437,13 +1437,13 @@ async function main(): Promise<void> {
     const monitoringCost = await benchMonitoringCost(args.backend, mainProc)
     console.log(`  → cpu ${monitoringCost.cpuPercent.median.toFixed(1)}%, rss ${(monitoringCost.rssBytes.median / 1024 / 1024).toFixed(1)} MB\n`)
 
-    // Scenario 7: Graceful shutdown (uses the main process)
+    // Scenario 7: Graceful shutdown
+    // Stop the main process first (used by earlier scenarios), then take
+    // multiple fresh samples for statistical significance.
     console.log('Scenario 7: Graceful shutdown')
-    const shutdownStart = performance.now()
-    const shutdownElapsed = await stopBackend(mainProc, 10000)
-    const gracefulShutdown = durationScenario([shutdownElapsed], 'ms')
-    console.log(`  → ${shutdownElapsed.toFixed(1)} ms\n`)
-    void shutdownStart
+    await stopBackend(mainProc, 10000)
+    const gracefulShutdown = await benchGracefulShutdown(args.backend)
+    console.log(`  → median ${gracefulShutdown.median.toFixed(1)} ms, p95 ${gracefulShutdown.p95.toFixed(1)} ms\n`)
 
     // Scenario 8: Executable size
     console.log('Scenario 8: Executable size')
