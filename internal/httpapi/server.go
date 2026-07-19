@@ -20,6 +20,12 @@ type Dependencies struct {
 	DeviceClient      InstanceDeviceClient
 	ConnectionTester  InstanceConnectionTester
 	AdminLinkIssuer   AdminLinkIssuer
+	System            SystemService
+	PortAllocator     PortAllocator
+	PortChecker       PortChecker
+	AutoUpdate        AutoUpdateService
+	Versions          VersionService
+	VersionInstaller  VersionInstaller
 }
 
 func New(deps Dependencies) http.Handler {
@@ -27,6 +33,12 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/health", healthHandler)
 	if deps.Instances != nil {
 		registerInstanceRoutes(mux, deps)
+	}
+	if deps.System != nil && deps.PortAllocator != nil {
+		registerSystemRoutes(mux, deps)
+	}
+	if deps.Versions != nil {
+		registerVersionRoutes(mux, deps)
 	}
 	if deps.TestPanicRoute {
 		mux.HandleFunc("/api/__panic", func(http.ResponseWriter, *http.Request) { panic("test panic") })
