@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/auth"
 	"github.com/fadlee/gowa-manager/internal/instances"
 )
 
@@ -139,35 +141,6 @@ func TestInstanceRoutes(t *testing.T) {
 		assertBodyFields(t, rec, map[string]any{"success": false})
 	})
 
-	t.Run("admin-link returns plain link without basic auth", func(t *testing.T) {
-		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil)
-		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/"})
-	})
-
-	t.Run("admin-link returns 503 for basic auth without issuer", func(t *testing.T) {
-		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) {
-			i.Config = `{"flags":{"basicAuth":[{"username":"admin","password":"secret"}]}}`
-		}))
-		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil)
-		assertStatus(t, rec, http.StatusServiceUnavailable)
-		assertBodyFields(t, rec, map[string]any{"success": false})
-	})
-
-	t.Run("admin-link returns issuer URL and expiry when basic auth exists", func(t *testing.T) {
-		expiresAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-		issuer := &fakeAdminLinkIssuer{link: AdminLink{URL: "/app/TESTKEY1/?autologin=issued-token", ExpiresAt: &expiresAt}}
-		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) {
-			i.Config = `{"flags":{"basicAuth":[{"username":"admin","password":"secret"}]}}`
-		}))
-		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil, withAdminLinkIssuer(issuer))
-		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/?autologin=issued-token", "expiresAt": "2026-01-01T12:00:00Z"})
-		if issuer.called != 1 {
-			t.Fatalf("issuer called %d times, want 1", issuer.called)
-		}
-	})
-
 	t.Run("test-connection returns fake connection payload", func(t *testing.T) {
 		conn := &fakeConnectionTester{result: instances.ConnectionTestResult{OK: true, Status: 200, Message: "Connection successful. The instance responded to GET /devices.", Body: `{"devices":[]}`}}
 		rec := serveInstanceRequest(newFakeInstanceService(withInstance(instance, func(i *instances.Instance) { i.Status = "running" })), nil, nil, http.MethodPost, "/api/instances/1/test-connection", nil, withConnectionTester(conn))
@@ -214,6 +187,125 @@ func TestInstanceRoutes(t *testing.T) {
 	})
 }
 
+func TestAdminLink(t *testing.T) {
+	baseTime := "2026-01-01T00:00:00.000Z"
+	port := 19500
+	instance := instances.Instance{ID: 1, Key: "TESTKEY1", Name: "test-instance", Port: &port, Status: "stopped", Config: "{}", GOWAVersion: "latest", CreatedAt: baseTime, UpdatedAt: baseTime}
+	basicAuthConfig := `{"flags":{"basicAuth":[{"username":"admin","password":"secret"}]}}`
+
+	t.Run("returns plain link without basic auth and omits expiresAt", func(t *testing.T) {
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil)
+		assertStatus(t, rec, http.StatusOK)
+		body := decodeBody(t, rec)
+		if body["url"] != "/app/TESTKEY1/" {
+			t.Fatalf("url = %#v, want /app/TESTKEY1/", body["url"])
+		}
+		if _, ok := body["expiresAt"]; ok {
+			t.Fatalf("unexpected expiresAt in %v", body)
+		}
+	})
+
+	t.Run("returns 503 for basic auth without issuer", func(t *testing.T) {
+		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) { i.Config = basicAuthConfig }))
+		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil)
+		assertStatus(t, rec, http.StatusServiceUnavailable)
+		assertBodyFields(t, rec, map[string]any{"success": false})
+	})
+
+	t.Run("returns issuer URL and expiry when basic auth exists", func(t *testing.T) {
+		expiresAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+		issuer := &fakeAdminLinkIssuer{link: AdminLink{URL: "/app/TESTKEY1/?autologin=issued-token", ExpiresAt: &expiresAt}}
+		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) { i.Config = basicAuthConfig }))
+		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil, withAdminLinkIssuer(issuer))
+		assertStatus(t, rec, http.StatusOK)
+		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/?autologin=issued-token", "expiresAt": "2026-01-01T12:00:00Z"})
+		if issuer.called != 1 {
+			t.Fatalf("issuer called %d times, want 1", issuer.called)
+		}
+	})
+
+	t.Run("returns 404 for missing instance", func(t *testing.T) {
+		service := newFakeInstanceService(instance)
+		service.err = instances.ErrNotFound
+		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/999/admin-link", nil)
+		assertStatus(t, rec, http.StatusNotFound)
+		assertJSON(t, rec, map[string]any{"error": "Instance not found", "success": false})
+	})
+
+	t.Run("mints real token via MagicAuthService when basic auth exists", func(t *testing.T) {
+		magic := auth.NewMagicAuthServiceWithSecret("test-secret")
+		issuer := NewMagicAdminLinkIssuer(magic)
+		authedInstance := withInstance(instance, func(i *instances.Instance) { i.Config = basicAuthConfig })
+		service := newFakeInstanceService(authedInstance)
+		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil, withAdminLinkIssuer(issuer))
+		assertStatus(t, rec, http.StatusOK)
+
+		body := decodeBody(t, rec)
+		rawURL, ok := body["url"].(string)
+		if !ok {
+			t.Fatalf("missing url field in %v", body)
+		}
+		wantPrefix := "/app/TESTKEY1/?autologin="
+		if !strings.HasPrefix(rawURL, wantPrefix) {
+			t.Fatalf("url = %q, want prefix %q", rawURL, wantPrefix)
+		}
+		token := strings.TrimPrefix(rawURL, wantPrefix)
+		if token == "" {
+			t.Fatalf("autologin token is empty in url %q", rawURL)
+		}
+		// The token must be URL-decodable and validate against the service.
+		decoded, err := url.QueryUnescape(token)
+		if err != nil {
+			t.Fatalf("autologin token not URL-escaped: %v", err)
+		}
+		if !magic.ValidateToken(decoded, authedInstance.Key, time.Now()) {
+			t.Fatalf("autologin token %q failed validation", decoded)
+		}
+
+		expiresAtStr, ok := body["expiresAt"].(string)
+		if !ok {
+			t.Fatalf("missing expiresAt field in %v", body)
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, expiresAtStr)
+		if err != nil {
+			t.Fatalf("expiresAt %q is not RFC3339: %v", expiresAtStr, err)
+		}
+		// Token lifetime is centralized in auth (60s). The expiry must be
+		// roughly 60 seconds in the future and not in the past.
+		now := time.Now()
+		if expiresAt.Before(now) {
+			t.Fatalf("expiresAt %v is in the past", expiresAt)
+		}
+		if got := expiresAt.Sub(now); got < 30*time.Second || got > 60*time.Second {
+			t.Fatalf("expiresAt delta = %v, want ~60s", got)
+		}
+	})
+
+	t.Run("manager auth protects the admin-link route", func(t *testing.T) {
+		service := newFakeInstanceService(instance)
+		deps := Dependencies{Instances: service, AdminUsername: "manager", AdminPassword: "secret"}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/instances/1/admin-link", nil)
+		New(deps).ServeHTTP(rec, req)
+		assertStatus(t, rec, http.StatusUnauthorized)
+		if rec.Header().Get("WWW-Authenticate") == "" {
+			t.Fatalf("expected WWW-Authenticate challenge header")
+		}
+		assertBodyFields(t, rec, map[string]any{"success": false, "error": "Unauthorized"})
+	})
+
+	t.Run("manager auth allows admin-link with valid credentials", func(t *testing.T) {
+		service := newFakeInstanceService(instance)
+		deps := Dependencies{Instances: service, AdminUsername: "manager", AdminPassword: "secret"}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/instances/1/admin-link", nil)
+		req.SetBasicAuth("manager", "secret")
+		New(deps).ServeHTTP(rec, req)
+		assertStatus(t, rec, http.StatusOK)
+		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/"})
+	})
+}
+
 func serveInstanceRequest(service *fakeInstanceService, lifecycle *fakeLifecycleRoutes, device *fakeDeviceClient, method, path string, body *strings.Reader, opts ...func(*Dependencies)) *httptest.ResponseRecorder {
 	if body == nil {
 		body = strings.NewReader("")
@@ -235,7 +327,7 @@ func withConnectionTester(tester *fakeConnectionTester) func(*Dependencies) {
 	return func(deps *Dependencies) { deps.ConnectionTester = tester }
 }
 
-func withAdminLinkIssuer(issuer *fakeAdminLinkIssuer) func(*Dependencies) {
+func withAdminLinkIssuer(issuer AdminLinkIssuer) func(*Dependencies) {
 	return func(deps *Dependencies) { deps.AdminLinkIssuer = issuer }
 }
 

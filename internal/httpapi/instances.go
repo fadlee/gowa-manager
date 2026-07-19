@@ -6,10 +6,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/auth"
 	"github.com/fadlee/gowa-manager/internal/instances"
 	"github.com/fadlee/gowa-manager/internal/monitoring"
 )
@@ -56,6 +58,29 @@ type AdminLink struct {
 
 type AdminLinkIssuer interface {
 	CreateAdminLink(context.Context, instances.Instance) (AdminLink, error)
+}
+
+// magicAdminLinkIssuer adapts *auth.MagicAuthService to the
+// AdminLinkIssuer interface. It only uses the instance key to mint a
+// short-lived token; credentials are never parsed or exposed in the
+// response. Token lifetime is centralized in auth.MagicAuthService.
+type magicAdminLinkIssuer struct {
+	service *auth.MagicAuthService
+}
+
+// NewMagicAdminLinkIssuer returns an AdminLinkIssuer backed by the given
+// MagicAuthService. The service must be non-nil.
+func NewMagicAdminLinkIssuer(service *auth.MagicAuthService) AdminLinkIssuer {
+	return magicAdminLinkIssuer{service: service}
+}
+
+func (m magicAdminLinkIssuer) CreateAdminLink(_ context.Context, instance instances.Instance) (AdminLink, error) {
+	token, expiresAt := m.service.CreateToken(instance.Key, time.Now())
+	link := AdminLink{
+		URL:       "/app/" + instance.Key + "/?autologin=" + url.QueryEscape(token),
+		ExpiresAt: &expiresAt,
+	}
+	return link, nil
 }
 
 type instanceResponse struct {
