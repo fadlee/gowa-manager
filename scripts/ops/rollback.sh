@@ -185,7 +185,7 @@ if [ "$EXECUTE" = true ]; then
   [ -z "$BUN_BINARY" ] && missing="$missing --bun-binary"
   [ -z "$BUN_CHECKSUM" ] && missing="$missing --bun-checksum"
   if [ -n "$missing" ]; then
-    add_error "missing required arguments when --execute:$missing"
+    add_error "missing required arguments when --execute: $missing"
     END_TS=$(now_iso)
     cat <<EOF
 {
@@ -200,7 +200,7 @@ if [ "$EXECUTE" = true ]; then
   "exit_code": 1
 }
 EOF
-    log "Rollback failed: missing required arguments:$missing"
+    log "Rollback failed: missing required arguments: $missing"
     exit 1
   fi
 fi

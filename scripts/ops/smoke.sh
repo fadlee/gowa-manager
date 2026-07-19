@@ -121,6 +121,8 @@ EOF
   esac
 done
 
+START_TS=$(now_iso)
+
 # Destructive mode requires --test-key.
 if [ "$DESTRUCTIVE" = true ] && [ -z "$TEST_KEY" ]; then
   add_error "destructive mode requires --test-key"
@@ -144,7 +146,6 @@ EOF
   exit 1
 fi
 
-START_TS=$(now_iso)
 MODE="non_destructive"
 [ "$DESTRUCTIVE" = true ] && MODE="destructive"
 

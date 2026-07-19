@@ -2,7 +2,6 @@ package ops
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -513,6 +512,3 @@ func TestSmoke_JSONSchema(t *testing.T) {
 		}
 	}
 }
-
-// Ensure the net package is referenced (used by freePort in helpers).
-var _ = net.Listen
