@@ -126,8 +126,8 @@ func (h *systemHandler) nextPort(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		NextAvailable int `json:"next_available"`
-	}{NextAvailable: port})
+		Port int `json:"port"`
+	}{Port: port})
 }
 
 func (h *systemHandler) config(w http.ResponseWriter, r *http.Request) {

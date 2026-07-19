@@ -60,11 +60,11 @@ func TestVersionRoutes(t *testing.T) {
 		assertBodyFields(t, rec, map[string]any{"success": false})
 	})
 
-	t.Run("install returns existing success envelope", func(t *testing.T) {
+	t.Run("install returns legacy success envelope only", func(t *testing.T) {
 		installer := &fakeVersionInstaller{result: versions.InstallResult{Version: "v1.2.3", Path: `/tmp/gowa`, SHA256: "abc", Size: 42}}
 		rec := serveVersionRequest(&fakeVersionService{}, installer, http.MethodPost, "/api/system/versions/install", strings.NewReader(`{"version":"v1.2.3"}`))
 		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, map[string]any{"success": true, "message": "Version installed successfully", "version": "v1.2.3", "path": `/tmp/gowa`, "sha256": "abc", "size": float64(42), "already_installed": false})
+		assertJSON(t, rec, map[string]any{"success": true, "message": "Successfully installed GOWA version v1.2.3"})
 		if installer.version != "v1.2.3" {
 			t.Fatalf("installed version = %q, want v1.2.3", installer.version)
 		}
@@ -80,7 +80,7 @@ func TestVersionRoutes(t *testing.T) {
 		service := &fakeVersionService{}
 		rec := serveVersionRequest(service, nil, http.MethodDelete, "/api/system/versions/v1.2.3", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertBodyFields(t, rec, map[string]any{"success": true, "message": "Version removed successfully"})
+		assertBodyFields(t, rec, map[string]any{"success": true, "message": "Successfully removed GOWA version v1.2.3"})
 		if service.removed != "v1.2.3" {
 			t.Fatalf("removed = %q, want v1.2.3", service.removed)
 		}
@@ -93,25 +93,25 @@ func TestVersionRoutes(t *testing.T) {
 		assertBodyFields(t, rec, map[string]any{"success": false})
 	})
 
-	t.Run("version available returns available flag", func(t *testing.T) {
-		service := &fakeVersionService{isAvailable: true}
+	t.Run("version available returns available flag with path", func(t *testing.T) {
+		service := &fakeVersionService{installed: []versions.VersionInfo{versionInfo}, isAvailable: true}
 		rec := serveVersionRequest(service, nil, http.MethodGet, "/api/system/versions/v1.2.3/available", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertBodyFields(t, rec, map[string]any{"version": "v1.2.3", "available": true})
+		assertJSON(t, rec, map[string]any{"version": "v1.2.3", "available": true, "path": `/tmp/gowa`})
 	})
 
 	t.Run("usage returns versions size map", func(t *testing.T) {
 		service := &fakeVersionService{sizes: map[string]int64{"v1.2.3": 42}}
 		rec := serveVersionRequest(service, nil, http.MethodGet, "/api/system/versions/usage", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, map[string]any{"versions": map[string]any{"v1.2.3": float64(42)}})
+		assertJSON(t, rec, map[string]any{"v1.2.3": float64(42)})
 	})
 
 	t.Run("cleanup defaults keepCount to 3 with optional body", func(t *testing.T) {
 		service := &fakeVersionService{cleaned: []string{"v1.0.0"}}
 		rec := serveVersionRequest(service, nil, http.MethodPost, "/api/system/versions/cleanup", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertBodyFields(t, rec, map[string]any{"success": true})
+		assertJSON(t, rec, map[string]any{"success": true, "message": "Cleaned up 1 old versions: v1.0.0", "removed": []any{"v1.0.0"}})
 		if service.keepCount != 3 {
 			t.Fatalf("keepCount = %d, want 3", service.keepCount)
 		}
@@ -124,6 +124,13 @@ func TestVersionRoutes(t *testing.T) {
 		if service.keepCount != 1 {
 			t.Fatalf("keepCount = %d, want 1", service.keepCount)
 		}
+	})
+
+	t.Run("cleanup returns legacy message for empty removed list", func(t *testing.T) {
+		service := &fakeVersionService{}
+		rec := serveVersionRequest(service, nil, http.MethodPost, "/api/system/versions/cleanup", strings.NewReader(`{"keepCount":1}`))
+		assertStatus(t, rec, http.StatusOK)
+		assertJSON(t, rec, map[string]any{"success": true, "message": "Cleaned up 0 old versions: ", "removed": []any{}})
 	})
 
 	t.Run("cleanup rejects invalid keepCount", func(t *testing.T) {
@@ -169,11 +176,11 @@ func (s *fakeVersionService) IsVersionAvailable(context.Context, string) (bool, 
 	return s.isAvailable, s.err
 }
 func (s *fakeVersionService) GetVersionsSize() (map[string]int64, error) { return s.sizes, s.err }
-func (s *fakeVersionService) RemoveVersion(version string) error {
+func (s *fakeVersionService) RemoveVersion(_ context.Context, version string) error {
 	s.removed = version
 	return s.err
 }
-func (s *fakeVersionService) Cleanup(keepCount int) ([]string, error) {
+func (s *fakeVersionService) Cleanup(_ context.Context, keepCount int) ([]string, error) {
 	s.keepCount = keepCount
 	return s.cleaned, s.err
 }

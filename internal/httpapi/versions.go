@@ -22,8 +22,8 @@ type VersionService interface {
 	GetAvailableVersions(context.Context, int) ([]versions.VersionInfo, error)
 	IsVersionAvailable(context.Context, string) (bool, error)
 	GetVersionsSize() (map[string]int64, error)
-	RemoveVersion(string) error
-	Cleanup(int) ([]string, error)
+	RemoveVersion(context.Context, string) error
+	Cleanup(context.Context, int) ([]string, error)
 }
 
 type VersionInstaller interface {
@@ -113,20 +113,15 @@ func (h *versionHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeValidation(w, "version is required")
 		return
 	}
-	result, err := h.installer.Install(r.Context(), body.Version)
+	_, err := h.installer.Install(r.Context(), body.Version)
 	if err != nil {
 		h.writeVersionError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Success          bool   `json:"success"`
-		Message          string `json:"message"`
-		Version          string `json:"version"`
-		Path             string `json:"path"`
-		SHA256           string `json:"sha256"`
-		Size             int64  `json:"size"`
-		AlreadyInstalled bool   `json:"already_installed"`
-	}{Success: true, Message: "Version installed successfully", Version: result.Version, Path: result.Path, SHA256: result.SHA256, Size: result.Size, AlreadyInstalled: result.AlreadyInstalled})
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}{Success: true, Message: "Successfully installed GOWA version " + body.Version})
 }
 
 func (h *versionHandler) usage(w http.ResponseWriter, r *http.Request) {
@@ -139,9 +134,7 @@ func (h *versionHandler) usage(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, struct {
-		Versions map[string]int64 `json:"versions"`
-	}{Versions: sizes})
+	writeJSON(w, http.StatusOK, sizes)
 }
 
 func (h *versionHandler) cleanup(w http.ResponseWriter, r *http.Request) {
@@ -166,16 +159,19 @@ func (h *versionHandler) cleanup(w http.ResponseWriter, r *http.Request) {
 		writeValidation(w, "keepCount must be at least 1")
 		return
 	}
-	removed, err := h.service.Cleanup(keepCount)
+	removed, err := h.service.Cleanup(r.Context(), keepCount)
 	if err != nil {
 		h.writeVersionError(w, err)
 		return
+	}
+	if removed == nil {
+		removed = []string{}
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Success bool     `json:"success"`
 		Message string   `json:"message"`
 		Removed []string `json:"removed"`
-	}{Success: true, Message: "Version cleanup completed successfully", Removed: removed})
+	}{Success: true, Message: "Cleaned up " + strconv.Itoa(len(removed)) + " old versions: " + strings.Join(removed, ", "), Removed: removed})
 }
 
 func (h *versionHandler) routes(w http.ResponseWriter, r *http.Request) {
@@ -197,11 +193,11 @@ func (h *versionHandler) routes(w http.ResponseWriter, r *http.Request) {
 		writeValidation(w, "cannot remove latest version")
 		return
 	}
-	if err := h.service.RemoveVersion(path); err != nil {
+	if err := h.service.RemoveVersion(r.Context(), path); err != nil {
 		h.writeVersionError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "Version removed successfully"})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "Successfully removed GOWA version " + path})
 }
 
 func (h *versionHandler) versionAvailable(w http.ResponseWriter, r *http.Request, version string) {
@@ -218,10 +214,23 @@ func (h *versionHandler) versionAvailable(w http.ResponseWriter, r *http.Request
 		h.writeVersionError(w, err)
 		return
 	}
+	path := ""
+	items, err := h.service.GetInstalledVersions()
+	if err != nil {
+		writeHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, item := range items {
+		if item.Version == version {
+			path = item.Path
+			break
+		}
+	}
 	writeJSON(w, http.StatusOK, struct {
 		Version   string `json:"version"`
 		Available bool   `json:"available"`
-	}{Version: version, Available: available})
+		Path      string `json:"path"`
+	}{Version: version, Available: available, Path: path})
 }
 
 func (h *versionHandler) writeVersionError(w http.ResponseWriter, err error) {

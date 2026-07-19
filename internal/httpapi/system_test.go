@@ -26,11 +26,11 @@ func TestSystemRoutes(t *testing.T) {
 		assertBodyFields(t, rec, map[string]any{"success": false, "error": "status failed"})
 	})
 
-	t.Run("next port returns next_available", func(t *testing.T) {
+	t.Run("next port returns port", func(t *testing.T) {
 		allocator := &fakePortAllocator{next: 8123}
 		rec := serveSystemRequest(&fakeSystemService{}, allocator, nil, http.MethodGet, "/api/system/ports/next", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertBodyFields(t, rec, map[string]any{"next_available": float64(8123)})
+		assertJSON(t, rec, map[string]any{"port": float64(8123)})
 	})
 
 	t.Run("next port service error maps to 500", func(t *testing.T) {
