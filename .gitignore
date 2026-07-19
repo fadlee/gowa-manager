@@ -24,3 +24,8 @@ src/version.ts
 /internal/static/web/*
 !/internal/static/web/.gitkeep
 *.bun-build
+
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+.playwright/
