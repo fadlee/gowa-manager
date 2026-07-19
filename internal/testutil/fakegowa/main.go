@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -71,8 +72,21 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	server := &http.Server{Addr: "127.0.0.1:" + strconv.Itoa(port), Handler: mux}
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	server := &http.Server{Handler: mux}
+	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if portFile := os.Getenv("FAKE_GOWA_PORT_FILE"); portFile != "" {
+		actualPort := ln.Addr().(*net.TCPAddr).Port
+		if err := os.WriteFile(portFile, []byte(strconv.Itoa(actualPort)+"\n"), 0o600); err != nil {
+			_ = ln.Close()
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+	if err := server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -87,8 +101,11 @@ func parsePort(args []string) (int, error) {
 		if arg == "--port" && i+1 < len(args) {
 			return strconv.Atoi(args[i+1])
 		}
+		if arg == "-p" && i+1 < len(args) {
+			return strconv.Atoi(args[i+1])
+		}
 	}
-	return 0, fmt.Errorf("missing --port")
+	return 0, fmt.Errorf("missing --port or -p")
 }
 
 func spawnChild() (*exec.Cmd, error) {
@@ -171,6 +188,8 @@ func envInt(key string, fallback int) int {
 
 func init() {
 	if len(os.Args) == 2 && os.Args[1] == "--fake-gowa-child" {
-		select {}
+		for {
+			time.Sleep(time.Hour)
+		}
 	}
 }

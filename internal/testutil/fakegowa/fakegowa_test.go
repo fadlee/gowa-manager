@@ -55,7 +55,7 @@ func TestDelayedReadyWaitsBeforeListening(t *testing.T) {
 		"FAKE_GOWA_READY_DELAY_MS": "350",
 	})
 
-	if healthOK(port) {
+	if healthOK(port) == nil {
 		t.Fatal("health endpoint responded before ready delay elapsed")
 	}
 
@@ -65,6 +65,26 @@ func TestDelayedReadyWaitsBeforeListening(t *testing.T) {
 		t.Fatalf("health endpoint became ready too early after %s", elapsed)
 	}
 	_ = cmd
+}
+
+func TestServeSupportsShortPortFlag(t *testing.T) {
+	port := freePort(t)
+	startFakeGOWA(t, []string{"rest", "-p", strconv.Itoa(port)}, map[string]string{
+		"FAKE_GOWA_MODE": "serve",
+	})
+
+	waitForHealth(t, port, 2*time.Second)
+}
+
+func TestServePortZeroWritesActualPortFile(t *testing.T) {
+	portFile := filepath.Join(t.TempDir(), "port")
+	startFakeGOWA(t, []string{"rest", "--port=0"}, map[string]string{
+		"FAKE_GOWA_MODE":      "serve",
+		"FAKE_GOWA_PORT_FILE": portFile,
+	})
+
+	port := waitForPortFile(t, portFile, 2*time.Second)
+	waitForHealth(t, port, 2*time.Second)
 }
 
 func TestSpawnChildReportsChildPID(t *testing.T) {
@@ -84,6 +104,42 @@ func TestSpawnChildReportsChildPID(t *testing.T) {
 	}
 	if !processExists(childPID) {
 		t.Fatalf("reported child process %d is not running", childPID)
+	}
+}
+
+func TestProcessExistsRejectsExitedProcess(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcessExitsImmediately")
+	cmd.Env = append(os.Environ(), "FAKE_GOWA_HELPER_PROCESS=1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper process: %v", err)
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("wait for helper process: %v", err)
+	}
+
+	if processExists(pid) {
+		t.Fatalf("processExists(%d) = true for exited process", pid)
+	}
+}
+
+func TestHelperProcessExitsImmediately(t *testing.T) {
+	if os.Getenv("FAKE_GOWA_HELPER_PROCESS") != "1" {
+		return
+	}
+	os.Exit(0)
+}
+
+func TestFakeGOWABuildIncludesRaceFlagUnderRace(t *testing.T) {
+	args := fakeGOWABuildArgs(filepath.Join(t.TempDir(), executableName("fakegowa")))
+	hasRace := false
+	for _, arg := range args {
+		if arg == "-race" {
+			hasRace = true
+		}
+	}
+	if raceDetectorEnabled() != hasRace {
+		t.Fatalf("build args %v include -race = %v, want %v", args, hasRace, raceDetectorEnabled())
 	}
 }
 
@@ -153,18 +209,29 @@ func newFakeGOWACmd(t *testing.T, args []string, env map[string]string) *exec.Cm
 
 func fakeGOWABinary(t *testing.T) string {
 	t.Helper()
-	name := "fakegowa"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	path := filepath.Join(t.TempDir(), name)
-	cmd := exec.Command("go", "build", "-o", path, ".")
+	path := filepath.Join(t.TempDir(), executableName("fakegowa"))
+	cmd := exec.Command("go", fakeGOWABuildArgs(path)...)
 	cmd.Dir = "."
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("build fakegowa: %v\n%s", err, string(output))
+		t.Fatalf("build fakegowa with args %v: %v\n%s", cmd.Args, err, string(output))
 	}
 	return path
+}
+
+func fakeGOWABuildArgs(outputPath string) []string {
+	args := []string{"build"}
+	if raceDetectorEnabled() {
+		args = append(args, "-race")
+	}
+	return append(args, "-o", outputPath, ".")
+}
+
+func executableName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 func cleanupProcess(cmd *exec.Cmd) {
@@ -196,24 +263,30 @@ func freePort(t *testing.T) int {
 func waitForHealth(t *testing.T, port int, deadline time.Duration) {
 	t.Helper()
 	end := time.Now().Add(deadline)
+	var lastErr error
 	for time.Now().Before(end) {
-		if healthOK(port) {
+		if err := healthOK(port); err == nil {
 			return
+		} else {
+			lastErr = err
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Fatalf("health endpoint did not become ready on port %d", port)
+	t.Fatalf("health endpoint did not become ready on port %d within %s; last error: %v", port, deadline, lastErr)
 }
 
-func healthOK(port int) bool {
+func healthOK(port int) error {
 	client := http.Client{Timeout: 200 * time.Millisecond}
 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/api/health", port))
 	if err != nil {
-		return false
+		return err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode == http.StatusOK && strings.Contains(string(body), "ok")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "ok") {
+		return fmt.Errorf("status %d body %q", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func assertPIDFile(t *testing.T, path string, want int) {
@@ -242,13 +315,44 @@ func waitForPIDFile(t *testing.T, path string, deadline time.Duration) int {
 	return 0
 }
 
+func waitForPortFile(t *testing.T, path string, deadline time.Duration) int {
+	t.Helper()
+	end := time.Now().Add(deadline)
+	var lastErr error
+	for time.Now().Before(end) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			port, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+			if parseErr != nil {
+				t.Fatalf("parse port file %s: %v", path, parseErr)
+			}
+			if port <= 0 {
+				t.Fatalf("port file %s = %d, want positive port", path, port)
+			}
+			return port
+		}
+		lastErr = err
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("port file %s was not written within %s; last error: %v", path, deadline, lastErr)
+	return 0
+}
+
 func processExists(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
+	if pid <= 0 {
 		return false
 	}
 	if runtime.GOOS == "windows" {
-		return true
+		cmd := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH")
+		output, err := cmd.Output()
+		if err != nil {
+			return false
+		}
+		return strings.Contains(string(output), fmt.Sprintf("\"%d\"", pid))
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
 	}
 	return proc.Signal(os.Signal(nil)) == nil
 }
