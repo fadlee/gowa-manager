@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/buildinfo"
+	"github.com/fadlee/gowa-manager/internal/auth"
 	"github.com/fadlee/gowa-manager/internal/config"
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
@@ -21,6 +22,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/monitoring"
 	"github.com/fadlee/gowa-manager/internal/observability"
 	"github.com/fadlee/gowa-manager/internal/ownership"
+	"github.com/fadlee/gowa-manager/internal/proxy"
 	"github.com/fadlee/gowa-manager/internal/scheduler"
 	staticassets "github.com/fadlee/gowa-manager/internal/static"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
@@ -136,13 +138,13 @@ func Run(ctx context.Context, opts Options) error {
 	db, ok := dbFromCloser(dbCloser)
 	deps := httpapi.Dependencies{Logger: logger, StaticFS: staticassets.FS()}
 	if ok {
-		builtDeps, err := buildDeps(ctx, httpDepsOptions{DB: db, DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled})
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DB: db, DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled, AdminUsername: opts.Config.AdminUsername, AdminPassword: opts.Config.AdminPassword})
 		if err != nil {
 			return err
 		}
 		deps = builtDeps
 	} else if opts.BuildHTTPDeps != nil {
-		builtDeps, err := buildDeps(ctx, httpDepsOptions{DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled})
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled, AdminUsername: opts.Config.AdminUsername, AdminPassword: opts.Config.AdminPassword})
 		if err != nil {
 			return err
 		}
@@ -304,6 +306,8 @@ type httpDepsOptions struct {
 	DataDir        string
 	Logger         *slog.Logger
 	MetricsEnabled bool
+	AdminUsername  string
+	AdminPassword  string
 }
 
 func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencies, error) {
@@ -341,6 +345,15 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 	// endpoint is only registered when MetricsEnabled is true.
 	metrics := observability.NewMetrics(opts.MetricsEnabled)
 
+	// Magic admin link service + HTTP/WebSocket proxy. The proxy routes
+	// (/app/{key}/*) are outside the manager's Basic Auth middleware and
+	// handle their own authentication via magic admin cookies and
+	// instance-level Basic Auth injection. The admin link issuer mints
+	// short-lived tokens that let a user open an instance's admin UI
+	// without a browser Basic Auth prompt.
+	magicAuth := auth.NewMagicAuthService()
+	targetResolver := proxy.NewTargetResolver(repo)
+
 	return httpapi.Dependencies{
 		Logger:              opts.Logger,
 		StaticFS:            staticassets.FS(),
@@ -348,7 +361,7 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		InstanceLifecycle:   appHTTPLifecycle{service: lifecycle},
 		DeviceClient:        deviceClient,
 		ConnectionTester:    instances.NewConnectionTester(instances.ConnectionTesterOptions{}),
-		AdminLinkIssuer:     runtimeNotReadyAdminLinks{},
+		AdminLinkIssuer:     httpapi.NewMagicAdminLinkIssuer(magicAuth),
 		System:              system.NewSystemService(repo, opts.DataDir, buildinfo.DisplayVersion()),
 		PortAllocator:       portAllocator,
 		PortChecker:         appPortChecker{},
@@ -357,6 +370,12 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		VersionInstaller:    versionInstaller,
 		InstanceDirResolver: filesystem,
 		Metrics:             metrics,
+		AdminUsername:       opts.AdminUsername,
+		AdminPassword:       opts.AdminPassword,
+		HTTPProxy:           proxy.NewHTTPProxy(targetResolver, magicAuth, nil),
+		WSBridge:            proxy.NewWSBridge(targetResolver, magicAuth, proxy.NewRegistry()),
+		MagicAuth:           magicAuth,
+		InstanceLookup:      repo,
 	}, nil
 }
 
@@ -424,12 +443,6 @@ func (a appServiceLifecycle) Status(ctx context.Context, id int64) (instances.St
 
 func toHTTPInstanceStatus(status instances.LifecycleStatus, err error) (httpapi.InstanceStatus, error) {
 	return httpapi.InstanceStatus{ID: status.ID, Name: status.Name, Status: status.Status, Port: status.Port, PID: status.PID, Uptime: status.Uptime, Resources: status.Resources}, err
-}
-
-type runtimeNotReadyAdminLinks struct{}
-
-func (runtimeNotReadyAdminLinks) CreateAdminLink(context.Context, instances.Instance) (httpapi.AdminLink, error) {
-	return httpapi.AdminLink{}, instances.ErrRuntimeNotReady
 }
 
 type appPortChecker struct{}
