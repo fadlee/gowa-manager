@@ -64,23 +64,33 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
 		AcquireLock: func(string) (Releaser, error) {
-			mu.Lock(); events = append(events, "lock"); mu.Unlock()
+			mu.Lock()
+			events = append(events, "lock")
+			mu.Unlock()
 			return &fakeLock{events: &events, mu: &mu}, nil
 		},
 		OpenDB: func(context.Context, string) (Closer, error) {
-			mu.Lock(); events = append(events, "db"); mu.Unlock()
+			mu.Lock()
+			events = append(events, "db")
+			mu.Unlock()
 			return &fakeDB{events: &events, mu: &mu}, nil
 		},
 		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
-			mu.Lock(); events = append(events, "services"); mu.Unlock()
+			mu.Lock()
+			events = append(events, "services")
+			mu.Unlock()
 			return httpapi.Dependencies{}, nil
 		},
 		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
-			mu.Lock(); events = append(events, "schedulers-built"); mu.Unlock()
+			mu.Lock()
+			events = append(events, "schedulers-built")
+			mu.Unlock()
 			return &fakeSchedulers{events: &events, mu: &mu}, nil
 		},
 		Listen: func(network, address string) (net.Listener, error) {
-			mu.Lock(); events = append(events, "listen"); mu.Unlock()
+			mu.Lock()
+			events = append(events, "listen")
+			mu.Unlock()
 			ln, err := net.Listen(network, "127.0.0.1:0")
 			if err == nil {
 				close(started)
@@ -88,7 +98,9 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 			return ln, err
 		},
 		OnEvent: func(tag string) {
-			mu.Lock(); events = append(events, tag); mu.Unlock()
+			mu.Lock()
+			events = append(events, tag)
+			mu.Unlock()
 			if tag == "ready" {
 				close(ready)
 			}

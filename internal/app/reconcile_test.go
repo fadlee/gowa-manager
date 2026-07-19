@@ -24,16 +24,16 @@ import (
 // occupied port, supervisor error, etc.). It also persists a failed status
 // via the provided repo, mirroring LifecycleService.persistFailed behavior.
 type reconcileStarter struct {
-	mu           sync.Mutex
-	started      []int64
-	failedIDs    map[int64]error
-	startDelay   time.Duration
-	blockStart   chan struct{}
-	entered      chan struct{}
-	concMu       sync.Mutex
-	concurrent   int
+	mu            sync.Mutex
+	started       []int64
+	failedIDs     map[int64]error
+	startDelay    time.Duration
+	blockStart    chan struct{}
+	entered       chan struct{}
+	concMu        sync.Mutex
+	concurrent    int
 	maxConcurrent int
-	repo         *reconcileRepo
+	repo          *reconcileRepo
 }
 
 func (s *reconcileStarter) Start(ctx context.Context, id int64) error {
@@ -328,8 +328,8 @@ func TestReconcileReadinessFalseUntilCompletion(t *testing.T) {
 		{ID: 1, Name: "running-1", Status: "running", Port: ptrInt(3001), GOWAVersion: "v1.0.0"},
 	}
 	starter := &reconcileStarter{
-		failedIDs: map[int64]error{},
-		repo:      repo,
+		failedIDs:  map[int64]error{},
+		repo:       repo,
 		blockStart: make(chan struct{}),
 		entered:    make(chan struct{}, 1),
 	}

@@ -351,9 +351,9 @@ func TestNextRun_MidnightUTC(t *testing.T) {
 // controlledAfter returns a channel the test pumps manually and records the
 // duration requested from the schedule.
 type controlledAfter struct {
-	mu     sync.Mutex
-	durs   []time.Duration
-	chans  []chan time.Time
+	mu    sync.Mutex
+	durs  []time.Duration
+	chans []chan time.Time
 }
 
 func (a *controlledAfter) after(d time.Duration) <-chan time.Time {

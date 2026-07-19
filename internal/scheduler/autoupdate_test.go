@@ -113,9 +113,9 @@ func (f *fakeRestarter) restartCalls() []int64 {
 
 // fakeInstanceLister returns a canned list of instances (or an error).
 type fakeInstanceLister struct {
-	mu       sync.Mutex
-	items    []instances.Instance
-	err      error
+	mu        sync.Mutex
+	items     []instances.Instance
+	err       error
 	callCount int
 }
 

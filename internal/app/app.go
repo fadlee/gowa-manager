@@ -336,19 +336,19 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 	})
 
 	return httpapi.Dependencies{
-		Logger:            opts.Logger,
-		StaticFS:          staticassets.FS(),
-		Instances:         instanceService,
-		InstanceLifecycle: appHTTPLifecycle{service: lifecycle},
-		DeviceClient:      deviceClient,
-		ConnectionTester:  instances.NewConnectionTester(instances.ConnectionTesterOptions{}),
-		AdminLinkIssuer:   runtimeNotReadyAdminLinks{},
-		System:            system.NewSystemService(repo, opts.DataDir, buildinfo.DisplayVersion()),
-		PortAllocator:     portAllocator,
-		PortChecker:       appPortChecker{},
-		AutoUpdate:        autoupdate,
-		Versions:          versionServiceAdapter{service: versionService},
-		VersionInstaller:  versionInstaller,
+		Logger:              opts.Logger,
+		StaticFS:            staticassets.FS(),
+		Instances:           instanceService,
+		InstanceLifecycle:   appHTTPLifecycle{service: lifecycle},
+		DeviceClient:        deviceClient,
+		ConnectionTester:    instances.NewConnectionTester(instances.ConnectionTesterOptions{}),
+		AdminLinkIssuer:     runtimeNotReadyAdminLinks{},
+		System:              system.NewSystemService(repo, opts.DataDir, buildinfo.DisplayVersion()),
+		PortAllocator:       portAllocator,
+		PortChecker:         appPortChecker{},
+		AutoUpdate:          autoupdate,
+		Versions:            versionServiceAdapter{service: versionService},
+		VersionInstaller:    versionInstaller,
 		InstanceDirResolver: filesystem,
 	}, nil
 }
