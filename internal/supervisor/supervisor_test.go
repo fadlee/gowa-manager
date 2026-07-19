@@ -112,6 +112,62 @@ func TestSupervisorDuplicateStartDuringPendingReadinessReturnsStartingWithoutDup
 	}
 }
 
+func TestSupervisorDifferentStartsRunConcurrentlyWhileReadinessPending(t *testing.T) {
+	procs := map[int64]*fakeProcess{
+		21: newFakeProcess(2101),
+		22: newFakeProcess(2201),
+	}
+	readyStarted := make(chan int64, 2)
+	releaseReady := make(chan struct{})
+	s := newTestSupervisor(t, func(_ context.Context, config StartConfig) (Process, error) {
+		return procs[config.InstanceID], nil
+	})
+	s.ready = func(ctx context.Context, snapshot ProcessSnapshot) error {
+		readyStarted <- snapshot.InstanceID
+		select {
+		case <-releaseReady:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	startDone := make(chan error, 2)
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 21, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 22, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+
+	seen := map[int64]bool{}
+	for len(seen) < 2 {
+		select {
+		case instanceID := <-readyStarted:
+			seen[instanceID] = true
+		case <-time.After(200 * time.Millisecond):
+			t.Fatalf("readiness started for instances %v, want both starts to reach readiness concurrently", seen)
+		}
+	}
+	for instanceID, proc := range procs {
+		snapshot, ok := s.Status(instanceID)
+		if !ok || snapshot.State != StateStarting || snapshot.PID != proc.PID() || snapshot.Generation != 1 {
+			t.Fatalf("Status(%d) = %+v ok %v, want starting pid %d generation 1", instanceID, snapshot, ok, proc.PID())
+		}
+	}
+	if got := s.startCalls(); got != 2 {
+		t.Fatalf("starter calls = %d, want 2", got)
+	}
+	close(releaseReady)
+	for i := 0; i < 2; i++ {
+		if err := <-startDone; err != nil {
+			t.Fatalf("Start() error = %v", err)
+		}
+	}
+}
+
 func TestSupervisorStopDuringPendingReadinessTerminatesProcess(t *testing.T) {
 	proc := newFakeProcess(1103)
 	readyStarted := make(chan struct{})

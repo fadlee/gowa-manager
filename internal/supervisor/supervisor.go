@@ -57,7 +57,7 @@ type Supervisor struct {
 	now      func() time.Time
 
 	mu        sync.Mutex
-	startMu   sync.Mutex
+	startMu   map[int64]*sync.Mutex
 	processes map[processKey]Process
 }
 
@@ -87,15 +87,16 @@ func New(config SupervisorConfig) *Supervisor {
 	if now == nil {
 		now = time.Now
 	}
-	return &Supervisor{registry: registry, starter: starter, ready: ready, onStatus: onStatus, onExit: config.ExitCallback, now: now, processes: make(map[processKey]Process)}
+	return &Supervisor{registry: registry, starter: starter, ready: ready, onStatus: onStatus, onExit: config.ExitCallback, now: now, startMu: make(map[int64]*sync.Mutex), processes: make(map[processKey]Process)}
 }
 
 func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnapshot, error) {
 	if snapshot, ok := s.registry.Get(config.InstanceID); ok && (snapshot.State == StateStarting || snapshot.State == StateRunning) {
 		return snapshot, nil
 	}
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
+	startMu := s.startLock(config.InstanceID)
+	startMu.Lock()
+	defer startMu.Unlock()
 	if snapshot, ok := s.registry.Get(config.InstanceID); ok && (snapshot.State == StateStarting || snapshot.State == StateRunning) {
 		return snapshot, nil
 	}
@@ -242,6 +243,17 @@ func (s *Supervisor) storeProcess(instanceID, generation int64, proc Process) {
 	s.mu.Lock()
 	s.processes[processKey{instanceID: instanceID, generation: generation}] = proc
 	s.mu.Unlock()
+}
+
+func (s *Supervisor) startLock(instanceID int64) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	startMu := s.startMu[instanceID]
+	if startMu == nil {
+		startMu = &sync.Mutex{}
+		s.startMu[instanceID] = startMu
+	}
+	return startMu
 }
 
 func (s *Supervisor) takeProcess(instanceID, generation int64) Process {
