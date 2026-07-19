@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fadlee/gowa-manager/internal/buildinfo"
 	"github.com/fadlee/gowa-manager/internal/auth"
+	"github.com/fadlee/gowa-manager/internal/buildinfo"
 	"github.com/fadlee/gowa-manager/internal/config"
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
@@ -77,7 +77,7 @@ type Options struct {
 	// shutdown) with a short event tag. It is intended for lifecycle-order
 	// tests and must not block. Tags: "reconcile-start", "reconcile-done",
 	// "ready", "unready", "stop-http-intake", "drain-done",
-	// "runtime-connections-closed", "child-policy".
+	// "close-websockets", "runtime-connections-closed", "child-policy".
 	OnEvent func(string)
 }
 
@@ -225,7 +225,8 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	// --- Shutdown: unready -> stop HTTP intake -> cancel schedulers -> drain ->
-	//   close runtime connections -> child policy -> close DB -> release lock ---
+	//   close WebSockets -> close runtime connections -> child policy ->
+	//   close DB -> release lock ---
 
 	// 1. Mark not-ready so /api/ready returns 503 during drain.
 	readiness.SetNotReady()
@@ -259,7 +260,17 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	emit("drain-done")
 
-	// 5. Close runtime connections hook (device client, monitor). No-op when
+	// 5. Close all WebSocket proxy connections. This tears down active
+	//    upstream bridges so in-flight WS clients receive close frames
+	//    before child-process cleanup and DB close. Safe to call when no
+	//    connections are active (registry is empty) and when WSBridge is
+	//    nil (degraded builds/tests that don't wire proxy deps).
+	if deps.WSBridge != nil {
+		deps.WSBridge.CloseAll()
+	}
+	emit("close-websockets")
+
+	// 6. Close runtime connections hook (device client, monitor). No-op when
 	//    the deps don't expose a RuntimeConnections closer. This is
 	//    documented as a no-op for degraded builds.
 	if rc, ok := extractRuntimeConnections(deps); ok {
@@ -267,7 +278,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	emit("runtime-connections-closed")
 
-	// 6. Child-process policy: per the legacy Bun SIGINT handler
+	// 7. Child-process policy: per the legacy Bun SIGINT handler
 	//    (src/index.ts lines 75-82), children are LEFT RUNNING on shutdown
 	//    (orphaned). Reconciliation picks them up on the next start. The
 	//    supervisor's exit callbacks are guarded by the reconcile-done wait
@@ -284,7 +295,7 @@ func Run(ctx context.Context, opts Options) error {
 	// and errCh is guaranteed to have a value.
 	serverErr := <-errCh
 
-	// 7-8. Close DB and release lock, collecting all errors via errors.Join
+	// 8-9. Close DB and release lock, collecting all errors via errors.Join
 	//      so a failure in one step does not skip later cleanup.
 	var errs []error
 	if serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {

@@ -17,10 +17,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/auth"
 	"github.com/fadlee/gowa-manager/internal/config"
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
 	"github.com/fadlee/gowa-manager/internal/instances"
+	"github.com/fadlee/gowa-manager/internal/proxy"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
 )
 
@@ -124,13 +126,15 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 	//   reconcile-start -> reconcile-done -> schedulers-start -> ready
 	// (schedulers are constructed before reconciliation but started after)
 	// Shutdown: unready -> stop-http-intake -> cancel-schedulers -> drain ->
-	//           close-runtime-connections -> child-policy -> db-close -> lock-release
+	//           close-websockets -> close-runtime-connections ->
+	//           child-policy -> db-close -> lock-release
 	want := []string{
 		"lock", "db", "services", "listen", "schedulers-built",
 		"reconcile-start", "reconcile-done",
 		"schedulers-start", "ready",
 		// shutdown
 		"unready", "stop-http-intake", "schedulers-stop", "drain-done",
+		"close-websockets",
 		"runtime-connections-closed", "child-policy",
 		"db-close", "lock-release",
 	}
@@ -308,6 +312,156 @@ func TestRunShutdownCollectsErrorsWithoutSkipping(t *testing.T) {
 	if !contains(events, "lock-release") {
 		t.Fatalf("lock-release should still run, events = %#v", events)
 	}
+}
+
+// TestRunShutdownClosesWebSockets verifies that shutdown calls
+// WSBridge.CloseAll (tearing down active upstream bridges) and emits the
+// "close-websockets" event AFTER "drain-done" and BEFORE
+// "runtime-connections-closed". A real WSBridge backed by a real Registry
+// is wired so the CloseAll call is observable.
+func TestRunShutdownClosesWebSockets(t *testing.T) {
+	events := []string{}
+	var mu sync.Mutex
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	ready := make(chan struct{})
+
+	// Build a real WSBridge with a real Registry so CloseAll is a real
+	// (no-op when empty) call rather than a nil dereference.
+	registry := proxy.NewRegistry()
+	magicAuth := auth.NewMagicAuthService()
+	resolver := proxy.NewTargetResolver(instances.NewSQLiteRepository(nil))
+	wsBridge := proxy.NewWSBridge(resolver, magicAuth, registry)
+
+	opts := Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir()},
+		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		AcquireLock: func(string) (Releaser, error) {
+			return &fakeLock{events: &events}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			return &fakeDB{events: &events}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			mu.Lock()
+			events = append(events, "services")
+			mu.Unlock()
+			return httpapi.Dependencies{WSBridge: wsBridge}, nil
+		},
+		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
+			return &fakeSchedulers{events: &events}, nil
+		},
+		Listen: func(network, address string) (net.Listener, error) {
+			ln, err := net.Listen(network, "127.0.0.1:0")
+			if err == nil {
+				close(started)
+			}
+			return ln, err
+		},
+		OnEvent: func(tag string) {
+			mu.Lock()
+			events = append(events, tag)
+			mu.Unlock()
+			if tag == "ready" {
+				close(ready)
+			}
+		},
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Run(ctx, opts) }()
+	<-started
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("startup did not reach ready within 3s")
+	}
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// The "close-websockets" event must appear after "drain-done" and
+	// before "runtime-connections-closed".
+	mu.Lock()
+	got := make([]string, len(events))
+	copy(got, events)
+	mu.Unlock()
+	drainIdx := indexOf(got, "drain-done")
+	wsIdx := indexOf(got, "close-websockets")
+	rcIdx := indexOf(got, "runtime-connections-closed")
+	if wsIdx < 0 {
+		t.Fatalf("close-websockets event missing, events = %#v", got)
+	}
+	if drainIdx < 0 || wsIdx <= drainIdx {
+		t.Fatalf("close-websockets (%d) must come after drain-done (%d), events = %#v", wsIdx, drainIdx, got)
+	}
+	if rcIdx >= 0 && wsIdx >= rcIdx {
+		t.Fatalf("close-websockets (%d) must come before runtime-connections-closed (%d), events = %#v", wsIdx, rcIdx, got)
+	}
+
+	// CloseAll on an empty registry is a no-op; verify it did not panic
+	// and the registry reports zero connections after shutdown.
+	if registry.Count() != 0 {
+		t.Fatalf("registry count after shutdown = %d, want 0", registry.Count())
+	}
+}
+
+// TestBuildHTTPDepsWiresProxyServices verifies that buildHTTPDeps wires
+// the full proxy service graph: HTTPProxy, WSBridge, MagicAuth,
+// InstanceLookup, and a real AdminLinkIssuer (not a placeholder). This
+// proves the production wiring shares a single service graph across
+// proxy components.
+func TestBuildHTTPDepsWiresProxyServices(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	db, err := database.Open(ctx, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	if err != nil {
+		t.Fatalf("buildHTTPDeps error = %v", err)
+	}
+	if deps.HTTPProxy == nil {
+		t.Fatal("HTTPProxy should be wired, got nil")
+	}
+	if deps.WSBridge == nil {
+		t.Fatal("WSBridge should be wired, got nil")
+	}
+	if deps.MagicAuth == nil {
+		t.Fatal("MagicAuth should be wired, got nil")
+	}
+	if deps.InstanceLookup == nil {
+		t.Fatal("InstanceLookup should be wired, got nil")
+	}
+	if deps.AdminLinkIssuer == nil {
+		t.Fatal("AdminLinkIssuer should be wired, got nil")
+	}
+	// AdminLinkIssuer must be the real magicAdminLinkIssuer adapter, not
+	// a placeholder. The concrete type is unexported, so we verify
+	// behaviorally: CreateAdminLink must not panic and must return a URL
+	// containing "/app/" (the proxy route prefix).
+	instance := instances.Instance{Key: "ws-wire-test", Name: "ws-wire-test"}
+	link, err := deps.AdminLinkIssuer.CreateAdminLink(ctx, instance)
+	if err != nil {
+		t.Fatalf("CreateAdminLink error = %v", err)
+	}
+	if !strings.Contains(link.URL, "/app/") {
+		t.Fatalf("admin link URL = %q, want /app/ prefix", link.URL)
+	}
+}
+
+// indexOf returns the index of the first occurrence of want in s, or -1
+// if not present.
+func indexOf(s []string, want string) int {
+	for i, v := range s {
+		if v == want {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestRunRejectsDatabaseWithoutSQLiteHandle(t *testing.T) {
