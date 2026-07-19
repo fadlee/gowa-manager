@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -76,6 +77,48 @@ func TestLifecycleStartReallocatesUnavailablePort(t *testing.T) {
 	}
 }
 
+func TestLifecycleStartConcurrentUnavailablePortUsesRunningProcessPort(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstance(1, "stopped", 3000)
+	deps.ports.available[3000] = false
+	deps.ports.nextPorts = []int{3001, 3002}
+	deps.supervisor.blockStart = make(chan struct{})
+	deps.supervisor.startEntered = make(chan struct{}, 2)
+
+	var wg sync.WaitGroup
+	statuses := make([]LifecycleStatus, 2)
+	errs := make([]error, 2)
+	for i := range statuses {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			statuses[i], errs[i] = lc.Start(context.Background(), 1)
+		}(i)
+	}
+
+	<-deps.supervisor.startEntered
+	close(deps.supervisor.blockStart)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("Start[%d] error = %v", i, err)
+		}
+		if statuses[i].Port == nil || *statuses[i].Port != 3001 {
+			t.Fatalf("Start[%d] port = %v, want 3001", i, statuses[i].Port)
+		}
+	}
+	if got := deps.supervisor.StartCalls(); got != 1 {
+		t.Fatalf("supervisor start calls = %d, want 1", got)
+	}
+	if deps.repo.instances[1].Port == nil || *deps.repo.instances[1].Port != 3001 {
+		t.Fatalf("persisted port = %v, want running process port 3001", deps.repo.instances[1].Port)
+	}
+	if got := deps.supervisor.LastStart().Args; !reflect.DeepEqual(got, []string{"rest", "--port=3001"}) {
+		t.Fatalf("running args = %#v, want port 3001", got)
+	}
+}
+
 func TestLifecycleStartEnsuresDirectoryAndProcessesArgsEnv(t *testing.T) {
 	lc, deps := newTestLifecycle(t)
 	deps.repo.instances[1] = testInstanceWithConfig(1, "stopped", 3000, `{"args":["rest","--port=PORT"],"env":{"SECRET":"value"},"flags":{"debug":true}}`)
@@ -120,6 +163,45 @@ func TestLifecycleStartPersistsRunningAndFailedStatus(t *testing.T) {
 	}
 	if got := deps.repo.instances[2].Status; got != "failed" {
 		t.Fatalf("status = %q, want failed", got)
+	}
+}
+
+func TestLifecycleStartFailurePersistsSanitizedError(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstanceWithConfig(1, "stopped", 3000, `{"args":["rest","--basic-auth","admin:hunter2","--webhook-secret=super-secret","--token","abc123"],"env":{"PASSWORD":"hunter2","API_TOKEN":"abc123"}}`)
+	deps.supervisor.err = errors.New("start failed args --basic-auth admin:hunter2 --webhook-secret=super-secret --token abc123 password: hunter2 PASSWORD=hunter2 API_TOKEN=abc123")
+
+	_, err := lc.Start(context.Background(), 1)
+	if err == nil {
+		t.Fatalf("Start error = nil, want failure")
+	}
+	status, statusErr := lc.Status(context.Background(), 1)
+	if statusErr != nil {
+		t.Fatalf("Status error = %v", statusErr)
+	}
+	message := ""
+	if deps.repo.instances[1].ErrorMessage != nil {
+		message = *deps.repo.instances[1].ErrorMessage
+	}
+	for _, leaked := range []string{"hunter2", "super-secret", "abc123", "admin:hunter2"} {
+		if strings.Contains(message, leaked) || strings.Contains(err.Error(), leaked) {
+			t.Fatalf("secret %q leaked in persisted/returned error: persisted=%q returned=%q", leaked, message, err.Error())
+		}
+	}
+	if status.Status != "failed" {
+		t.Fatalf("returned status = %q, want failed", status.Status)
+	}
+}
+
+func TestSafeSupervisorExitMessageRedactsSeparatedSecretValues(t *testing.T) {
+	message := safeSupervisorExitMessage("failed --password hunter2 --token abc123 password: swordfish API_TOKEN=abc123 WEBHOOK_SECRET=super-secret key value")
+	for _, leaked := range []string{"hunter2", "abc123", "swordfish", "super-secret", "value"} {
+		if strings.Contains(message, leaked) {
+			t.Fatalf("message leaks %q: %q", leaked, message)
+		}
+	}
+	if !strings.Contains(message, "failed") {
+		t.Fatalf("message = %q, want non-secret context", message)
 	}
 }
 
@@ -257,7 +339,10 @@ func testInstanceWithConfig(id int64, status string, port int, config string) In
 	return Instance{ID: id, Key: "key", Name: "test", Port: &port, Status: status, Config: config, GOWAVersion: "v1.0.0"}
 }
 
-type fakeLifecycleRepo struct{ instances map[int64]Instance }
+type fakeLifecycleRepo struct {
+	mu        sync.Mutex
+	instances map[int64]Instance
+}
 
 func (r *fakeLifecycleRepo) List(context.Context) ([]Instance, error) { return nil, nil }
 func (r *fakeLifecycleRepo) FindByKey(context.Context, string) (Instance, error) {
@@ -274,6 +359,8 @@ func (r *fakeLifecycleRepo) ClearError(ctx context.Context, id int64) (Instance,
 	return r.UpdateStatus(ctx, id, r.instances[id].Status, nil)
 }
 func (r *fakeLifecycleRepo) FindByID(_ context.Context, id int64) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	item, ok := r.instances[id]
 	if !ok {
 		return Instance{}, ErrNotFound
@@ -281,6 +368,8 @@ func (r *fakeLifecycleRepo) FindByID(_ context.Context, id int64) (Instance, err
 	return item, nil
 }
 func (r *fakeLifecycleRepo) UpdateStatus(_ context.Context, id int64, status string, errorMessage *string) (Instance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	item, ok := r.instances[id]
 	if !ok {
 		return Instance{}, ErrNotFound
@@ -291,6 +380,8 @@ func (r *fakeLifecycleRepo) UpdateStatus(_ context.Context, id int64, status str
 	return item, nil
 }
 func (r *fakeLifecycleRepo) UpdatePort(_ context.Context, id int64, port *int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	item, ok := r.instances[id]
 	if !ok {
 		return ErrNotFound
@@ -301,11 +392,14 @@ func (r *fakeLifecycleRepo) UpdatePort(_ context.Context, id int64, port *int) e
 }
 
 type fakeLifecycleFS struct {
+	mu      sync.Mutex
 	ensured int64
 	dir     string
 }
 
 func (f *fakeLifecycleFS) Ensure(_ context.Context, id int64) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.ensured = id
 	return f.dir, nil
 }
@@ -314,12 +408,27 @@ func (f *fakeLifecycleFS) Restore(context.Context, Trash) error              { r
 func (f *fakeLifecycleFS) Purge(context.Context, Trash) error                { return nil }
 
 type fakeLifecyclePorts struct {
+	mu        sync.Mutex
 	available map[int]bool
 	next      int
+	nextPorts []int
 }
 
-func (p *fakeLifecyclePorts) IsPortAvailable(port int) bool     { return p.available[port] }
-func (p *fakeLifecyclePorts) Next(context.Context) (int, error) { return p.next, nil }
+func (p *fakeLifecyclePorts) IsPortAvailable(port int) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.available[port]
+}
+func (p *fakeLifecyclePorts) Next(context.Context) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.nextPorts) > 0 {
+		port := p.nextPorts[0]
+		p.nextPorts = p.nextPorts[1:]
+		return port, nil
+	}
+	return p.next, nil
+}
 
 type fakeLifecycleVersions struct {
 	path string
@@ -331,13 +440,24 @@ func (v *fakeLifecycleVersions) ResolveVersionPath(context.Context, string) (str
 }
 
 type fakeLifecycleSupervisor struct {
+	mu                               sync.Mutex
 	status                           map[int64]supervisor.ProcessSnapshot
 	lastStart                        supervisor.StartConfig
 	startCalls, stopCalls, killCalls int
 	err                              error
+	blockStart                       chan struct{}
+	startEntered                     chan struct{}
 }
 
 func (s *fakeLifecycleSupervisor) Start(_ context.Context, config supervisor.StartConfig) (supervisor.ProcessSnapshot, error) {
+	if s.startEntered != nil {
+		s.startEntered <- struct{}{}
+	}
+	if s.blockStart != nil {
+		<-s.blockStart
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.startCalls++
 	s.lastStart = config
 	if s.err != nil {
@@ -348,18 +468,36 @@ func (s *fakeLifecycleSupervisor) Start(_ context.Context, config supervisor.Sta
 	return snapshot, nil
 }
 func (s *fakeLifecycleSupervisor) Stop(_ context.Context, id int64) (supervisor.ProcessSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.stopCalls++
 	delete(s.status, id)
 	return supervisor.ProcessSnapshot{InstanceID: id, State: supervisor.StateStopped}, nil
 }
 func (s *fakeLifecycleSupervisor) Kill(_ context.Context, id int64) (supervisor.ProcessSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.killCalls++
 	delete(s.status, id)
 	return supervisor.ProcessSnapshot{InstanceID: id, State: supervisor.StateStopped}, nil
 }
 func (s *fakeLifecycleSupervisor) Status(id int64) (supervisor.ProcessSnapshot, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	snapshot, ok := s.status[id]
 	return snapshot, ok
+}
+
+func (s *fakeLifecycleSupervisor) StartCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startCalls
+}
+
+func (s *fakeLifecycleSupervisor) LastStart() supervisor.StartConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastStart
 }
 
 type fakeLifecycleCache struct{ cleared []int64 }

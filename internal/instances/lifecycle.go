@@ -2,8 +2,11 @@ package instances
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/supervisor"
@@ -55,6 +58,14 @@ type LifecycleService struct {
 	cache      DeviceCacheCleaner
 	now        func() time.Time
 	sleep      func(context.Context, time.Duration) error
+
+	mu      sync.Mutex
+	startMu map[int64]*startLock
+}
+
+type startLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 func NewLifecycleService(opts LifecycleOptions) *LifecycleService {
@@ -75,10 +86,14 @@ func NewLifecycleService(opts LifecycleOptions) *LifecycleService {
 			}
 		}
 	}
-	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, now: now, sleep: sleep}
+	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, now: now, sleep: sleep, startMu: make(map[int64]*startLock)}
 }
 
 func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus, error) {
+	startMu := s.acquireStartLock(id)
+	startMu.mu.Lock()
+	defer s.releaseStartLock(id, startMu)
+
 	instance, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return LifecycleStatus{}, err
@@ -169,18 +184,43 @@ func safeSupervisorExitMessage(message string) string {
 	if message == "" {
 		return "process exited unexpectedly"
 	}
-	fields := strings.Fields(message)
-	for i, field := range fields {
-		lower := strings.ToLower(field)
-		if strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "password") || strings.Contains(lower, "key") {
-			fields[i] = "[redacted]"
-		}
-	}
-	message = strings.Join(fields, " ")
+	message = redactSecretValues(message)
 	if len(message) > 200 {
 		message = message[:200]
 	}
 	return message
+}
+
+var secretNamePattern = regexp.MustCompile(`(?i)(token|secret|password|key|basic-auth)`)
+
+func redactSecretValues(message string) string {
+	fields := strings.Fields(message)
+	redactNext := false
+	for i, field := range fields {
+		trimmed := strings.Trim(field, `"'`)
+		lower := strings.ToLower(trimmed)
+		if redactNext {
+			fields[i] = "[redacted]"
+			redactNext = false
+			continue
+		}
+		if secretNamePattern.MatchString(lower) {
+			fields[i] = redactSecretField(field)
+			if !strings.ContainsAny(trimmed, "=:") || strings.HasSuffix(trimmed, "=") || strings.HasSuffix(trimmed, ":") {
+				redactNext = true
+			}
+		}
+	}
+	return strings.Join(fields, " ")
+}
+
+func redactSecretField(field string) string {
+	for _, sep := range []string{"=", ":"} {
+		if idx := strings.Index(field, sep); idx >= 0 {
+			return field[:idx+1] + "[redacted]"
+		}
+	}
+	return "[redacted]"
 }
 
 func (s *LifecycleService) ensurePort(ctx context.Context, instance Instance) (int, error) {
@@ -231,12 +271,37 @@ func (s *LifecycleService) stopWith(ctx context.Context, id int64, force bool) (
 }
 
 func (s *LifecycleService) persistFailed(ctx context.Context, id int64, err error) error {
-	message := err.Error()
+	message := safeSupervisorExitMessage(err.Error())
 	_, updateErr := s.repo.UpdateStatus(ctx, id, "failed", &message)
 	if updateErr != nil {
 		return fmt.Errorf("%w: %v", err, updateErr)
 	}
-	return err
+	return errors.New(message)
+}
+
+func (s *LifecycleService) acquireStartLock(instanceID int64) *startLock {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	startMu := s.startMu[instanceID]
+	if startMu == nil {
+		startMu = &startLock{}
+		s.startMu[instanceID] = startMu
+	}
+	startMu.refs++
+	return startMu
+}
+
+func (s *LifecycleService) releaseStartLock(instanceID int64, startMu *startLock) {
+	startMu.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.startMu[instanceID] != startMu {
+		return
+	}
+	startMu.refs--
+	if startMu.refs == 0 {
+		delete(s.startMu, instanceID)
+	}
 }
 
 func (s *LifecycleService) statusFrom(instance Instance, snapshot supervisor.ProcessSnapshot, managed bool) LifecycleStatus {
