@@ -187,6 +187,7 @@ func stopBackend(t *testing.T, be backend, output string) {
 	}
 	if runtime.GOOS == "windows" {
 		_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(be.cmd.Process.Pid)).Run()
+		killWindowsProcessesUsingDataDir(be.dataDir)
 	} else {
 		_ = be.cmd.Process.Signal(os.Interrupt)
 	}
@@ -207,6 +208,16 @@ func stopBackend(t *testing.T, be backend, output string) {
 			}
 		}
 	}
+}
+
+func killWindowsProcessesUsingDataDir(dataDir string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	escaped := strings.ReplaceAll(dataDir, "'", "''")
+	script := "$needle = '" + escaped + "'; " +
+		"Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \"*$needle*\" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+	_ = exec.Command("powershell", "-NoProfile", "-Command", script).Run()
 }
 
 func waitForHealth(t *testing.T, ctx context.Context, be backend, output func() string) {
@@ -371,6 +382,10 @@ func normalizeContractBody(value any) any {
 				continue
 			}
 			if key == "port" {
+				if child == nil {
+					out[key] = nil
+					continue
+				}
 				out[key] = "<instance-port>"
 				continue
 			}
