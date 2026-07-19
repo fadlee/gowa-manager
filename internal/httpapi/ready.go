@@ -45,6 +45,16 @@ func (r *AtomicReadiness) SetReady() {
 	r.ready.Store(true)
 }
 
+// SetNotReady marks the probe as not-ready. This is called at the start of
+// shutdown so /api/ready begins returning 503 while in-flight requests are
+// still being drained.
+func (r *AtomicReadiness) SetNotReady() {
+	if r == nil {
+		return
+	}
+	r.ready.Store(false)
+}
+
 func readyHandler(probe ReadinessProbe) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

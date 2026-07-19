@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/fadlee/gowa-manager/internal/app"
 	"github.com/fadlee/gowa-manager/internal/config"
@@ -29,9 +31,31 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		fmt.Fprintln(stdout, config.VersionText())
 		return 0
 	}
-	ctx, stop := app.SignalContext(context.Background())
-	defer stop()
-	if err := app.Run(ctx, app.Options{Config: cfg, Logger: slog.New(slog.NewTextHandler(stderr, nil))}); err != nil {
+
+	// Signal handling: the first SIGINT/SIGTERM initiates graceful shutdown
+	// (cancels the context). A second SIGINT/SIGTERM forces immediate
+	// shutdown by closing the force channel, which makes Run skip the
+	// graceful drain.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	force := make(chan struct{})
+
+	sigCh := make(chan os.Signal, 2)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	go func() {
+		<-sigCh // first signal: graceful shutdown
+		cancel()
+		<-sigCh // second signal: force
+		close(force)
+	}()
+
+	if err := app.Run(ctx, app.Options{
+		Config:        cfg,
+		Logger:        slog.New(slog.NewTextHandler(stderr, nil)),
+		ForceShutdown: force,
+	}); err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 1
 	}

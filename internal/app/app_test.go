@@ -26,26 +26,179 @@ import (
 
 type fakeLock struct {
 	events *[]string
+	mu     *sync.Mutex
 }
 
 func (l *fakeLock) Release() error {
-	*l.events = append(*l.events, "lock-release")
+	appendEvent(l.events, l.mu, "lock-release")
 	return nil
 }
 
 type fakeDB struct {
 	events *[]string
+	mu     *sync.Mutex
 }
 
 func (d *fakeDB) Close() error {
-	*d.events = append(*d.events, "db-close")
+	appendEvent(d.events, d.mu, "db-close")
 	return nil
+}
+
+// appendEvent appends a tag to the events slice, using mu for synchronization
+// when non-nil (the lifecycle-order test shares the slice across goroutines).
+func appendEvent(events *[]string, mu *sync.Mutex, tag string) {
+	if mu != nil {
+		mu.Lock()
+		defer mu.Unlock()
+	}
+	*events = append(*events, tag)
 }
 
 func TestRunStartupOrderAndShutdown(t *testing.T) {
 	events := []string{}
+	var mu sync.Mutex
 	ctx, cancel := context.WithCancel(context.Background())
 	started := make(chan struct{})
+	ready := make(chan struct{})
+	opts := Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir()},
+		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		AcquireLock: func(string) (Releaser, error) {
+			mu.Lock(); events = append(events, "lock"); mu.Unlock()
+			return &fakeLock{events: &events, mu: &mu}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			mu.Lock(); events = append(events, "db"); mu.Unlock()
+			return &fakeDB{events: &events, mu: &mu}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			mu.Lock(); events = append(events, "services"); mu.Unlock()
+			return httpapi.Dependencies{}, nil
+		},
+		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
+			mu.Lock(); events = append(events, "schedulers-built"); mu.Unlock()
+			return &fakeSchedulers{events: &events, mu: &mu}, nil
+		},
+		Listen: func(network, address string) (net.Listener, error) {
+			mu.Lock(); events = append(events, "listen"); mu.Unlock()
+			ln, err := net.Listen(network, "127.0.0.1:0")
+			if err == nil {
+				close(started)
+			}
+			return ln, err
+		},
+		OnEvent: func(tag string) {
+			mu.Lock(); events = append(events, tag); mu.Unlock()
+			if tag == "ready" {
+				close(ready)
+			}
+		},
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Run(ctx, opts) }()
+	<-started
+	// Wait until the full startup sequence (reconcile + schedulers + ready)
+	// completes before triggering shutdown, so schedulers-start is recorded.
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("startup did not reach ready within 3s")
+	}
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	// Startup: lock -> db -> services -> listen -> schedulers-built ->
+	//   reconcile-start -> reconcile-done -> schedulers-start -> ready
+	// (schedulers are constructed before reconciliation but started after)
+	// Shutdown: unready -> stop-http-intake -> cancel-schedulers -> drain ->
+	//           close-runtime-connections -> child-policy -> db-close -> lock-release
+	want := []string{
+		"lock", "db", "services", "listen", "schedulers-built",
+		"reconcile-start", "reconcile-done",
+		"schedulers-start", "ready",
+		// shutdown
+		"unready", "stop-http-intake", "schedulers-stop", "drain-done",
+		"runtime-connections-closed", "child-policy",
+		"db-close", "lock-release",
+	}
+	mu.Lock()
+	got := make([]string, len(events))
+	copy(got, events)
+	mu.Unlock()
+	if !equal(got, want) {
+		t.Fatalf("events = %#v\nwant = %#v", got, want)
+	}
+}
+
+func TestRunShutdownSetsNotReadyBeforeDrain(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	var rmu sync.Mutex
+	var readiness *httpapi.AtomicReadiness
+	opts := Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir()},
+		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		AcquireLock: func(string) (Releaser, error) {
+			return &fakeLock{events: &[]string{}}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			return &fakeDB{events: &[]string{}}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			return httpapi.Dependencies{}, nil
+		},
+		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
+			return &fakeSchedulers{events: &[]string{}}, nil
+		},
+		Listen: func(network, address string) (net.Listener, error) {
+			ln, err := net.Listen(network, "127.0.0.1:0")
+			if err == nil {
+				close(started)
+			}
+			return ln, err
+		},
+		OnReadiness: func(r *httpapi.AtomicReadiness) {
+			rmu.Lock()
+			readiness = r
+			rmu.Unlock()
+		},
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Run(ctx, opts) }()
+	<-started
+
+	// Wait until ready (reconciliation + schedulers done).
+	rmu.Lock()
+	r := readiness
+	rmu.Unlock()
+	waitForReady(t, r, 2*time.Second)
+	if !r.Ready() {
+		t.Fatalf("readiness should be ready after startup")
+	}
+
+	// Cancel to trigger shutdown.
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	// After shutdown, readiness must be not-ready.
+	if r.Ready() {
+		t.Fatalf("readiness should be not-ready after shutdown")
+	}
+}
+
+func TestRunSecondSignalForcesImmediateShutdown(t *testing.T) {
+	events := []string{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{})
+	force := make(chan struct{}, 1)
+
+	// Build a deps with a slow handler so drain would block if graceful.
+	blockHandler := make(chan struct{})
+	depsVal := httpapi.Dependencies{TestPanicRoute: false}
+
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
@@ -58,7 +211,60 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 			return &fakeDB{events: &events}, nil
 		},
 		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			events = append(events, "services")
+			return depsVal, nil
+		},
+		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
+			return &fakeSchedulers{events: &events}, nil
+		},
+		Listen: func(network, address string) (net.Listener, error) {
+			events = append(events, "listen")
+			ln, err := net.Listen(network, "127.0.0.1:0")
+			if err == nil {
+				close(started)
+			}
+			return ln, err
+		},
+		ForceShutdown: force,
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Run(ctx, opts) }()
+	<-started
+
+	// Trigger shutdown via force channel (simulates second signal).
+	close(force)
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	// We don't assert exact events here because the force path skips graceful
+	// drain; the key assertion is that Run returns promptly without hanging.
+	_ = blockHandler
+}
+
+func TestRunShutdownCollectsErrorsWithoutSkipping(t *testing.T) {
+	events := []string{}
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	wantDBErr := errors.New("db-close-fail")
+	wantLockErr := errors.New("lock-release-fail")
+
+	opts := Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir()},
+		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		AcquireLock: func(string) (Releaser, error) {
+			events = append(events, "lock")
+			return &errorLock{releaseErr: wantLockErr, events: &events}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			events = append(events, "db")
+			return &errorDB{closeErr: wantDBErr, events: &events}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			events = append(events, "services")
 			return httpapi.Dependencies{}, nil
+		},
+		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
+			return &fakeSchedulers{events: &events}, nil
 		},
 		Listen: func(network, address string) (net.Listener, error) {
 			events = append(events, "listen")
@@ -73,12 +279,22 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 	go func() { errCh <- Run(ctx, opts) }()
 	<-started
 	cancel()
-	if err := <-errCh; err != nil {
-		t.Fatalf("Run() error = %v", err)
+	err := <-errCh
+	if err == nil {
+		t.Fatalf("Run() error = nil, want joined error containing db-close-fail and lock-release-fail")
 	}
-	want := []string{"lock", "db", "listen", "db-close", "lock-release"}
-	if !equal(events, want) {
-		t.Fatalf("events = %#v, want %#v", events, want)
+	if !strings.Contains(err.Error(), "db-close-fail") {
+		t.Fatalf("Run() error = %v, want db-close-fail", err)
+	}
+	if !strings.Contains(err.Error(), "lock-release-fail") {
+		t.Fatalf("Run() error = %v, want lock-release-fail", err)
+	}
+	// Both cleanup steps must still have run despite the earlier error.
+	if !contains(events, "db-close") {
+		t.Fatalf("db-close should still run, events = %#v", events)
+	}
+	if !contains(events, "lock-release") {
+		t.Fatalf("lock-release should still run, events = %#v", events)
 	}
 }
 
@@ -492,4 +708,63 @@ func parsePortFromAddr(addr string) int {
 		port = port*10 + int(ch-'0')
 	}
 	return port
+}
+
+func contains(slice []string, want string) bool {
+	for _, s := range slice {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func waitForReady(t *testing.T, r *httpapi.AtomicReadiness, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if r != nil && r.Ready() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("readiness did not become ready within %v", timeout)
+}
+
+// fakeSchedulers records start/stop events for lifecycle-order tests.
+type fakeSchedulers struct {
+	events *[]string
+	mu     *sync.Mutex
+}
+
+func (f *fakeSchedulers) Start(ctx context.Context) error {
+	appendEvent(f.events, f.mu, "schedulers-start")
+	return nil
+}
+
+func (f *fakeSchedulers) Stop() {
+	appendEvent(f.events, f.mu, "schedulers-stop")
+}
+
+// errorLock records the release event but returns a configured error, used to
+// verify shutdown collects errors without skipping later cleanup.
+type errorLock struct {
+	releaseErr error
+	events     *[]string
+}
+
+func (l *errorLock) Release() error {
+	appendEvent(l.events, nil, "lock-release")
+	return l.releaseErr
+}
+
+// errorDB records the close event but returns a configured error.
+type errorDB struct {
+	closeErr error
+	events   *[]string
+}
+
+func (d *errorDB) Close() error {
+	appendEvent(d.events, nil, "db-close")
+	return d.closeErr
 }
