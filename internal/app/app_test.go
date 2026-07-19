@@ -272,9 +272,91 @@ func TestBuildHTTPDepsLifecycleRoutesReturnRuntimeNotReady(t *testing.T) {
 	}
 }
 
+func TestBuildHTTPDepsManagementRoutesSmoke(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	db, err := database.Open(ctx, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := httpapi.New(deps)
+
+	created := createInstanceViaHandler(t, handler, "smoke-create")
+	items := listInstancesViaHandler(t, handler)
+	if len(items) != 1 || items[0].ID != created.ID || items[0].Name != "smoke-create" {
+		t.Fatalf("list after create = %#v, want created instance %#v", items, created)
+	}
+
+	updatedBody := bytes.NewBufferString(`{"name":"smoke-updated","config":"{\"webhook\":\"https://example.invalid/hook\"}","gowa_version":"v9.8.7"}`)
+	updatedReq := httptest.NewRequest(http.MethodPut, "/api/instances/"+int64Text(created.ID), updatedBody)
+	updatedReq.Header.Set("Content-Type", "application/json")
+	updatedResp := httptest.NewRecorder()
+	handler.ServeHTTP(updatedResp, updatedReq)
+	if updatedResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d body = %s", updatedResp.Code, updatedResp.Body.String())
+	}
+	var updated appInstanceResponse
+	if err := json.NewDecoder(updatedResp.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != created.ID || updated.Name != "smoke-updated" || updated.GOWAVersion != "v9.8.7" {
+		t.Fatalf("updated instance = %#v", updated)
+	}
+	if !bytes.Contains([]byte(updated.Config), []byte("https://example.invalid/hook")) {
+		t.Fatalf("updated config = %q", updated.Config)
+	}
+
+	instanceDir := filepath.Join(dataDir, "instances", int64Text(created.ID))
+	if err := os.WriteFile(filepath.Join(instanceDir, "stale.txt"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resetReq := httptest.NewRequest(http.MethodPost, "/api/instances/"+int64Text(created.ID)+"/reset-data", nil)
+	resetResp := httptest.NewRecorder()
+	handler.ServeHTTP(resetResp, resetReq)
+	if resetResp.Code != http.StatusOK {
+		t.Fatalf("reset status = %d body = %s", resetResp.Code, resetResp.Body.String())
+	}
+	if info, err := os.Stat(instanceDir); err != nil || !info.IsDir() {
+		t.Fatalf("instance directory after reset stat error = %v, info = %#v", err, info)
+	}
+	entries, err := os.ReadDir(instanceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("instance directory after reset contains %#v, want empty", entries)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/instances/"+int64Text(created.ID), nil)
+	deleteResp := httptest.NewRecorder()
+	handler.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body = %s", deleteResp.Code, deleteResp.Body.String())
+	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/instances/"+int64Text(created.ID), nil)
+	detailResp := httptest.NewRecorder()
+	handler.ServeHTTP(detailResp, detailReq)
+	if detailResp.Code != http.StatusNotFound {
+		t.Fatalf("detail after delete status = %d body = %s", detailResp.Code, detailResp.Body.String())
+	}
+	items = listInstancesViaHandler(t, handler)
+	if len(items) != 0 {
+		t.Fatalf("list after delete = %#v, want empty", items)
+	}
+}
+
 type appInstanceResponse struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Config      string `json:"config"`
+	GOWAVersion string `json:"gowa_version"`
 }
 
 func createInstanceViaHandler(t *testing.T, handler http.Handler, name string) appInstanceResponse {
@@ -295,6 +377,21 @@ func createInstanceViaHandler(t *testing.T, handler http.Handler, name string) a
 		t.Fatalf("created ID = 0")
 	}
 	return created
+}
+
+func listInstancesViaHandler(t *testing.T, handler http.Handler) []appInstanceResponse {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/instances", nil)
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("list status = %d body = %s", resp.Code, resp.Body.String())
+	}
+	var items []appInstanceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		t.Fatal(err)
+	}
+	return items
 }
 
 func int64Text(value int64) string {
