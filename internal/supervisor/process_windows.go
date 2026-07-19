@@ -52,6 +52,7 @@ var (
 	procSetInformationJobObject  = modkernel32.NewProc("SetInformationJobObject")
 	procTerminateJobObject       = modkernel32.NewProc("TerminateJobObject")
 	procGenerateConsoleCtrlEvent = modkernel32.NewProc("GenerateConsoleCtrlEvent")
+	assignProcessToJobObject     = windows.AssignProcessToJobObject
 )
 
 func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*windowsProcess, error) {
@@ -100,13 +101,17 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*w
 	assigned := false
 	resumed := false
 	defer func() {
-		if !resumed || !assigned {
+		if !assigned {
+			_ = windows.TerminateProcess(processInfo.Process, 1)
+		} else if !resumed {
 			_ = proc.Kill()
+		}
+		if !resumed || !assigned {
 			_ = proc.Close()
 		}
 	}()
 
-	if err := windows.AssignProcessToJobObject(job, processInfo.Process); err != nil {
+	if err := assignProcessToJobObject(job, processInfo.Process); err != nil {
 		return nil, fmt.Errorf("assign process %d to job object: %w", proc.pid, err)
 	}
 	assigned = true
@@ -181,6 +186,18 @@ func (p *windowsProcess) Close() error {
 	if p == nil {
 		return os.ErrInvalid
 	}
+	if p.currentJobHandle() != 0 {
+		select {
+		case <-p.waitDone:
+		default:
+			_ = p.Kill()
+			select {
+			case <-p.waitDone:
+			case <-time.After(3 * time.Second):
+			}
+		}
+	}
+
 	p.mu.Lock()
 	processHandle := p.processHandle
 	threadHandle := p.threadHandle
@@ -205,17 +222,40 @@ func (p *windowsProcess) Close() error {
 func (p *windowsProcess) startWait() {
 	p.waitOnce.Do(func() {
 		go func() {
-			handle := p.currentProcessHandle()
+			handle, err := p.duplicateProcessHandle()
+			if err != nil {
+				p.waitErr = err
+				close(p.waitDone)
+				return
+			}
 			if handle == 0 {
 				p.waitErr = os.ErrProcessDone
 				close(p.waitDone)
 				return
 			}
-			_, err := windows.WaitForSingleObject(handle, windows.INFINITE)
+			defer windows.CloseHandle(handle)
+			_, err = windows.WaitForSingleObject(handle, windows.INFINITE)
 			p.waitErr = err
 			close(p.waitDone)
 		}()
 	})
+}
+
+func (p *windowsProcess) duplicateProcessHandle() (windows.Handle, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.processHandle == 0 {
+		return 0, nil
+	}
+	currentProcess, err := windows.GetCurrentProcess()
+	if err != nil {
+		return 0, err
+	}
+	var duplicate windows.Handle
+	if err := windows.DuplicateHandle(currentProcess, p.processHandle, currentProcess, &duplicate, windows.SYNCHRONIZE, false, 0); err != nil {
+		return 0, err
+	}
+	return duplicate, nil
 }
 
 func (p *windowsProcess) currentProcessHandle() windows.Handle {
@@ -273,9 +313,31 @@ func commandLineArgs(args []string) string {
 }
 
 func mergedEnvironment(env map[string]string) []string {
-	merged := os.Environ()
-	for key, value := range env {
-		merged = append(merged, key+"="+value)
+	return mergeEnvironment(os.Environ(), env)
+}
+
+func mergeEnvironment(base []string, overrides map[string]string) []string {
+	values := make(map[string]string, len(base)+len(overrides))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		folded := strings.ToUpper(key)
+		values[folded] = entry
+	}
+	for key, value := range overrides {
+		folded := strings.ToUpper(key)
+		values[folded] = key + "=" + value
+	}
+	keys := make([]string, 0, len(values))
+	for folded := range values {
+		keys = append(keys, folded)
+	}
+	sort.Strings(keys)
+	merged := make([]string, 0, len(keys))
+	for _, folded := range keys {
+		merged = append(merged, values[folded])
 	}
 	return merged
 }
