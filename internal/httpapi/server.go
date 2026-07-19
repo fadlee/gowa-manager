@@ -26,11 +26,15 @@ type Dependencies struct {
 	AutoUpdate        AutoUpdateService
 	Versions          VersionService
 	VersionInstaller  VersionInstaller
+	Readiness         ReadinessProbe
 }
 
 func New(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
+	if deps.Readiness != nil {
+		mux.HandleFunc("/api/ready", readyHandler(deps.Readiness))
+	}
 	if deps.Instances != nil {
 		registerInstanceRoutes(mux, deps)
 	}

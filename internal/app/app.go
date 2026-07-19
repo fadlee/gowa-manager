@@ -34,13 +34,14 @@ type DBHandle interface {
 }
 
 type Options struct {
-	Config        config.Config
-	Logger        *slog.Logger
-	AcquireLock   func(dataDir string) (Releaser, error)
-	OpenDB        func(context.Context, string) (Closer, error)
-	BuildHTTPDeps func(context.Context, httpDepsOptions) (httpapi.Dependencies, error)
-	Listen        func(network, address string) (net.Listener, error)
-	OnStarted     func(addr string)
+	Config             config.Config
+	Logger             *slog.Logger
+	AcquireLock        func(dataDir string) (Releaser, error)
+	OpenDB             func(context.Context, string) (Closer, error)
+	BuildHTTPDeps      func(context.Context, httpDepsOptions) (httpapi.Dependencies, error)
+	Listen             func(network, address string) (net.Listener, error)
+	OnStarted          func(addr string)
+	ReconcileConcurrency int
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -108,6 +109,8 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	readiness := httpapi.NewReadiness()
+	deps.Readiness = readiness
 	server := &http.Server{Handler: httpapi.New(deps)}
 	errCh := make(chan error, 1)
 	go func() {
@@ -118,8 +121,21 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	logger.Info("Go manager HTTP server started", "addr", ln.Addr().String())
 
+	// Reconcile previously-running instances after the HTTP server is
+	// listening so /api/ready can be polled. Readiness stays not-ready until
+	// reconciliation completes (success, partial failure, or cancellation).
+	// See internal/app/reconcile.go for the documented recovery behavior.
+	reconcileCtx, cancelReconcile := context.WithCancel(ctx)
+	reconcileDone := make(chan struct{})
+	go func() {
+		defer close(reconcileDone)
+		defer cancelReconcile()
+		runReconciliation(reconcileCtx, deps, logger, opts.ReconcileConcurrency, readiness)
+	}()
+
 	select {
 	case <-ctx.Done():
+		cancelReconcile()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
@@ -127,9 +143,16 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	case err := <-errCh:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			cancelReconcile()
+			<-reconcileDone
 			return err
 		}
 	}
+
+	// Wait for reconciliation to stop before closing the database so the
+	// reconciler never accesses a closed handle during shutdown.
+	cancelReconcile()
+	<-reconcileDone
 
 	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -316,4 +339,43 @@ func listenFirstAvailable(listen func(network, address string) (net.Listener, er
 		lastErr = err
 	}
 	return nil, fmt.Errorf("no available port found from %d through %d: %w", startPort, startPort+99, lastErr)
+}
+
+// depsLister adapts httpapi.InstanceService to the reconciler's InstanceLister.
+type depsLister struct{ svc httpapi.InstanceService }
+
+func (d depsLister) List(ctx context.Context) ([]instances.Instance, error) {
+	return d.svc.List(ctx)
+}
+
+// depsStarter adapts httpapi.InstanceLifecycle to the reconciler's
+// InstanceStarter. A non-nil error from Start indicates the instance could
+// not be restarted; the underlying LifecycleService persists a "failed"
+// status in that case.
+type depsStarter struct{ svc httpapi.InstanceLifecycle }
+
+func (d depsStarter) Start(ctx context.Context, id int64) error {
+	_, err := d.svc.Start(ctx, id)
+	return err
+}
+
+// runReconciliation builds and runs the startup reconciler from the wired
+// dependencies. When instance management dependencies are absent (e.g. a
+// degraded build), it flips readiness immediately so the manager does not
+// stay not-ready forever.
+func runReconciliation(ctx context.Context, deps httpapi.Dependencies, logger *slog.Logger, concurrency int, readiness *httpapi.AtomicReadiness) {
+	if deps.Instances == nil || deps.InstanceLifecycle == nil {
+		readiness.SetReady()
+		return
+	}
+	r := NewReconciler(ReconcilerOptions{
+		Lister:      depsLister{svc: deps.Instances},
+		Starter:     depsStarter{svc: deps.InstanceLifecycle},
+		Logger:      logger,
+		Concurrency: concurrency,
+		Readiness:   readiness,
+	})
+	if err := r.Reconcile(ctx); err != nil {
+		logger.Error("startup reconciliation completed with error", "error", err)
+	}
 }
