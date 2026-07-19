@@ -525,3 +525,94 @@ func TestBackup_WindowsExeBinary(t *testing.T) {
 		t.Fatalf("versions.json should reference gowa.exe on Windows\ncontent: %s", string(data))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Checksum mismatch test (Step 4 failure case)
+// ---------------------------------------------------------------------------
+
+func TestBackup_ChecksumMismatch(t *testing.T) {
+	skipIfNoSqlite3(t)
+	dataDir := createValidDataDir(t)
+	defer os.RemoveAll(filepath.Dir(dataDir))
+
+	backupDir := filepath.Join(filepath.Dir(dataDir), "backup-verify")
+
+	// 1. Run a normal backup — should succeed with a verified manifest.
+	r := runScript(t, "backup", []string{
+		"-DataDir", dataDir,
+		"-BackupDir", backupDir,
+	})
+	assertExitCode(t, r, 0)
+	manifest, _ := r.JSON["manifest"].(map[string]any)
+	if manifest["verified"] != true {
+		t.Fatalf("initial backup manifest not verified: %v\nstdout: %s",
+			manifest["verified"], r.RawStdout)
+	}
+
+	// 2. Corrupt one of the backed-up files (the database copy).
+	dbBackup := filepath.Join(backupDir, "gowa.db")
+	corrupt := []byte("CORRUPTED-DATA-FOR-VERIFY-TEST-1234567890")
+	if err := os.WriteFile(dbBackup, corrupt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Run backup with --verify — should detect the checksum mismatch and
+	//    exit non-zero.
+	rv := runScript(t, "backup", []string{
+		"-DataDir", dataDir,
+		"-BackupDir", backupDir,
+		"-Verify",
+	})
+	assertExitCode(t, rv, 1)
+	// The manifest.verified field must be false.
+	vm, ok := rv.JSON["manifest"].(map[string]any)
+	if !ok {
+		t.Fatalf("manifest not an object in verify output: %v\nstdout: %s",
+			rv.JSON["manifest"], rv.RawStdout)
+	}
+	if vm["verified"] != false {
+		t.Fatalf("verify manifest.verified = %v, want false", vm["verified"])
+	}
+	// An error about checksum mismatch must be present.
+	errs, ok := rv.JSON["errors"].([]any)
+	if !ok || len(errs) == 0 {
+		t.Fatalf("expected errors in verify output, got none\nstdout: %s", rv.RawStdout)
+	}
+	found := false
+	for _, e := range errs {
+		if s, ok := e.(string); ok && strings.Contains(s, "checksum mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no checksum mismatch error in verify output; errors: %v", errs)
+	}
+}
+
+// TestBackup_VerifyPassesOnCleanBackup ensures --verify succeeds when the
+// backup is intact (sanity check for the verify mode itself).
+func TestBackup_VerifyPassesOnCleanBackup(t *testing.T) {
+	skipIfNoSqlite3(t)
+	dataDir := createValidDataDir(t)
+	defer os.RemoveAll(filepath.Dir(dataDir))
+
+	backupDir := filepath.Join(filepath.Dir(dataDir), "backup-verify-clean")
+
+	r := runScript(t, "backup", []string{
+		"-DataDir", dataDir,
+		"-BackupDir", backupDir,
+	})
+	assertExitCode(t, r, 0)
+
+	rv := runScript(t, "backup", []string{
+		"-DataDir", dataDir,
+		"-BackupDir", backupDir,
+		"-Verify",
+	})
+	assertExitCode(t, rv, 0)
+	vm, _ := rv.JSON["manifest"].(map[string]any)
+	if vm["verified"] != true {
+		t.Fatalf("verify on clean backup: verified = %v, want true\nstdout: %s",
+			vm["verified"], rv.RawStdout)
+	}
+}

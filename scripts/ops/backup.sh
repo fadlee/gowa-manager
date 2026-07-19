@@ -25,6 +25,7 @@ set -u
 DATA_DIR="./data"
 BACKUP_DIR=""
 SQLITE_BIN="${SQLITE_BIN:-sqlite3}"
+VERIFY=false
 
 # ---------------------------------------------------------------------------
 # Helpers (same conventions as preflight.sh)
@@ -62,17 +63,22 @@ while [ $# -gt 0 ]; do
     -d|--data-dir)  DATA_DIR=$2; shift 2 ;;
     -o|--backup-dir) BACKUP_DIR=$2; shift 2 ;;
     --sqlite-bin)   SQLITE_BIN=$2; shift 2 ;;
+    --verify)       VERIFY=true; shift ;;
     -h|--help)
       cat >&2 <<'EOF'
 GOWA Manager pre-cutover backup.
 
 Usage: backup.sh [-d|--data-dir DIR] [-o|--backup-dir DIR] [--sqlite-bin PATH]
+                 [--verify]
 
 Options:
   -d, --data-dir DIR     Data directory to back up (default: ./data).
   -o, --backup-dir DIR   Destination directory for the backup.
                           (default: ./backup/<timestamp>)
   --sqlite-bin PATH      Path to sqlite3 CLI (default: sqlite3 from PATH).
+  --verify               Re-read the manifest in the backup dir and re-hash
+                          all files; exit non-zero on mismatch.  No backup
+                          is performed in this mode.
 EOF
       exit 0 ;;
     *) log "Unknown option: $1"; exit 2 ;;
@@ -84,6 +90,101 @@ START_TS=$(now_iso)
 # Default backup dir with timestamp.
 if [ -z "$BACKUP_DIR" ]; then
   BACKUP_DIR="./backup/$(date -u '+%Y%m%d-%H%M%S')"
+fi
+
+# ---------------------------------------------------------------------------
+# Verify mode: re-read the manifest and re-hash all files.  No backup is
+# performed.  Exits non-zero on any mismatch or missing file.
+# ---------------------------------------------------------------------------
+if [ "$VERIFY" = true ]; then
+  ERRORS=""
+  manifest_name="manifest.sha256"
+  manifest_path="$BACKUP_DIR/$manifest_name"
+  manifest_verified=true
+  file_count=0
+
+  # Detect hashing command.
+  SHA_CMD=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    SHA_CMD=sha256sum
+  elif command -v shasum >/dev/null 2>&1; then
+    SHA_CMD="shasum -a 256"
+  fi
+  if [ -z "$SHA_CMD" ]; then
+    add_error "neither sha256sum nor shasum is available"
+    manifest_verified=false
+  elif [ ! -f "$manifest_path" ]; then
+    add_error "manifest not found: $manifest_path"
+    manifest_verified=false
+  else
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      file_count=$((file_count + 1))
+      _expected_sha=$(printf '%s' "$line" | awk '{print $1}')
+      _rel_path=$(printf '%s' "$line" | awk '{print $2}')
+      _full_path="$BACKUP_DIR/$_rel_path"
+      if [ ! -f "$_full_path" ]; then
+        manifest_verified=false
+        add_error "manifest verify: file missing: $_rel_path"
+        break
+      fi
+      _actual_sha=$(compute_sha "$_full_path")
+      if [ "$_expected_sha" != "$_actual_sha" ]; then
+        manifest_verified=false
+        add_error "manifest verify: checksum mismatch for $_rel_path"
+        break
+      fi
+    done < "$manifest_path"
+  fi
+
+  verify_exit=0
+  [ "$manifest_verified" = false ] && verify_exit=1
+  END_TS=$(now_iso)
+  cat <<EOF
+{
+  "tool": "backup",
+  "schema_version": 1,
+  "mode": "verify",
+  "start_timestamp": $(jstr "$START_TS"),
+  "end_timestamp": $(jstr "$END_TS"),
+  "data_dir": $(jstr "$DATA_DIR"),
+  "backup_dir": $(jstr "$BACKUP_DIR"),
+  "manager_downtime": {
+    "state": "assumed_stopped",
+    "note": "verify mode - no backup performed"
+  },
+  "journal_mode": "unknown",
+  "method": "verify",
+  "files": [],
+  "manifest": {
+    "path": $(jstr "$manifest_name"),
+    "verified": $( [ "$manifest_verified" = true ] && echo true || echo false ),
+    "file_count": $file_count
+  },
+  "metadata": {"instances_copied": 0, "versions_copied": 0},
+  "errors": [$ERRORS],
+  "exit_code": $verify_exit
+}
+EOF
+  log ""
+  log "=== GOWA Manager Backup Verify ==="
+  log "Backup dir:   $BACKUP_DIR"
+  log "Manifest:     $( [ "$manifest_verified" = true ] && echo 'verified' || echo 'VERIFICATION FAILED')"
+  log "Files:        $file_count checked"
+  if [ -n "$ERRORS" ]; then
+    log ""
+    log "Errors:"
+    echo "$ERRORS" | tr ',' '\n' | sed 's/"//g' | while read -r e; do
+      [ -n "$e" ] && log "  - $e"
+    done
+  fi
+  log ""
+  if [ "$verify_exit" -eq 0 ]; then
+    log "Result: VERIFY OK — manifest verified"
+  else
+    log "Result: VERIFY FAILED — see errors above"
+  fi
+  exit $verify_exit
 fi
 
 # ---------------------------------------------------------------------------

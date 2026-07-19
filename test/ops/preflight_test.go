@@ -2,6 +2,8 @@ package ops
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -290,6 +292,18 @@ func occupyPort(t *testing.T, port int) func() {
 		t.Fatalf("occupy port %d: %v", port, err)
 	}
 	return func() { ln.Close() }
+}
+
+// sha256File computes the SHA-256 hex digest of a file, independent of the
+// scripts, for cross-checking the binary_checksum field.
+func sha256File(t *testing.T, path string) (string, error) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // assertExitCode checks that the script result has the expected exit code.
@@ -827,5 +841,207 @@ func TestPreflight_CompletesQuickly(t *testing.T) {
 	// Just verify it produced valid JSON.
 	if r.JSON["tool"] != "preflight" {
 		t.Fatal("tool field mismatch")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Binary checksum tests
+// ---------------------------------------------------------------------------
+
+func TestPreflight_BinaryChecksumRecorded(t *testing.T) {
+	skipIfNoSqlite3(t)
+	dataDir := createValidDataDir(t)
+	defer os.RemoveAll(filepath.Dir(dataDir))
+
+	bin := managerBinary(t)
+	port := freePort(t)
+	backupDir := filepath.Join(filepath.Dir(dataDir), "backup")
+
+	r := runScript(t, "preflight", []string{
+		"-Binary", bin,
+		"-DataDir", dataDir,
+		"-Port", fmt.Sprint(port),
+		"-BackupDir", backupDir,
+	})
+
+	binInfo := checkField(t, r.JSON, "binary").(map[string]any)
+	checksum, ok := binInfo["binary_checksum"].(string)
+	if !ok || checksum == "" {
+		t.Fatalf("binary_checksum missing or empty: %v\nstdout: %s",
+			binInfo["binary_checksum"], r.RawStdout)
+	}
+	// SHA-256 hex digest is 64 characters.
+	if len(checksum) != 64 {
+		t.Fatalf("binary_checksum length = %d, want 64: %q", len(checksum), checksum)
+	}
+	// Verify the checksum matches an independent computation.
+	want, err := sha256File(t, bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checksum != want {
+		t.Fatalf("binary_checksum = %q, want %q", checksum, want)
+	}
+	// The binary_checksum check should pass.
+	found := false
+	checks, _ := r.JSON["checks"].([]any)
+	for _, c := range checks {
+		if m, ok := c.(map[string]any); ok && m["name"] == "binary_checksum" {
+			if m["status"] != "pass" {
+				t.Fatalf("binary_checksum check status = %v, want pass", m["status"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("binary_checksum check not found in checks array\nstdout: %s", r.RawStdout)
+	}
+}
+
+func TestPreflight_BinaryChecksumMissingWhenNoBinary(t *testing.T) {
+	skipIfNoSqlite3(t)
+	dataDir := createValidDataDir(t)
+	defer os.RemoveAll(filepath.Dir(dataDir))
+
+	port := freePort(t)
+	backupDir := filepath.Join(filepath.Dir(dataDir), "backup")
+
+	// Run without -Binary — checksum should be empty and check should fail.
+	r := runScript(t, "preflight", []string{
+		"-DataDir", dataDir,
+		"-Port", fmt.Sprint(port),
+		"-BackupDir", backupDir,
+	})
+
+	binInfo := checkField(t, r.JSON, "binary").(map[string]any)
+	if checksum, ok := binInfo["binary_checksum"].(string); ok && checksum != "" {
+		t.Fatalf("expected empty binary_checksum when no binary, got %q", checksum)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Insufficient space test (Step 4 failure case)
+// ---------------------------------------------------------------------------
+
+func TestPreflight_InsufficientSpace(t *testing.T) {
+	skipIfNoSqlite3(t)
+	dataDir := createValidDataDir(t)
+	defer os.RemoveAll(filepath.Dir(dataDir))
+
+	bin := managerBinary(t)
+	port := freePort(t)
+	backupDir := filepath.Join(filepath.Dir(dataDir), "backup")
+
+	// Use an impossibly high minimum-space threshold (1 TiB) so the data
+	// dir's real free space is always below it, triggering the space blocker.
+	r := runScript(t, "preflight", []string{
+		"-Binary", bin,
+		"-DataDir", dataDir,
+		"-Port", fmt.Sprint(port),
+		"-BackupDir", backupDir,
+		"-MinSpace", "1099511627776",
+	})
+
+	assertExitCode(t, r, 1)
+	assertBlockerContains(t, r, "space")
+	// Verify the data_dir_space check failed.
+	found := false
+	checks, _ := r.JSON["checks"].([]any)
+	for _, c := range checks {
+		if m, ok := c.(map[string]any); ok && m["name"] == "data_dir_space" {
+			if m["status"] != "fail" {
+				t.Fatalf("data_dir_space status = %v, want fail", m["status"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("data_dir_space check not found\nstdout: %s", r.RawStdout)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Manager still active test (Step 4 failure case)
+// ---------------------------------------------------------------------------
+
+// spawnManagerProcess builds a tiny sleeper binary named "gowa-manager" and
+// starts it.  The returned function kills the process and cleans up.
+func spawnManagerProcess(t *testing.T) func() {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "gowa-ops-mgr-proc-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "gowa-manager"
+	if runtime.GOOS == "windows" {
+		name = "gowa-manager.exe"
+	}
+	binPath := filepath.Join(dir, name)
+	src := []byte("package main\n\nimport \"time\"\n\nfunc main() { time.Sleep(10 * time.Minute) }\n")
+	srcFile := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(srcFile, src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "build", "-o", binPath, srcFile)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		os.RemoveAll(dir)
+		t.Fatalf("build sleeper: %v\n%s", err, out)
+	}
+	proc := exec.Command(binPath)
+	if err := proc.Start(); err != nil {
+		os.RemoveAll(dir)
+		t.Fatalf("start sleeper: %v", err)
+	}
+	return func() {
+		if proc.Process != nil {
+			_ = proc.Process.Kill()
+			_, _ = proc.Process.Wait()
+		}
+		os.RemoveAll(dir)
+	}
+}
+
+func TestPreflight_ManagerStillActive(t *testing.T) {
+	skipIfNoSqlite3(t)
+	dataDir := createValidDataDir(t)
+	defer os.RemoveAll(filepath.Dir(dataDir))
+
+	// Spawn a process named "gowa-manager" that stays alive.
+	cleanup := spawnManagerProcess(t)
+	defer cleanup()
+
+	bin := managerBinary(t)
+	port := freePort(t)
+	backupDir := filepath.Join(filepath.Dir(dataDir), "backup")
+
+	r := runScript(t, "preflight", []string{
+		"-Binary", bin,
+		"-DataDir", dataDir,
+		"-Port", fmt.Sprint(port),
+		"-BackupDir", backupDir,
+	})
+
+	assertExitCode(t, r, 1)
+	assertBlockerContains(t, r, "manager process")
+	// Verify the manager_active check detected the process.
+	mgrActive := checkField(t, r.JSON, "manager_active").(map[string]any)
+	goActive, _ := mgrActive["go"].(bool)
+	if !goActive {
+		t.Fatalf("expected manager_active.go=true, got %v\nstdout: %s",
+			mgrActive["go"], r.RawStdout)
+	}
+	// Verify the manager_active check failed.
+	found := false
+	checks, _ := r.JSON["checks"].([]any)
+	for _, c := range checks {
+		if m, ok := c.(map[string]any); ok && m["name"] == "manager_active" {
+			if m["status"] != "fail" {
+				t.Fatalf("manager_active status = %v, want fail", m["status"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("manager_active check not found\nstdout: %s", r.RawStdout)
 	}
 }

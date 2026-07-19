@@ -25,6 +25,7 @@ DATA_DIR="./data"
 PORT=3000
 BACKUP_DIR="./backup"
 SQLITE_BIN="${SQLITE_BIN:-sqlite3}"
+MIN_SPACE_BYTES=10485760  # 10 MiB default minimum free space
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,6 +51,32 @@ jbool() {
 # Current UTC timestamp in ISO-8601.
 now_iso() {
   date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+# Compute SHA-256 of a file and print just the hex digest.  Strips the
+# leading backslash that some sha256sum implementations emit in text mode.
+# Detect the hashing command lazily on first use.
+SHA_CMD=""
+detect_sha_cmd() {
+  if [ -z "$SHA_CMD" ]; then
+    if command -v sha256sum >/dev/null 2>&1; then
+      SHA_CMD=sha256sum
+    elif command -v shasum >/dev/null 2>&1; then
+      SHA_CMD="shasum -a 256"
+    fi
+  fi
+}
+compute_sha() {
+  detect_sha_cmd
+  if [ -z "$SHA_CMD" ]; then
+    printf 'error'
+    return
+  fi
+  _h=$(eval "$SHA_CMD \"$1\"" 2>/dev/null | awk '{print $1}')
+  # Strip a leading backslash (text-mode indicator on some platforms).
+  _h=${_h#\\}
+  [ -n "$_h" ] || _h="error"
+  printf '%s' "$_h"
 }
 
 # Print a human-readable line to stderr.
@@ -96,12 +123,14 @@ while [ $# -gt 0 ]; do
     -p|--port)      PORT=$2; shift 2 ;;
     --backup-dir)   BACKUP_DIR=$2; shift 2 ;;
     --sqlite-bin)   SQLITE_BIN=$2; shift 2 ;;
+    --min-space)    MIN_SPACE_BYTES=$2; shift 2 ;;
     -h|--help)
       cat >&2 <<'EOF'
 GOWA Manager preflight — verify environment before Go cutover.
 
 Usage: preflight.sh [-b|--binary PATH] [-d|--data-dir DIR]
                     [-p|--port N] [--backup-dir DIR] [--sqlite-bin PATH]
+                    [--min-space BYTES]
 
 Options:
   -b, --binary PATH      Path to the Go manager binary to verify.
@@ -109,6 +138,8 @@ Options:
   -p, --port N           Manager HTTP port (default: 3000).
   --backup-dir DIR       Backup destination directory (default: ./backup).
   --sqlite-bin PATH      Path to sqlite3 CLI (default: sqlite3 from PATH).
+  --min-space BYTES      Minimum required free bytes in data dir
+                          (default: 10485760 = 10 MiB).
 EOF
       exit 0 ;;
     *) log "Unknown option: $1"; exit 2 ;;
@@ -143,6 +174,7 @@ fi
 bin_exists=false
 bin_exec=false
 bin_version=""
+bin_checksum=""
 if [ -n "$BINARY" ]; then
   if [ -f "$BINARY" ]; then
     bin_exists=true
@@ -163,6 +195,23 @@ else
   add_blocker "manager binary not usable"
 fi
 
+# Binary checksum (informational): record the SHA-256 of the manager binary.
+# The check passes as long as a checksum can be computed; it fails (blocker)
+# if the file cannot be read for hashing.  There is no reference checksum to
+# compare against at preflight time.
+if [ "$bin_exists" = true ]; then
+  bin_checksum=$(compute_sha "$BINARY")
+  if [ -n "$bin_checksum" ] && [ "$bin_checksum" != "error" ]; then
+    add_check "binary_checksum" "pass" "$bin_checksum"
+  else
+    bin_checksum=""
+    add_check "binary_checksum" "fail" "could not compute checksum of binary"
+    add_blocker "manager binary checksum could not be computed"
+  fi
+else
+  add_check "binary_checksum" "fail" "binary not present — no checksum"
+fi
+
 # ---------------------------------------------------------------------------
 # Check 3: Data directory exists and free space
 # ---------------------------------------------------------------------------
@@ -179,8 +228,8 @@ if [ -d "$DATA_DIR" ]; then
   dd_free_bytes=$((dd_free_bytes * 1024))
 fi
 if [ "$dd_exists" = true ]; then
-  if [ "$dd_free_bytes" -lt 10485760 ]; then
-    add_check "data_dir_space" "fail" "only ${dd_free_bytes} bytes free (< 10 MiB)"
+  if [ "$dd_free_bytes" -lt "$MIN_SPACE_BYTES" ]; then
+    add_check "data_dir_space" "fail" "only ${dd_free_bytes} bytes free (< ${MIN_SPACE_BYTES} required)"
     add_blocker "insufficient free space in data dir"
   else
     add_check "data_dir_space" "pass" "${dd_free_bytes} bytes free"
@@ -456,7 +505,8 @@ cat <<EOF
     "path": $(jstr "$BINARY"),
     "exists": $(jbool "$bin_exists"),
     "executable": $(jbool "$bin_exec"),
-    "version": $(jstr "$bin_version")
+    "version": $(jstr "$bin_version"),
+    "binary_checksum": $(jstr "$bin_checksum")
   },
   "data_dir": {
     "path": $(jstr "$DATA_DIR"),
@@ -511,6 +561,9 @@ log ""
 log "=== GOWA Manager Preflight ==="
 log "OS/Arch:      $OS_NAME/$ARCH_NAME"
 log "Binary:       $BINARY ($bin_version)"
+if [ -n "$bin_checksum" ]; then
+  log "Checksum:     $bin_checksum"
+fi
 log "Data dir:     $DATA_DIR ($dd_free_bytes bytes free)"
 log "Port:         $PORT ($( [ "$port_available" = true ] && echo 'available' || echo 'occupied'))"
 log "SQLite:       $sqlite_integrity (journal: $sqlite_journal)"

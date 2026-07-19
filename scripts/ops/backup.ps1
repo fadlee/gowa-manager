@@ -31,7 +31,9 @@ param(
   [Alias('o')]
   [string]$BackupDir = '',
 
-  [string]$SqliteBin = 'sqlite3'
+  [string]$SqliteBin = 'sqlite3',
+
+  [switch]$Verify
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -62,7 +64,7 @@ if (-not $BackupDir) {
 }
 
 # ---------------------------------------------------------------------------
-# Accumulators
+# Accumulators (defined early so verify mode can use Add-Error)
 # ---------------------------------------------------------------------------
 $errors = [System.Collections.ArrayList]::new()
 $files = [System.Collections.ArrayList]::new()
@@ -70,6 +72,94 @@ $files = [System.Collections.ArrayList]::new()
 function Add-Error([string]$Msg) { $null = $errors.Add($Msg) }
 function Add-File([string]$RelPath, [string]$Sha256, [long]$Size) {
   $null = $files.Add(@{ path = $RelPath; sha256 = $Sha256; size = $Size })
+}
+
+# ---------------------------------------------------------------------------
+# Verify mode: re-read the manifest and re-hash all files.  No backup is
+# performed.  Exits non-zero on any mismatch or missing file.
+# ---------------------------------------------------------------------------
+if ($Verify) {
+  $errors = [System.Collections.ArrayList]::new()
+  $manifestName = 'manifest.sha256'
+  $manifestPath = Join-Path $BackupDir $manifestName
+  $manifestVerified = $true
+  $fileCount = 0
+
+  if (-not (Test-Path $manifestPath -PathType Leaf)) {
+    Add-Error "manifest not found: $manifestPath"
+    $manifestVerified = $false
+  } else {
+    foreach ($line in (Get-Content $manifestPath)) {
+      if ([string]::IsNullOrWhiteSpace($line)) { continue }
+      $fileCount++
+      $parts = $line -split '  ', 2
+      if ($parts.Length -lt 2) {
+        $manifestVerified = $false
+        Add-Error 'manifest verify: malformed line'
+        break
+      }
+      $expectedSha = $parts[0]
+      $relPath = $parts[1].Trim()
+      $fullPath = Join-Path $BackupDir $relPath
+      if (-not (Test-Path $fullPath -PathType Leaf)) {
+        $manifestVerified = $false
+        Add-Error "manifest verify: file missing: $relPath"
+        break
+      }
+      $actualSha = Get-Sha256 $fullPath
+      if ($expectedSha -ne $actualSha) {
+        $manifestVerified = $false
+        Add-Error "manifest verify: checksum mismatch for $relPath"
+        break
+      }
+    }
+  }
+
+  $verifyExit = if ($manifestVerified) { 0 } else { 1 }
+  $endTs = Now-Iso
+  $result = [ordered]@{
+    tool              = 'backup'
+    schema_version    = 1
+    mode              = 'verify'
+    start_timestamp   = $startTs
+    end_timestamp     = $endTs
+    data_dir          = $DataDir
+    backup_dir        = $BackupDir
+    manager_downtime  = [ordered]@{
+      state = 'assumed_stopped'
+      note  = 'verify mode - no backup performed'
+    }
+    journal_mode      = 'unknown'
+    method            = 'verify'
+    files             = @()
+    manifest          = [ordered]@{
+      path       = $manifestName
+      verified   = $manifestVerified
+      file_count = $fileCount
+    }
+    metadata          = [ordered]@{ instances_copied = 0; versions_copied = 0 }
+    errors            = $errors
+    exit_code         = $verifyExit
+  }
+  $result | ConvertTo-Json -Depth 10 -Compress | Write-Output
+  [Console]::Error.WriteLine('')
+  [Console]::Error.WriteLine('=== GOWA Manager Backup Verify ===')
+  [Console]::Error.WriteLine("Backup dir:   $BackupDir")
+  $manifestStatus = if ($manifestVerified) { 'verified' } else { 'VERIFICATION FAILED' }
+  [Console]::Error.WriteLine("Manifest:     $manifestStatus")
+  [Console]::Error.WriteLine("Files:        $fileCount checked")
+  if ($errors.Count -gt 0) {
+    [Console]::Error.WriteLine('')
+    [Console]::Error.WriteLine('Errors:')
+    foreach ($e in $errors) { [Console]::Error.WriteLine("  - $e") }
+  }
+  [Console]::Error.WriteLine('')
+  if ($verifyExit -eq 0) {
+    [Console]::Error.WriteLine('Result: VERIFY OK - manifest verified')
+  } else {
+    [Console]::Error.WriteLine('Result: VERIFY FAILED - see errors above')
+  }
+  exit $verifyExit
 }
 
 # ---------------------------------------------------------------------------

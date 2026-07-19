@@ -38,7 +38,9 @@ param(
 
   [string]$BackupDir = './backup',
 
-  [string]$SqliteBin = 'sqlite3'
+  [string]$SqliteBin = 'sqlite3',
+
+  [long]$MinSpace = 10485760
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -48,6 +50,19 @@ $ErrorActionPreference = 'SilentlyContinue'
 # ---------------------------------------------------------------------------
 
 function Now-Iso { (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }
+
+function Get-Sha256([string]$Path) {
+  try {
+    $h = [System.Security.Cryptography.SHA256]::Create()
+    $fs = [System.IO.File]::OpenRead($Path)
+    $hashBytes = $h.ComputeHash($fs)
+    $fs.Close()
+    $h.Dispose()
+    return ([System.BitConverter]::ToString($hashBytes) -replace '-', '').ToLower()
+  } catch {
+    return 'error'
+  }
+}
 
 function Test-PortAvailable([int]$PortNum) {
   try {
@@ -136,6 +151,7 @@ if ($supportedOs -contains $osName -and $supportedArch -contains $archName) {
 $binExists = $false
 $binExec = $false
 $binVersion = ''
+$binChecksum = ''
 if ($Binary -and (Test-Path $Binary -PathType Leaf)) {
   $binExists = $true
   $binExec = $true  # On Windows, executability is implied for .exe
@@ -152,6 +168,23 @@ if ($binExists -and $binExec -and $binVersion) {
   Add-Blocker 'manager binary not usable'
 }
 
+# Binary checksum (informational): record the SHA-256 of the manager binary.
+# The check passes as long as a checksum can be computed; it fails (blocker)
+# if the file cannot be read for hashing.  There is no reference checksum to
+# compare against at preflight time.
+if ($binExists) {
+  $binChecksum = Get-Sha256 $Binary
+  if ($binChecksum -and $binChecksum -ne 'error') {
+    Add-Check 'binary_checksum' 'pass' $binChecksum
+  } else {
+    $binChecksum = ''
+    Add-Check 'binary_checksum' 'fail' 'could not compute checksum of binary'
+    Add-Blocker 'manager binary checksum could not be computed'
+  }
+} else {
+  Add-Check 'binary_checksum' 'fail' 'binary not present - no checksum'
+}
+
 # ---------------------------------------------------------------------------
 # Check 3: Data directory exists and free space
 # ---------------------------------------------------------------------------
@@ -161,8 +194,8 @@ if ($ddExists) {
   $ddFreeBytes = Get-FreeBytes $DataDir
 }
 if ($ddExists) {
-  if ($ddFreeBytes -lt 10MB) {
-    Add-Check 'data_dir_space' 'fail' "only $ddFreeBytes bytes free (< 10 MiB)"
+  if ($ddFreeBytes -lt $MinSpace) {
+    Add-Check 'data_dir_space' 'fail' "only $ddFreeBytes bytes free (< $MinSpace required)"
     Add-Blocker 'insufficient free space in data dir'
   } else {
     Add-Check 'data_dir_space' 'pass' "$ddFreeBytes bytes free"
@@ -417,10 +450,11 @@ $result = [ordered]@{
   os               = $osName
   arch             = $archName
   binary           = [ordered]@{
-    path       = $Binary
-    exists     = $binExists
-    executable = $binExec
-    version    = $binVersion
+    path            = $Binary
+    exists          = $binExists
+    executable      = $binExec
+    version         = $binVersion
+    binary_checksum = $binChecksum
   }
   data_dir         = [ordered]@{
     path       = $DataDir
@@ -477,6 +511,9 @@ Write-Output $json
 [Console]::Error.WriteLine('=== GOWA Manager Preflight ===')
 [Console]::Error.WriteLine("OS/Arch:      $osName/$archName")
 [Console]::Error.WriteLine("Binary:       $Binary ($binVersion)")
+if ($binChecksum) {
+  [Console]::Error.WriteLine("Checksum:     $binChecksum")
+}
 [Console]::Error.WriteLine("Data dir:     $DataDir ($ddFreeBytes bytes free)")
 $portStatus = if ($portAvailable) { 'available' } else { 'occupied' }
 [Console]::Error.WriteLine("Port:         $Port ($portStatus)")
