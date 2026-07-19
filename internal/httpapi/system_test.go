@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fadlee/gowa-manager/internal/system"
+	"github.com/fadlee/gowa-manager/internal/versions"
 )
 
 func TestSystemRoutes(t *testing.T) {
@@ -96,6 +98,33 @@ func TestSystemRoutes(t *testing.T) {
 		assertJSON(t, rec, []map[string]any{{"id": float64(1), "name": "alpha", "status": "running"}})
 		assertBodyExcludes(t, rec, "current_version", "available_version", "update_available")
 	})
+}
+
+func TestSystemRoutesCoexistWithVersionRoutes(t *testing.T) {
+	installedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	service := &fakeSystemService{}
+	allocator := &fakePortAllocator{next: 8123}
+	checker := &fakePortChecker{available: true}
+	versionService := &fakeVersionService{installed: []versions.VersionInfo{{Version: "v1.2.3", Path: `/tmp/gowa`, Installed: true, IsLatest: true, Size: 42, InstalledAt: installedAt}}}
+	handler := New(Dependencies{System: service, PortAllocator: allocator, PortChecker: checker, Versions: versionService, VersionInstaller: &fakeVersionInstaller{}})
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/versions/installed", nil))
+	assertStatus(t, rec, http.StatusOK)
+	assertJSON(t, rec, []map[string]any{{"version": "v1.2.3", "path": `/tmp/gowa`, "installed": true, "isLatest": true, "size": float64(42), "installedAt": "2026-01-02T03:04:05Z"}})
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/ports/next", nil))
+	assertStatus(t, rec, http.StatusOK)
+	assertJSON(t, rec, map[string]any{"port": float64(8123)})
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/system/ports/8080/available", nil))
+	assertStatus(t, rec, http.StatusOK)
+	assertJSON(t, rec, map[string]any{"port": float64(8080), "available": true})
+	if checker.port != 8080 {
+		t.Fatalf("checked port = %d, want 8080", checker.port)
+	}
 }
 
 func serveSystemRequest(service *fakeSystemService, allocator *fakePortAllocator, checker *fakePortChecker, method, path string, body *strings.Reader, opts ...func(*Dependencies)) *httptest.ResponseRecorder {

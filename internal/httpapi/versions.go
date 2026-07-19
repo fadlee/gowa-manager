@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -114,6 +115,10 @@ func (h *versionHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeValidation(w, "version is required")
 		return
 	}
+	if isNilVersionInstaller(h.installer) {
+		writeHTTPError(w, http.StatusServiceUnavailable, errors.New("version installer not ready"))
+		return
+	}
 	_, err := h.installer.Install(r.Context(), body.Version)
 	if err != nil {
 		h.writeVersionError(w, err)
@@ -123,6 +128,14 @@ func (h *versionHandler) install(w http.ResponseWriter, r *http.Request) {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
 	}{Success: true, Message: "Successfully installed GOWA version " + body.Version})
+}
+
+func isNilVersionInstaller(installer VersionInstaller) bool {
+	if installer == nil {
+		return true
+	}
+	value := reflect.ValueOf(installer)
+	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
 func (h *versionHandler) usage(w http.ResponseWriter, r *http.Request) {

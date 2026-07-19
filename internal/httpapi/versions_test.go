@@ -60,6 +60,12 @@ func TestVersionRoutes(t *testing.T) {
 		assertBodyFields(t, rec, map[string]any{"success": false})
 	})
 
+	t.Run("install returns deterministic unavailable response when installer is unwired", func(t *testing.T) {
+		rec := serveVersionRequest(&fakeVersionService{}, nil, http.MethodPost, "/api/system/versions/install", strings.NewReader(`{"version":"v1.2.3"}`))
+		assertStatus(t, rec, http.StatusServiceUnavailable)
+		assertJSON(t, rec, map[string]any{"success": false, "error": "version installer not ready"})
+	})
+
 	t.Run("install returns legacy success envelope only", func(t *testing.T) {
 		installer := &fakeVersionInstaller{result: versions.InstallResult{Version: "v1.2.3", Path: `/tmp/gowa`, SHA256: "abc", Size: 42}}
 		rec := serveVersionRequest(&fakeVersionService{}, installer, http.MethodPost, "/api/system/versions/install", strings.NewReader(`{"version":"v1.2.3"}`))
