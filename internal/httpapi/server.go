@@ -15,6 +15,8 @@ type Dependencies struct {
 	AllowedOrigins    []string
 	TestPanicRoute    bool
 	StaticFS          fs.FS
+	AdminUsername     string
+	AdminPassword     string
 	Instances         InstanceService
 	InstanceLifecycle InstanceLifecycle
 	DeviceClient      InstanceDeviceClient
@@ -46,15 +48,36 @@ func New(deps Dependencies) http.Handler {
 	if deps.Readiness != nil {
 		mux.HandleFunc("/api/ready", readyHandler(deps.Readiness))
 	}
+	registerAuthRoutes(mux, deps)
+
+	// Protected routes (instances, system, versions) are registered on a
+	// sub-mux and wrapped with Basic Auth middleware. This mirrors the
+	// Bun/Elysia .guard() that protects the instances and system modules
+	// while leaving health, auth/logout, and the /api/ 404 catch-all
+	// unprotected.
+	//
+	// Auth is applied only when credentials are configured. In production
+	// the config always supplies defaults ("admin"/"password"), so the
+	// guard is always active. Tests that omit credentials get the raw
+	// handler, preserving existing behaviour.
+	protectedMux := http.NewServeMux()
 	if deps.Instances != nil {
-		registerInstanceRoutes(mux, deps)
+		registerInstanceRoutes(protectedMux, deps)
 	}
 	if deps.System != nil && deps.PortAllocator != nil {
-		registerSystemRoutes(mux, deps)
+		registerSystemRoutes(protectedMux, deps)
 	}
 	if deps.Versions != nil {
-		registerVersionRoutes(mux, deps)
+		registerVersionRoutes(protectedMux, deps)
 	}
+	protectedHandler := http.Handler(protectedMux)
+	if deps.AdminUsername != "" && deps.AdminPassword != "" {
+		protectedHandler = basicAuthMiddleware(protectedMux, deps.AdminUsername, deps.AdminPassword)
+	}
+	mux.Handle("/api/instances", protectedHandler)
+	mux.Handle("/api/instances/", protectedHandler)
+	mux.Handle("/api/system/", protectedHandler)
+
 	if deps.TestPanicRoute {
 		mux.HandleFunc("/api/__panic", func(http.ResponseWriter, *http.Request) { panic("test panic") })
 	}
