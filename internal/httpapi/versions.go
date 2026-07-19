@@ -21,6 +21,7 @@ type VersionService interface {
 	GetInstalledVersions() ([]versions.VersionInfo, error)
 	GetAvailableVersions(context.Context, int) ([]versions.VersionInfo, error)
 	IsVersionAvailable(context.Context, string) (bool, error)
+	GetVersionBinaryPath(string) string
 	GetVersionsSize() (map[string]int64, error)
 	RemoveVersion(context.Context, string) error
 	Cleanup(context.Context, int) ([]string, error)
@@ -190,11 +191,11 @@ func (h *versionHandler) routes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if path == "latest" {
-		writeValidation(w, "cannot remove latest version")
+		writeValidation(w, "Cannot remove the latest version alias")
 		return
 	}
 	if err := h.service.RemoveVersion(r.Context(), path); err != nil {
-		h.writeVersionError(w, err)
+		writeHTTPError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "Successfully removed GOWA version " + path})
@@ -214,23 +215,11 @@ func (h *versionHandler) versionAvailable(w http.ResponseWriter, r *http.Request
 		h.writeVersionError(w, err)
 		return
 	}
-	path := ""
-	items, err := h.service.GetInstalledVersions()
-	if err != nil {
-		writeHTTPError(w, http.StatusInternalServerError, err)
-		return
-	}
-	for _, item := range items {
-		if item.Version == version {
-			path = item.Path
-			break
-		}
-	}
 	writeJSON(w, http.StatusOK, struct {
 		Version   string `json:"version"`
 		Available bool   `json:"available"`
 		Path      string `json:"path"`
-	}{Version: version, Available: available, Path: path})
+	}{Version: version, Available: available, Path: h.service.GetVersionBinaryPath(version)})
 }
 
 func (h *versionHandler) writeVersionError(w http.ResponseWriter, err error) {

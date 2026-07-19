@@ -12,11 +12,11 @@ import (
 )
 
 func TestSystemRoutes(t *testing.T) {
-	t.Run("status returns snake case system status", func(t *testing.T) {
+	t.Run("status returns legacy nested system status", func(t *testing.T) {
 		service := &fakeSystemService{status: system.SystemStatus{TotalInstances: 3, RunningInstances: 1, StoppedInstances: 2, AllocatedPorts: 2, NextAvailablePort: 8002, Uptime: 1234, ManagerVersion: "v0.1.0"}}
 		rec := serveSystemRequest(service, nil, nil, http.MethodGet, "/api/system/status", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertBodyFields(t, rec, map[string]any{"total_instances": float64(3), "running_instances": float64(1), "stopped_instances": float64(2), "allocated_ports": float64(2), "next_available_port": float64(8002), "uptime": float64(1234), "manager_version": "v0.1.0"})
+		assertJSON(t, rec, map[string]any{"status": "running", "uptime": float64(1234), "managerVersion": "v0.1.0", "instances": map[string]any{"total": float64(3), "running": float64(1), "stopped": float64(2)}, "ports": map[string]any{"allocated": float64(2), "next_available": float64(8002)}})
 	})
 
 	t.Run("status service error maps to 500", func(t *testing.T) {
@@ -54,13 +54,13 @@ func TestSystemRoutes(t *testing.T) {
 		assertBodyFields(t, rec, map[string]any{"success": false})
 	})
 
-	t.Run("port availability returns both TCP and HTTP availability", func(t *testing.T) {
-		checker := &fakePortChecker{available: true, httpAvailable: false}
+	t.Run("port availability returns instance port availability only", func(t *testing.T) {
+		checker := &fakePortChecker{available: true}
 		rec := serveSystemRequest(&fakeSystemService{}, nil, checker, http.MethodGet, "/api/system/ports/8080/available", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertBodyFields(t, rec, map[string]any{"port": float64(8080), "available": true, "http_available": false})
-		if checker.port != 8080 || checker.httpPort != 8080 {
-			t.Fatalf("checked ports = %d/%d, want 8080/8080", checker.port, checker.httpPort)
+		assertJSON(t, rec, map[string]any{"port": float64(8080), "available": true})
+		if checker.port != 8080 {
+			t.Fatalf("checked port = %d, want 8080", checker.port)
 		}
 	})
 
@@ -123,20 +123,13 @@ type fakePortAllocator struct {
 func (a *fakePortAllocator) Next(context.Context) (int, error) { return a.next, a.err }
 
 type fakePortChecker struct {
-	port          int
-	httpPort      int
-	available     bool
-	httpAvailable bool
+	port      int
+	available bool
 }
 
 func (c *fakePortChecker) IsPortAvailable(port int) bool {
 	c.port = port
 	return c.available
-}
-
-func (c *fakePortChecker) IsHTTPPortAvailable(port int) bool {
-	c.httpPort = port
-	return c.httpAvailable
 }
 
 type fakeAutoUpdateService struct {

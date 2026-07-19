@@ -21,7 +21,6 @@ type PortAllocator interface {
 
 type PortChecker interface {
 	IsPortAvailable(int) bool
-	IsHTTPPortAvailable(int) bool
 }
 
 type AutoUpdateService interface {
@@ -31,13 +30,22 @@ type AutoUpdateService interface {
 }
 
 type SystemStatus struct {
-	TotalInstances    int    `json:"total_instances"`
-	RunningInstances  int    `json:"running_instances"`
-	StoppedInstances  int    `json:"stopped_instances"`
-	AllocatedPorts    int    `json:"allocated_ports"`
-	NextAvailablePort int    `json:"next_available_port"`
-	Uptime            int64  `json:"uptime"`
-	ManagerVersion    string `json:"manager_version"`
+	Status         string                `json:"status"`
+	Uptime         int64                 `json:"uptime"`
+	ManagerVersion string                `json:"managerVersion"`
+	Instances      SystemStatusInstances `json:"instances"`
+	Ports          SystemStatusPorts     `json:"ports"`
+}
+
+type SystemStatusInstances struct {
+	Total   int `json:"total"`
+	Running int `json:"running"`
+	Stopped int `json:"stopped"`
+}
+
+type SystemStatusPorts struct {
+	Allocated     int `json:"allocated"`
+	NextAvailable int `json:"next_available"`
 }
 
 type SystemConfig struct {
@@ -61,8 +69,7 @@ type AutoUpdateInstance struct {
 
 type defaultPortChecker struct{}
 
-func (defaultPortChecker) IsPortAvailable(port int) bool     { return system.IsPortAvailable(port) }
-func (defaultPortChecker) IsHTTPPortAvailable(port int) bool { return system.IsHTTPPortAvailable(port) }
+func (defaultPortChecker) IsPortAvailable(port int) bool { return system.IsPortAvailable(port) }
 
 type noopAutoUpdateService struct{}
 
@@ -144,7 +151,7 @@ func (h *systemHandler) config(w http.ResponseWriter, r *http.Request) {
 }
 
 func toSystemStatusResponse(status system.SystemStatus) SystemStatus {
-	return SystemStatus{TotalInstances: status.TotalInstances, RunningInstances: status.RunningInstances, StoppedInstances: status.StoppedInstances, AllocatedPorts: status.AllocatedPorts, NextAvailablePort: status.NextAvailablePort, Uptime: status.Uptime, ManagerVersion: status.ManagerVersion}
+	return SystemStatus{Status: "running", Uptime: status.Uptime, ManagerVersion: status.ManagerVersion, Instances: SystemStatusInstances{Total: status.TotalInstances, Running: status.RunningInstances, Stopped: status.StoppedInstances}, Ports: SystemStatusPorts{Allocated: status.AllocatedPorts, NextAvailable: status.NextAvailablePort}}
 }
 
 func toSystemConfigResponse(config system.SystemConfig) SystemConfig {
@@ -168,10 +175,9 @@ func (h *systemHandler) portRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Port          int  `json:"port"`
-		Available     bool `json:"available"`
-		HTTPAvailable bool `json:"http_available"`
-	}{Port: port, Available: h.checker.IsPortAvailable(port), HTTPAvailable: h.checker.IsHTTPPortAvailable(port)})
+		Port      int  `json:"port"`
+		Available bool `json:"available"`
+	}{Port: port, Available: h.checker.IsPortAvailable(port)})
 }
 
 func (h *systemHandler) autoUpdateStatus(w http.ResponseWriter, r *http.Request) {

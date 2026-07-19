@@ -73,7 +73,7 @@ func TestVersionRoutes(t *testing.T) {
 	t.Run("delete rejects latest", func(t *testing.T) {
 		rec := serveVersionRequest(&fakeVersionService{}, nil, http.MethodDelete, "/api/system/versions/latest", nil)
 		assertStatus(t, rec, http.StatusBadRequest)
-		assertBodyFields(t, rec, map[string]any{"success": false})
+		assertBodyFields(t, rec, map[string]any{"success": false, "error": "Cannot remove the latest version alias"})
 	})
 
 	t.Run("delete returns success envelope", func(t *testing.T) {
@@ -86,18 +86,21 @@ func TestVersionRoutes(t *testing.T) {
 		}
 	})
 
-	t.Run("delete conflict maps to 400", func(t *testing.T) {
+	t.Run("delete remove errors map to legacy 500 except explicit latest alias", func(t *testing.T) {
 		service := &fakeVersionService{err: ErrVersionConflict}
 		rec := serveVersionRequest(service, nil, http.MethodDelete, "/api/system/versions/v1.2.3", nil)
-		assertStatus(t, rec, http.StatusBadRequest)
+		assertStatus(t, rec, http.StatusInternalServerError)
 		assertBodyFields(t, rec, map[string]any{"success": false})
 	})
 
-	t.Run("version available returns available flag with path", func(t *testing.T) {
-		service := &fakeVersionService{installed: []versions.VersionInfo{versionInfo}, isAvailable: true}
+	t.Run("version available returns version binary path even when missing", func(t *testing.T) {
+		service := &fakeVersionService{isAvailable: false, versionPath: `/tmp/gowa-missing`}
 		rec := serveVersionRequest(service, nil, http.MethodGet, "/api/system/versions/v1.2.3/available", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, map[string]any{"version": "v1.2.3", "available": true, "path": `/tmp/gowa`})
+		assertJSON(t, rec, map[string]any{"version": "v1.2.3", "available": false, "path": `/tmp/gowa-missing`})
+		if service.versionPathFor != "v1.2.3" {
+			t.Fatalf("version path requested for = %q, want v1.2.3", service.versionPathFor)
+		}
 	})
 
 	t.Run("usage returns versions size map", func(t *testing.T) {
@@ -162,6 +165,8 @@ type fakeVersionService struct {
 	cleaned        []string
 	keepCount      int
 	removed        string
+	versionPath    string
+	versionPathFor string
 	err            error
 }
 
@@ -174,6 +179,10 @@ func (s *fakeVersionService) GetAvailableVersions(_ context.Context, limit int) 
 }
 func (s *fakeVersionService) IsVersionAvailable(context.Context, string) (bool, error) {
 	return s.isAvailable, s.err
+}
+func (s *fakeVersionService) GetVersionBinaryPath(version string) string {
+	s.versionPathFor = version
+	return s.versionPath
 }
 func (s *fakeVersionService) GetVersionsSize() (map[string]int64, error) { return s.sizes, s.err }
 func (s *fakeVersionService) RemoveVersion(_ context.Context, version string) error {
