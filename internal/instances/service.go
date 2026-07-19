@@ -33,11 +33,21 @@ type DeviceCacheCleaner interface {
 	ClearCache(int64)
 }
 
+type MonitorCacheCleaner interface {
+	Clear(int64)
+}
+
 type ServiceOption func(*Service)
 
 func WithDeviceCacheCleaner(cleaner DeviceCacheCleaner) ServiceOption {
 	return func(s *Service) {
 		s.deviceCache = cleaner
+	}
+}
+
+func WithMonitorCacheCleaner(cleaner MonitorCacheCleaner) ServiceOption {
+	return func(s *Service) {
+		s.monitorCache = cleaner
 	}
 }
 
@@ -55,6 +65,7 @@ type Service struct {
 	ports        PortAllocator
 	lifecycle    Lifecycle
 	deviceCache  DeviceCacheCleaner
+	monitorCache MonitorCacheCleaner
 	generateKey  func() (string, error)
 	generateName func() string
 	locksMu      sync.Mutex
@@ -188,6 +199,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 		return errors.Join(err, s.fs.Restore(context.Background(), trash))
 	}
 	s.clearDeviceCache(id)
+	s.clearMonitorCache(id)
 	if trash == (Trash{}) {
 		return nil
 	}
@@ -223,6 +235,7 @@ func (s *Service) ResetData(ctx context.Context, id int64) error {
 		return errors.Join(err, cleanupErr)
 	}
 	s.clearDeviceCache(id)
+	s.clearMonitorCache(id)
 	if trash == (Trash{}) {
 		return nil
 	}
@@ -276,6 +289,7 @@ func (s *Service) stopIfRunning(ctx context.Context, instance Instance) error {
 		return err
 	}
 	s.clearDeviceCache(instance.ID)
+	s.clearMonitorCache(instance.ID)
 	return nil
 }
 
@@ -284,4 +298,11 @@ func (s *Service) clearDeviceCache(id int64) {
 		return
 	}
 	s.deviceCache.ClearCache(id)
+}
+
+func (s *Service) clearMonitorCache(id int64) {
+	if s.monitorCache == nil {
+		return
+	}
+	s.monitorCache.Clear(id)
 }

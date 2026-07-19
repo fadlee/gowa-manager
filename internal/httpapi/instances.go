@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/instances"
+	"github.com/fadlee/gowa-manager/internal/monitoring"
 )
 
 type InstanceService interface {
@@ -23,12 +24,13 @@ type InstanceService interface {
 }
 
 type InstanceStatus struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Port   *int   `json:"port"`
-	PID    *int   `json:"pid"`
-	Uptime int64  `json:"uptime,omitempty"`
+	ID        int64                 `json:"id"`
+	Name      string                `json:"name"`
+	Status    string                `json:"status"`
+	Port      *int                  `json:"port"`
+	PID       *int                  `json:"pid"`
+	Uptime    int64                 `json:"uptime,omitempty"`
+	Resources *monitoring.Resources `json:"resources,omitempty"`
 }
 
 type InstanceLifecycle interface {

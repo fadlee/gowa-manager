@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/monitoring"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
 )
 
@@ -27,6 +28,15 @@ type ProcessSupervisor interface {
 	Status(int64) (supervisor.ProcessSnapshot, bool)
 }
 
+type ProcessMonitor interface {
+	Resources(context.Context, int64, int, string) (monitoring.Resources, bool)
+	Clear(int64)
+}
+
+type InstanceDirResolver interface {
+	InstanceDir(int64) (string, error)
+}
+
 type LifecycleOptions struct {
 	Repository      Repository
 	Filesystem      InstanceFilesystem
@@ -35,17 +45,19 @@ type LifecycleOptions struct {
 	VersionResolver VersionResolver
 	Supervisor      ProcessSupervisor
 	DeviceCache     DeviceCacheCleaner
+	Monitor         ProcessMonitor
 	Now             func() time.Time
 	Sleep           func(context.Context, time.Duration) error
 }
 
 type LifecycleStatus struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Port   *int   `json:"port"`
-	PID    *int   `json:"pid"`
-	Uptime int64  `json:"uptime,omitempty"`
+	ID        int64                 `json:"id"`
+	Name      string                `json:"name"`
+	Status    string                `json:"status"`
+	Port      *int                  `json:"port"`
+	PID       *int                  `json:"pid"`
+	Uptime    int64                 `json:"uptime,omitempty"`
+	Resources *monitoring.Resources `json:"resources,omitempty"`
 }
 
 type LifecycleService struct {
@@ -56,6 +68,7 @@ type LifecycleService struct {
 	versions   VersionResolver
 	supervisor ProcessSupervisor
 	cache      DeviceCacheCleaner
+	monitor    ProcessMonitor
 	now        func() time.Time
 	sleep      func(context.Context, time.Duration) error
 
@@ -86,7 +99,7 @@ func NewLifecycleService(opts LifecycleOptions) *LifecycleService {
 			}
 		}
 	}
-	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, now: now, sleep: sleep, startMu: make(map[int64]*startLock)}
+	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, now: now, sleep: sleep, startMu: make(map[int64]*startLock)}
 }
 
 func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus, error) {
@@ -99,7 +112,7 @@ func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus
 		return LifecycleStatus{}, err
 	}
 	if snapshot, ok := s.supervisor.Status(id); ok && (snapshot.State == supervisor.StateStarting || snapshot.State == supervisor.StateRunning) {
-		return s.statusFrom(instance, snapshot, true), nil
+		return s.statusFrom(ctx, instance, snapshot, true), nil
 	}
 	path, err := s.versions.ResolveVersionPath(ctx, instance.GOWAVersion)
 	if err != nil {
@@ -124,7 +137,7 @@ func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus
 	}
 	instance.Status = "running"
 	instance.ErrorMessage = nil
-	return s.statusFrom(instance, snapshot, true), nil
+	return s.statusFrom(ctx, instance, snapshot, true), nil
 }
 
 func (s *LifecycleService) Stop(ctx context.Context, id int64) (LifecycleStatus, error) {
@@ -151,9 +164,9 @@ func (s *LifecycleService) Status(ctx context.Context, id int64) (LifecycleStatu
 		return LifecycleStatus{}, err
 	}
 	if snapshot, ok := s.supervisor.Status(id); ok && (snapshot.State == supervisor.StateStarting || snapshot.State == supervisor.StateRunning || snapshot.State == supervisor.StateStopping) {
-		return s.statusFrom(instance, snapshot, true), nil
+		return s.statusFrom(ctx, instance, snapshot, true), nil
 	}
-	return s.statusFrom(instance, supervisor.ProcessSnapshot{}, false), nil
+	return s.statusFrom(ctx, instance, supervisor.ProcessSnapshot{}, false), nil
 }
 
 func (s *LifecycleService) PersistSupervisorStatus(ctx context.Context, snapshot supervisor.ProcessSnapshot) error {
@@ -164,8 +177,8 @@ func (s *LifecycleService) PersistSupervisorStatus(ctx context.Context, snapshot
 		message = &safeMessage
 	}
 	_, err := s.repo.UpdateStatus(ctx, snapshot.InstanceID, status, message)
-	if err == nil && (snapshot.State == supervisor.StateStopped || snapshot.State == supervisor.StateFailed) && s.cache != nil {
-		s.cache.ClearCache(snapshot.InstanceID)
+	if err == nil && (snapshot.State == supervisor.StateStopped || snapshot.State == supervisor.StateFailed) {
+		s.clearRuntimeCaches(snapshot.InstanceID)
 	}
 	return err
 }
@@ -262,12 +275,10 @@ func (s *LifecycleService) stopWith(ctx context.Context, id int64, force bool) (
 	if _, err := s.repo.UpdateStatus(ctx, id, "stopped", nil); err != nil {
 		return LifecycleStatus{}, err
 	}
-	if s.cache != nil {
-		s.cache.ClearCache(id)
-	}
+	s.clearRuntimeCaches(id)
 	instance.Status = "stopped"
 	instance.ErrorMessage = nil
-	return s.statusFrom(instance, snapshot, false), nil
+	return s.statusFrom(ctx, instance, snapshot, false), nil
 }
 
 func (s *LifecycleService) persistFailed(ctx context.Context, id int64, err error) error {
@@ -304,7 +315,7 @@ func (s *LifecycleService) releaseStartLock(instanceID int64, startMu *startLock
 	}
 }
 
-func (s *LifecycleService) statusFrom(instance Instance, snapshot supervisor.ProcessSnapshot, managed bool) LifecycleStatus {
+func (s *LifecycleService) statusFrom(ctx context.Context, instance Instance, snapshot supervisor.ProcessSnapshot, managed bool) LifecycleStatus {
 	status := LifecycleStatus{ID: instance.ID, Name: instance.Name, Status: instance.Status, Port: instance.Port}
 	if !managed {
 		return status
@@ -320,5 +331,25 @@ func (s *LifecycleService) statusFrom(instance Instance, snapshot supervisor.Pro
 			status.Uptime = 0
 		}
 	}
+	if snapshot.State == supervisor.StateRunning && snapshot.PID > 0 && s.monitor != nil {
+		dataDir := ""
+		if resolver, ok := s.fs.(InstanceDirResolver); ok {
+			if dir, err := resolver.InstanceDir(instance.ID); err == nil {
+				dataDir = dir
+			}
+		}
+		if resources, ok := s.monitor.Resources(ctx, instance.ID, snapshot.PID, dataDir); ok {
+			status.Resources = &resources
+		}
+	}
 	return status
+}
+
+func (s *LifecycleService) clearRuntimeCaches(id int64) {
+	if s.cache != nil {
+		s.cache.ClearCache(id)
+	}
+	if s.monitor != nil {
+		s.monitor.Clear(id)
+	}
 }

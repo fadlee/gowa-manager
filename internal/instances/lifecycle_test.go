@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/monitoring"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
 )
 
@@ -263,6 +264,70 @@ func TestLifecycleStatusUsesRegistryFieldsAndLastKnownStatus(t *testing.T) {
 	}
 }
 
+func TestLifecycleStatusIncludesMonitorResourcesForManagedRunningPID(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstance(1, "running", 3000)
+	deps.monitor.resources = monitoring.Resources{CPUPercent: 12.5, MemoryMB: 128, MemoryPercent: 25}
+	deps.monitor.ok = true
+	deps.supervisor.status = map[int64]supervisor.ProcessSnapshot{1: {InstanceID: 1, State: supervisor.StateRunning, PID: 4321, StartedAt: deps.now()}}
+
+	status, err := lc.Status(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Status error = %v", err)
+	}
+	if status.Resources == nil || status.Resources.CPUPercent != 12.5 || status.Resources.MemoryMB != 128 || status.Resources.MemoryPercent != 25 {
+		t.Fatalf("resources = %+v, want monitor resources", status.Resources)
+	}
+	if deps.monitor.pid != 4321 || deps.monitor.instanceID != 1 {
+		t.Fatalf("monitor call = instance %d pid %d, want instance 1 pid 4321", deps.monitor.instanceID, deps.monitor.pid)
+	}
+}
+
+func TestLifecycleStatusToleratesMonitorFailureAndSkipsNonRunningPID(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstance(1, "running", 3000)
+	deps.repo.instances[2] = testInstance(2, "stopped", 3002)
+	deps.monitor.ok = false
+	deps.supervisor.status = map[int64]supervisor.ProcessSnapshot{
+		1: {InstanceID: 1, State: supervisor.StateRunning, PID: 4321, StartedAt: deps.now()},
+		2: {InstanceID: 2, State: supervisor.StateStopping, PID: 55, StartedAt: deps.now()},
+	}
+
+	status, err := lc.Status(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Status monitor failure error = %v", err)
+	}
+	if status.Resources != nil {
+		t.Fatalf("resources = %+v, want omitted on monitor failure", status.Resources)
+	}
+	deps.monitor.calls = 0
+	status, err = lc.Status(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("Status stopping error = %v", err)
+	}
+	if status.Resources != nil || deps.monitor.calls != 0 {
+		t.Fatalf("stopping resources/calls = %+v/%d, want no sampling", status.Resources, deps.monitor.calls)
+	}
+}
+
+func TestLifecycleStopKillAndExitClearMonitor(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstance(1, "running", 3000)
+	deps.supervisor.status = map[int64]supervisor.ProcessSnapshot{1: {InstanceID: 1, State: supervisor.StateRunning, PID: 10, StartedAt: deps.now()}}
+
+	if _, err := lc.Stop(context.Background(), 1); err != nil {
+		t.Fatalf("Stop error = %v", err)
+	}
+	deps.supervisor.status[1] = supervisor.ProcessSnapshot{InstanceID: 1, State: supervisor.StateRunning, PID: 11, StartedAt: deps.now()}
+	if _, err := lc.Kill(context.Background(), 1); err != nil {
+		t.Fatalf("Kill error = %v", err)
+	}
+	lc.PersistSupervisorExit(supervisor.ProcessSnapshot{InstanceID: 1, State: supervisor.StateRunning, PID: 11})
+	if !reflect.DeepEqual(deps.monitor.cleared, []int64{1, 1, 1}) {
+		t.Fatalf("monitor cleared = %#v, want [1 1 1]", deps.monitor.cleared)
+	}
+}
+
 func TestLifecycleSupervisorExitCallbackPersistsFailedAndClearsCache(t *testing.T) {
 	lc, deps := newTestLifecycle(t)
 	deps.repo.instances[1] = testInstance(1, "running", 3000)
@@ -310,6 +375,7 @@ type testLifecycleDeps struct {
 	versions   *fakeLifecycleVersions
 	supervisor *fakeLifecycleSupervisor
 	cache      *fakeLifecycleCache
+	monitor    *fakeLifecycleMonitor
 	now        func() time.Time
 	slept      time.Duration
 	sleepCalls int
@@ -325,9 +391,10 @@ func newTestLifecycle(t *testing.T) (*LifecycleService, *testLifecycleDeps) {
 		versions:   &fakeLifecycleVersions{path: `C:\gowa\gowa.exe`},
 		supervisor: &fakeLifecycleSupervisor{status: map[int64]supervisor.ProcessSnapshot{}},
 		cache:      &fakeLifecycleCache{},
+		monitor:    &fakeLifecycleMonitor{},
 		now:        func() time.Time { return now },
 	}
-	lc := NewLifecycleService(LifecycleOptions{Repository: deps.repo, Filesystem: deps.fs, PortAllocator: deps.ports, PortChecker: deps.ports, VersionResolver: deps.versions, Supervisor: deps.supervisor, DeviceCache: deps.cache, Now: deps.now, Sleep: func(_ context.Context, d time.Duration) error { deps.sleepCalls++; deps.slept += d; return nil }})
+	lc := NewLifecycleService(LifecycleOptions{Repository: deps.repo, Filesystem: deps.fs, PortAllocator: deps.ports, PortChecker: deps.ports, VersionResolver: deps.versions, Supervisor: deps.supervisor, DeviceCache: deps.cache, Monitor: deps.monitor, Now: deps.now, Sleep: func(_ context.Context, d time.Duration) error { deps.sleepCalls++; deps.slept += d; return nil }})
 	return lc, deps
 }
 
@@ -403,6 +470,7 @@ func (f *fakeLifecycleFS) Ensure(_ context.Context, id int64) (string, error) {
 	f.ensured = id
 	return f.dir, nil
 }
+func (f *fakeLifecycleFS) InstanceDir(int64) (string, error)                 { return f.dir, nil }
 func (f *fakeLifecycleFS) StageDelete(context.Context, int64) (Trash, error) { return Trash{}, nil }
 func (f *fakeLifecycleFS) Restore(context.Context, Trash) error              { return nil }
 func (f *fakeLifecycleFS) Purge(context.Context, Trash) error                { return nil }
@@ -503,3 +571,21 @@ func (s *fakeLifecycleSupervisor) LastStart() supervisor.StartConfig {
 type fakeLifecycleCache struct{ cleared []int64 }
 
 func (c *fakeLifecycleCache) ClearCache(id int64) { c.cleared = append(c.cleared, id) }
+
+type fakeLifecycleMonitor struct {
+	resources  monitoring.Resources
+	ok         bool
+	calls      int
+	instanceID int64
+	pid        int
+	cleared    []int64
+}
+
+func (m *fakeLifecycleMonitor) Resources(_ context.Context, instanceID int64, pid int, _ string) (monitoring.Resources, bool) {
+	m.calls++
+	m.instanceID = instanceID
+	m.pid = pid
+	return m.resources, m.ok
+}
+
+func (m *fakeLifecycleMonitor) Clear(instanceID int64) { m.cleared = append(m.cleared, instanceID) }

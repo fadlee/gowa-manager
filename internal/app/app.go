@@ -17,6 +17,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
 	"github.com/fadlee/gowa-manager/internal/instances"
+	"github.com/fadlee/gowa-manager/internal/monitoring"
 	"github.com/fadlee/gowa-manager/internal/ownership"
 	staticassets "github.com/fadlee/gowa-manager/internal/static"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
@@ -161,13 +162,14 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 	}
 	portAllocator := system.NewPortAllocator(repo)
 	deviceClient := instances.NewDeviceClient(instances.DeviceClientOptions{})
+	processMonitor := monitoring.New(monitoring.MonitorOptions{})
 	releases := versions.NewGitHubClient("", nil)
 	versionService := versions.NewService(opts.DataDir, releases)
 	versionInstaller := versions.NewInstaller(opts.DataDir, releases, nil)
-	lifecycleCallbacks := appLifecycleCallbacks{repo: repo, cache: deviceClient}
+	lifecycleCallbacks := appLifecycleCallbacks{repo: repo, cache: deviceClient, monitor: processMonitor}
 	processSupervisor := supervisor.New(supervisor.SupervisorConfig{StatusCallback: lifecycleCallbacks.PersistSupervisorStatus, ExitCallback: lifecycleCallbacks.PersistSupervisorExit})
-	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient})
-	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient))
+	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient, Monitor: processMonitor})
+	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient), instances.WithMonitorCacheCleaner(processMonitor))
 	return httpapi.Dependencies{
 		Logger:            opts.Logger,
 		StaticFS:          staticassets.FS(),
@@ -219,12 +221,13 @@ func (a appHTTPLifecycle) Status(ctx context.Context, id int64) (httpapi.Instanc
 type appServiceLifecycle struct{ service *instances.LifecycleService }
 
 type appLifecycleCallbacks struct {
-	repo  instances.Repository
-	cache instances.DeviceCacheCleaner
+	repo    instances.Repository
+	cache   instances.DeviceCacheCleaner
+	monitor instances.ProcessMonitor
 }
 
 func (a appLifecycleCallbacks) service() *instances.LifecycleService {
-	return instances.NewLifecycleService(instances.LifecycleOptions{Repository: a.repo, DeviceCache: a.cache})
+	return instances.NewLifecycleService(instances.LifecycleOptions{Repository: a.repo, DeviceCache: a.cache, Monitor: a.monitor})
 }
 
 func (a appLifecycleCallbacks) PersistSupervisorStatus(ctx context.Context, snapshot supervisor.ProcessSnapshot) error {
@@ -246,7 +249,7 @@ func (a appServiceLifecycle) Status(ctx context.Context, id int64) (instances.St
 }
 
 func toHTTPInstanceStatus(status instances.LifecycleStatus, err error) (httpapi.InstanceStatus, error) {
-	return httpapi.InstanceStatus{ID: status.ID, Name: status.Name, Status: status.Status, Port: status.Port, PID: status.PID, Uptime: status.Uptime}, err
+	return httpapi.InstanceStatus{ID: status.ID, Name: status.Name, Status: status.Status, Port: status.Port, PID: status.PID, Uptime: status.Uptime, Resources: status.Resources}, err
 }
 
 type runtimeNotReadyAdminLinks struct{}
