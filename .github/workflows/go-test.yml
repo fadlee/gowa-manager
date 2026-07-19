@@ -1,0 +1,425 @@
+name: Go Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allow the Test workflow to trigger this workflow reusing it.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# Defaults for all jobs: cancel superseded runs on the same ref so
+# long-running platform jobs do not pile up behind stale commits.
+concurrency:
+  group: go-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # go-fast: fast feedback gate (format, vet, unit tests, no race).
+  # Runs on every push/PR and is required to pass before the heavier
+  # platform jobs are worth running.
+  # ---------------------------------------------------------------------
+  go-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Check formatting
+        run: |
+          # Report files that are not gofmt-formatted.
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run unit tests (no race)
+        run: go test ./internal/... ./test/benchmark/...
+
+      - name: Check for surviving fakegowa processes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          pids=$(pgrep -f fakegowa || true)
+          if [ -n "$pids" ]; then
+            echo "::error::Surviving fakegowa processes detected:"
+            echo "$pids"
+            kill -9 $pids 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-fast-logs
+          path: |
+            **/*.log
+            **/test-output.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # go-linux-amd64: full native Linux amd64 matrix — unit, contract,
+  # ops, E2E, and race tests. This is the primary required gate.
+  # ---------------------------------------------------------------------
+  go-linux-amd64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: go-fast
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Bun dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend for E2E
+        run: bun run build:client
+
+      - name: Build Go binary (with version ldflags)
+        run: |
+          mkdir -p dist-go
+          go build \
+            -ldflags "-X github.com/fadlee/gowa-manager/internal/buildinfo.Version=${GITHUB_REF_NAME:-dev}" \
+            -o dist-go/gowa-manager-go \
+            ./cmd/gowa-manager-go
+
+      - name: Run full test suite with race detector
+        run: go test -race ./...
+
+      - name: Run contract tests explicitly
+        run: go test -race ./test/contract/...
+
+      - name: Run ops tests explicitly
+        run: go test -race ./test/ops/...
+
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run E2E tests (Playwright against Go backend)
+        run: bun run test:e2e:go
+        env:
+          # Use the binary built above instead of rebuilding.
+          GOWA_E2E_REUSE_BINARY: 'true'
+
+      - name: Check for surviving fakegowa processes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          pids=$(pgrep -f fakegowa || true)
+          if [ -n "$pids" ]; then
+            echo "::error::Surviving fakegowa processes detected:"
+            echo "$pids"
+            kill -9 $pids 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Upload test logs and Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-linux-amd64-artifacts
+          path: |
+            **/*.log
+            **/test-output.txt
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # go-linux-arm64: native arm64 lifecycle and integration tests.
+  #
+  # NOTE: An arm64 GitHub-hosted runner is not yet available for this
+  # repo, so this job uses the `arm64` Ubuntu label and is marked
+  # continue-on-error so it does not block PRs until a real arm64
+  # runner is registered. The Go race detector is not enabled here
+  # because arm64 race support is unreliable.
+  # ---------------------------------------------------------------------
+  go-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    timeout-minutes: 25
+    needs: go-fast
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run lifecycle and integration tests (no race)
+        run: |
+          go test ./internal/supervisor/... ./internal/instances/...
+          go test ./internal/monitoring/... ./internal/scheduler/...
+          go test ./test/contract/...
+
+      - name: Check for surviving fakegowa processes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          pids=$(pgrep -f fakegowa || true)
+          if [ -n "$pids" ]; then
+            echo "::error::Surviving fakegowa processes detected:"
+            echo "$pids"
+            kill -9 $pids 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-linux-arm64-logs
+          path: |
+            **/*.log
+            **/test-output.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # go-windows-amd64: native Windows runtime — process supervisor,
+  # runtime, proxy, and contract tests. The race detector is omitted
+  # because it is prohibitively slow under Windows CI.
+  # ---------------------------------------------------------------------
+  go-windows-amd64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    needs: go-fast
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run full test suite (no race)
+        run: go test ./...
+
+      - name: Run process supervisor and system runtime tests explicitly
+        run: |
+          go test ./internal/supervisor/...
+          go test ./internal/system/...
+
+      - name: Run proxy and contract tests explicitly
+        run: |
+          go test ./internal/proxy/...
+          go test ./test/contract/...
+
+      - name: Check for surviving fakegowa processes
+        if: always()
+        shell: pwsh
+        run: |
+          $procs = Get-Process -Name "fakegowa*" -ErrorAction SilentlyContinue
+          if ($procs) {
+            Write-Error "::error::Surviving fakegowa processes detected:"
+            $procs | Format-Table -AutoSize
+            $procs | Stop-Process -Force
+            exit 1
+          }
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-windows-amd64-logs
+          path: |
+            **/*.log
+            **/test-output.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # go-docker: build the Docker image and run a smoke test plus a
+  # volume-persistence check on Linux amd64.
+  # ---------------------------------------------------------------------
+  go-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: go-fast
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Bun dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend and embed static assets
+        run: bun run build:client && bun run embed-static
+
+      - name: Build Go binary for the Docker image
+        run: |
+          mkdir -p dist-go
+          go build \
+            -ldflags "-X github.com/fadlee/gowa-manager/internal/buildinfo.Version=ci" \
+            -o dist-go/gowa-manager-go \
+            ./cmd/gowa-manager-go
+
+      - name: Build Docker image (prebuilt variant)
+        run: |
+          mkdir -p binaries
+          cp dist-go/gowa-manager-go binaries/gowa-manager-linux-amd64
+          docker build -f Dockerfile.prebuilt -t gowa-manager:ci .
+
+      - name: Smoke test — container starts and reports ready
+        run: |
+          set -e
+          cid=$(docker run -d -p 3000:3000 gowa-manager:ci)
+          # Wait up to 30s for the health endpoint.
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/ready >/dev/null 2>&1; then
+              echo "Container is ready"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -sf http://localhost:3000/api/ready >/dev/null 2>&1; then
+            echo "::error::Container did not become ready"
+            docker logs "$cid"
+            docker stop "$cid" >/dev/null
+            exit 1
+          fi
+          docker stop "$cid" >/dev/null
+
+      - name: Volume persistence — data survives container restart
+        run: |
+          set -e
+          vol="$HOME/gowa-ci-data"
+          rm -rf "$vol"
+          mkdir -p "$vol"
+          # First run: write data into the mounted volume.
+          cid1=$(docker run -d -p 3001:3000 -v "$vol:/app/data" gowa-manager:ci)
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3001/api/ready >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker stop "$cid1" >/dev/null
+          # Second run: confirm the volume still contains the DB file.
+          cid2=$(docker run -d -p 3002:3000 -v "$vol:/app/data" gowa-manager:ci)
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3002/api/ready >/dev/null 2>&1 && break
+            sleep 1
+          done
+          if ! curl -sf http://localhost:3002/api/ready >/dev/null 2>&1; then
+            echo "::error::Second container did not become ready (volume not persisted)"
+            docker logs "$cid2"
+            docker stop "$cid2" >/dev/null
+            exit 1
+          fi
+          docker stop "$cid2" >/dev/null
+          if [ ! -f "$vol/gowa.db" ]; then
+            echo "::error::Expected data file $vol/gowa.db was not persisted"
+            exit 1
+          fi
+          echo "Volume persistence verified"
+
+      - name: Check for surviving fakegowa processes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          pids=$(pgrep -f fakegowa || true)
+          if [ -n "$pids" ]; then
+            echo "::error::Surviving fakegowa processes detected:"
+            echo "$pids"
+            kill -9 $pids 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Upload Docker logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-docker-logs
+          path: |
+            **/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # bun-frontend: frontend typecheck and production build, plus the
+  # baseline Bun test suite. Cached by bun.lock hash.
+  # ---------------------------------------------------------------------
+  bun-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: go-fast
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run build:tsc
+
+      - name: Build client
+        run: bun run build:client
+
+      - name: Run baseline Bun tests
+        run: bun test

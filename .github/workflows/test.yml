@@ -6,8 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  # Bun-only coverage gate (existing CI). Kept here so frontend-only
+  # changes still get fast coverage feedback without running the full
+  # Go platform matrix.
+  bun-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,3 +33,10 @@ jobs:
 
       - name: Run tests with coverage gate
         run: bun run scripts/check-coverage.ts --lines 0.9 --funcs 0.9
+
+  # Reuse the Go backend test matrix (fast checks, native Linux/Windows
+  # jobs, Docker smoke, and frontend build). Defined in go-test.yml so
+  # it can also be triggered independently or from other workflows.
+  go-tests:
+    needs: bun-test
+    uses: ./.github/workflows/go-test.yml
