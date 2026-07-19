@@ -54,8 +54,8 @@ func TestManagementParity(t *testing.T) {
 		{name: "health", method: http.MethodGet, path: "/api/health", noAuth: true},
 		{name: "list", method: http.MethodGet, path: "/api/instances"},
 		{name: "detail", method: http.MethodGet, path: "/api/instances/{id}"},
-		{name: "update", method: http.MethodPut, path: "/api/instances/{id}", body: updateBody.createBody()},
-		{name: "reset", method: http.MethodPost, path: "/api/instances/{id}/reset-data"},
+		{name: "update", method: http.MethodPut, path: "/api/instances/{id}", body: updateBody.createBody(), compareSideEffects: true},
+		{name: "reset", method: http.MethodPost, path: "/api/instances/{id}/reset-data", compareSideEffects: true},
 		{name: "system status", method: http.MethodGet, path: "/api/system/status"},
 		{name: "system config", method: http.MethodGet, path: "/api/system/config"},
 		{name: "system next port", method: http.MethodGet, path: "/api/system/ports/next"},
@@ -64,18 +64,22 @@ func TestManagementParity(t *testing.T) {
 		{name: "versions available", method: http.MethodGet, path: "/api/system/versions/available?limit=1"},
 		{name: "versions usage", method: http.MethodGet, path: "/api/system/versions/usage"},
 		{name: "install failure", method: http.MethodPost, path: "/api/system/versions/install", body: []byte(`{"version":"not-a-real-contract-version"}`)},
-		{name: "cleanup", method: http.MethodPost, path: "/api/system/versions/cleanup", body: []byte(`{"keepCount":1}`)},
+		{name: "cleanup", method: http.MethodPost, path: "/api/system/versions/cleanup", body: []byte(`{"keepCount":1}`), compareSideEffects: true},
 		{name: "devices while stopped", method: http.MethodGet, path: "/api/instances/{id}/devices"},
 		{name: "test connection failure", method: http.MethodPost, path: "/api/instances/{id}/test-connection"},
-		{name: "delete", method: http.MethodDelete, path: "/api/instances/{id}"},
+		{name: "delete", method: http.MethodDelete, path: "/api/instances/{id}", compareSideEffects: true},
 		{name: "detail after delete", method: http.MethodGet, path: "/api/instances/{id}"},
 	}
 
 	compareSnapshots(t, "create", bunCreate, bun, goCreate, goBackend)
+	compareSideEffects(t, "after create", bun, goBackend)
 	for _, sc := range scenarios {
 		bunSnap := doScenario(t, client, bun, sc.withID(bunID))
 		goSnap := doScenario(t, client, goBackend, sc.withID(goID))
 		compareSnapshots(t, sc.name, bunSnap, bun, goSnap, goBackend)
+		if sc.compareSideEffects {
+			compareSideEffects(t, "after "+sc.name, bun, goBackend)
+		}
 	}
 
 	unauth := doScenario(t, client, bun, scenario{name: "bun auth required", method: http.MethodGet, path: "/api/instances", noAuth: true})
@@ -83,7 +87,8 @@ func TestManagementParity(t *testing.T) {
 		t.Fatalf("Bun unauthenticated management status = %d, want 401; body = %#v", unauth.Status, unauth.JSONBody)
 	}
 
-	compareSideEffects(t, bun, goBackend)
+	verifyBunCanReadDB(t, bun.dataDir)
+	verifyBunCanReadDB(t, goBackend.dataDir)
 }
 
 type fixtureInstance struct {
@@ -109,11 +114,12 @@ type backend struct {
 }
 
 type scenario struct {
-	name   string
-	method string
-	path   string
-	body   []byte
-	noAuth bool
+	name               string
+	method             string
+	path               string
+	body               []byte
+	noAuth             bool
+	compareSideEffects bool
 }
 
 func (s scenario) withID(id string) scenario {
@@ -382,13 +388,36 @@ func jsonNumberID(t *testing.T, body any) string {
 	return fmt.Sprintf("%.0f", id)
 }
 
-func compareSideEffects(t *testing.T, bun backend, goBackend backend) {
+func compareSideEffects(t *testing.T, name string, bun backend, goBackend backend) {
 	t.Helper()
 	if got, want := readRows(t, bun.dataDir), readRows(t, goBackend.dataDir); !reflect.DeepEqual(got, want) {
-		t.Fatalf("normalized SQLite rows differ\nBun: %#v\nGo:  %#v", got, want)
+		t.Fatalf("%s normalized SQLite rows differ\nBun: %#v\nGo:  %#v", name, got, want)
 	}
 	if got, want := relativeTree(t, bun.dataDir), relativeTree(t, goBackend.dataDir); !reflect.DeepEqual(got, want) {
-		t.Fatalf("relative filesystem trees differ\nBun: %#v\nGo:  %#v", got, want)
+		t.Fatalf("%s relative filesystem trees differ\nBun: %#v\nGo:  %#v", name, got, want)
+	}
+}
+
+func verifyBunCanReadDB(t *testing.T, dataDir string) {
+	t.Helper()
+	if _, err := exec.LookPath("bun"); err != nil {
+		t.Skipf("bun executable not found for SQLite compatibility check: %v", err)
+	}
+	script := `
+import { Database } from 'bun:sqlite'
+const db = new Database(process.argv[1], { readonly: true })
+const integrity = db.query('PRAGMA integrity_check').get()
+if (!integrity || integrity.integrity_check !== 'ok') throw new Error('integrity_check failed')
+db.query('SELECT id, key, name, port, status, config, gowa_version, error_message, created_at, updated_at FROM instances ORDER BY id').all()
+db.close()
+`
+	dbPath := filepath.Join(dataDir, "gowa.db")
+	cmd := exec.Command("bun", "--eval", script, dbPath)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("bun could not read sqlite database %s: %v\n%s", dbPath, err, output.String())
 	}
 }
 
