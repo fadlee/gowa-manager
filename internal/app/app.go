@@ -559,8 +559,9 @@ func buildDefaultSchedulers(interval time.Duration) func(context.Context, httpap
 			}
 		}
 		cleanupRunner := scheduler.NewRunner(scheduler.RunnerOptions{
-			Job:    cleanupJob,
-			Logger: deps.Logger,
+			Job:      cleanupJob,
+			Schedule: scheduler.DailyMidnightUTC,
+			Logger:   deps.Logger,
 		})
 
 		// Auto-update: reuse the one wired in deps.AutoUpdate if possible.
@@ -673,11 +674,13 @@ func (d depsStarter) Start(ctx context.Context, id int64) error {
 
 // runReconciliation builds and runs the startup reconciler from the wired
 // dependencies. When instance management dependencies are absent (e.g. a
-// degraded build), it flips readiness immediately so the manager does not
-// stay not-ready forever.
+// degraded build), it returns immediately; the caller is responsible for
+// flipping readiness after schedulers start.
 func runReconciliation(ctx context.Context, deps httpapi.Dependencies, logger *slog.Logger, concurrency int, readiness *httpapi.AtomicReadiness) {
 	if deps.Instances == nil || deps.InstanceLifecycle == nil {
-		readiness.SetReady()
+		// Degraded build: no instance management. The caller (reconcile
+		// goroutine) flips readiness after schedulers start, so we do
+		// NOT flip it here — readiness may be nil in that path.
 		return
 	}
 	r := NewReconciler(ReconcilerOptions{
