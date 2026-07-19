@@ -223,6 +223,18 @@ bun run build:go
 
 The existing Bun commands remain the production baseline until the Go rewrite reaches full feature parity and passes the cutover gates.
 
+#### Go Backend Operator Runbooks
+
+For production deployment, cutover, and rollback of the Go backend, see the
+operator runbooks:
+
+- [docs/GO_BACKEND_OPERATIONS.md](docs/GO_BACKEND_OPERATIONS.md) — Normal
+  operation (Linux/Docker/Windows setup, monitoring, backups, troubleshooting)
+- [docs/GO_BACKEND_CANARY.md](docs/GO_BACKEND_CANARY.md) — Canary cutover
+  from Bun to Go (step-by-step)
+- [docs/GO_BACKEND_ROLLBACK.md](docs/GO_BACKEND_ROLLBACK.md) — Rollback from
+  Go to Bun (triggers, commands, verification)
+
 ### Testing And Validation
 ```bash
 # Run backend/unit/integration tests
@@ -501,6 +513,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: Report bugs and feature requests via GitHub Issues
 - **Documentation**: See `/docs` directory for detailed guides
+  - [Go Backend Operations](docs/GO_BACKEND_OPERATIONS.md) — Production operation runbook
+  - [Go Backend Canary Cutover](docs/GO_BACKEND_CANARY.md) — Bun-to-Go cutover procedure
+  - [Go Backend Rollback](docs/GO_BACKEND_ROLLBACK.md) — Go-to-Bun rollback procedure
 - **API**: Full OpenAPI documentation available at `/openapi` (when running)
 
 ---

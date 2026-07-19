@@ -89,3 +89,28 @@ build: {
 - **Server Changes**: Bun detects changes → restarts server → continues serving latest client build
 
 This setup provides a seamless development experience with automatic rebuilds while maintaining the production deployment model.
+
+## Go Backend (Production Alternative)
+
+In addition to the Bun/Elysia backend described above, a **Go backend** rewrite
+is available as a production alternative. The Go backend is CLI- and
+env-compatible with Bun for operational flags (`--port`, `--admin-username`,
+`--admin-password`, `--data-dir`) and adds `--host` and
+`GOWA_METRICS_ENABLED` for production deployments.
+
+> **Warning:** Bun and Go must **never** run against the same `DATA_DIR` at
+> the same time. Cutover from Bun to Go follows a controlled canary sequence.
+
+### Operator Runbooks
+
+For production deployment, cutover, and rollback procedures, see:
+
+- [GO_BACKEND_OPERATIONS.md](GO_BACKEND_OPERATIONS.md) — Normal operation
+  (service/Docker/Windows setup, monitoring, backups, troubleshooting)
+- [GO_BACKEND_CANARY.md](GO_BACKEND_CANARY.md) — Canary cutover from Bun to Go
+- [GO_BACKEND_ROLLBACK.md](GO_BACKEND_ROLLBACK.md) — Rollback from Go to Bun
+
+### Development
+
+For local development of the Go backend, see the "Experimental Go Backend"
+section in the [README](../README.md).
