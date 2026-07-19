@@ -590,13 +590,17 @@ func TestLeakDetection(t *testing.T) {
 	// ── Compare ──
 	t.Log("\n── Leak Detection Results ──")
 
-	// Goroutines
+	leakFailed := false
+
+	// Goroutines — -1 means unavailable
+	goroDelta := -1
 	if before.goroutines >= 0 && after.goroutines >= 0 {
-		goroDelta := after.goroutines - before.goroutines
+		goroDelta = after.goroutines - before.goroutines
 		if goroDelta < 0 {
 			goroDelta = -goroDelta
 		}
 		if goroDelta > leakGoroutineMaxDelta {
+			leakFailed = true
 			t.Errorf("❌ goroutine leak: before=%d after=%d (delta=%d, max=%d)",
 				before.goroutines, after.goroutines, goroDelta, leakGoroutineMaxDelta)
 		} else {
@@ -607,10 +611,12 @@ func TestLeakDetection(t *testing.T) {
 		t.Logf("⏭️ goroutines: skipped (metrics endpoint unavailable)")
 	}
 
-	// RSS
+	// RSS — -1 means unavailable
+	rssGrowth := -1.0
 	if before.rssBytes > 0 && after.rssBytes > 0 {
-		rssGrowth := float64(after.rssBytes-before.rssBytes) / float64(before.rssBytes) * 100
+		rssGrowth = float64(after.rssBytes-before.rssBytes) / float64(before.rssBytes) * 100
 		if rssGrowth > leakRssMaxPercentGrowth {
+			leakFailed = true
 			t.Errorf("❌ RSS leak: before=%.1f MB after=%.1f MB (growth=%.1f%%, max=%.1f%%)",
 				float64(before.rssBytes)/1024/1024, float64(after.rssBytes)/1024/1024,
 				rssGrowth, leakRssMaxPercentGrowth)
@@ -623,13 +629,15 @@ func TestLeakDetection(t *testing.T) {
 		t.Logf("⏭️ RSS: skipped (measurement unavailable)")
 	}
 
-	// FDs / handles
+	// FDs / handles — -1 means unavailable
+	fdDelta := -1
 	if before.fds >= 0 && after.fds >= 0 {
-		fdDelta := after.fds - before.fds
+		fdDelta = after.fds - before.fds
 		if fdDelta < 0 {
 			fdDelta = -fdDelta
 		}
 		if fdDelta > leakFdMaxDelta {
+			leakFailed = true
 			t.Errorf("❌ FD/handle leak: before=%d after=%d (delta=%d, max=%d)",
 				before.fds, after.fds, fdDelta, leakFdMaxDelta)
 		} else {
@@ -639,6 +647,19 @@ func TestLeakDetection(t *testing.T) {
 	} else {
 		t.Logf("⏭️ FDs/handles: skipped (measurement unavailable on this platform)")
 	}
+
+	// ── Machine-readable metrics for compare.ts ──
+	// These lines are parsed by test/benchmark/compare.ts to integrate leak
+	// detection into the overall PASS/FAIL verdict. A value of -1 indicates
+	// the metric was unavailable (skipped) on this platform/environment.
+	verdict := "PASS"
+	if leakFailed {
+		verdict = "FAIL"
+	}
+	fmt.Printf("goroutine_delta: %d\n", goroDelta)
+	fmt.Printf("rss_growth_percent: %.2f\n", rssGrowth)
+	fmt.Printf("fd_handle_delta: %d\n", fdDelta)
+	fmt.Printf("leak_test: %s\n", verdict)
 
 	// Cleanup instances
 	leakRequest(t, be, http.MethodDelete, fmt.Sprintf("/api/instances/%d", proxyID), nil)

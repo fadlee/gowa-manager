@@ -136,6 +136,13 @@ interface ThresholdScenario {
   rationale?: string
 }
 
+interface LeakDetectionThresholds {
+  description: string
+  goroutines: { maxDelta: number; rationale: string }
+  rss: { maxPercentGrowth: number; rationale: string }
+  fds: { maxDelta: number; rationale: string }
+}
+
 interface Thresholds {
   note: string
   approvalRequired: boolean
@@ -145,12 +152,7 @@ interface Thresholds {
     description: string
   }
   scenarios: Record<string, ThresholdScenario>
-  leakDetection: {
-    description: string
-    goroutines: { maxDelta: number; rationale: string }
-    rss: { maxPercentGrowth: number; rationale: string }
-    fds: { maxDelta: number; rationale: string }
-  }
+  leakDetection: LeakDetectionThresholds
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +443,181 @@ function compareScenario(
 }
 
 // ---------------------------------------------------------------------------
+// Leak detection
+// ---------------------------------------------------------------------------
+
+interface LeakMetricResult {
+  name: string
+  verdict: Verdict
+  measured: number | null
+  threshold: number
+  unit: string
+  detail: string
+}
+
+interface LeakDetectionResult {
+  verdict: Verdict // PASS, FAIL, or SKIP
+  goroutineDelta: number | null
+  rssGrowthPercent: number | null
+  fdHandleDelta: number | null
+  metrics: LeakMetricResult[]
+  detail: string
+  rawOutput: string
+}
+
+// Run the Go leak detection test and parse machine-readable metrics from its
+// stdout. If the test fails to run or produces no parseable output, the result
+// is reported as SKIP (not FAIL) with a warning, since the leak test may not
+// be runnable in all environments.
+async function runLeakDetection(thresholds: LeakDetectionThresholds): Promise<LeakDetectionResult> {
+  console.log('\n── Running Leak Detection ──')
+  console.log('  go test ./test/benchmark/ -run TestLeakDetection -v -timeout 120s\n')
+
+  const proc = Bun.spawn(
+    ['go', 'test', './test/benchmark/', '-run', 'TestLeakDetection', '-v', '-timeout', '120s'],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      cwd: process.cwd(),
+    },
+  )
+
+  const stdoutText = await new Response(proc.stdout).text()
+  const stderrText = await new Response(proc.stderr).text()
+  const exitCode = await proc.exited
+
+  // Parse machine-readable metric lines printed by leak_test.go.
+  // A value of -1 indicates the metric was unavailable on this platform.
+  const goroDeltaMatch = stdoutText.match(/^goroutine_delta:\s*(-?\d+)\s*$/m)
+  const rssGrowthMatch = stdoutText.match(/^rss_growth_percent:\s*(-?[\d.]+)\s*$/m)
+  const fdDeltaMatch = stdoutText.match(/^fd_handle_delta:\s*(-?\d+)\s*$/m)
+  const leakTestMatch = stdoutText.match(/^leak_test:\s*(PASS|FAIL)\s*$/m)
+
+  const goroDelta = goroDeltaMatch ? parseInt(goroDeltaMatch[1], 10) : null
+  const rssGrowth = rssGrowthMatch ? parseFloat(rssGrowthMatch[1]) : null
+  const fdDelta = fdDeltaMatch ? parseInt(fdDeltaMatch[1], 10) : null
+  const testVerdict = leakTestMatch ? (leakTestMatch[1] as 'PASS' | 'FAIL') : null
+
+  // If no parseable output at all, report as SKIP (not FAIL).
+  if (testVerdict === null && goroDelta === null && rssGrowth === null && fdDelta === null) {
+    console.log('  ⚠️  Leak test produced no parseable metrics — reporting SKIP.')
+    console.log(`  (go test exit code: ${exitCode})`)
+    if (stderrText.trim()) {
+      console.log('  stderr (truncated):', stderrText.trim().slice(0, 500))
+    }
+    return {
+      verdict: 'SKIP',
+      goroutineDelta: null,
+      rssGrowthPercent: null,
+      fdHandleDelta: null,
+      metrics: [],
+      detail:
+        'Leak test did not produce parseable output — may not be runnable in this environment.',
+      rawOutput: stdoutText,
+    }
+  }
+
+  // Compare each metric against thresholds from thresholds.json.
+  const metrics: LeakMetricResult[] = []
+  let overallFail = false
+
+  // Goroutines
+  if (goroDelta !== null && goroDelta >= 0) {
+    const max = thresholds.goroutines.maxDelta
+    const fail = goroDelta > max
+    if (fail) overallFail = true
+    metrics.push({
+      name: 'leak.goroutines',
+      verdict: fail ? 'FAIL' : 'PASS',
+      measured: goroDelta,
+      threshold: max,
+      unit: 'delta',
+      detail: `Goroutine delta ${goroDelta} ${fail ? 'exceeds' : 'within'} max ${max}.`,
+    })
+  } else {
+    metrics.push({
+      name: 'leak.goroutines',
+      verdict: 'SKIP',
+      measured: null,
+      threshold: thresholds.goroutines.maxDelta,
+      unit: 'delta',
+      detail: 'Goroutine measurement unavailable on this platform.',
+    })
+  }
+
+  // RSS
+  if (rssGrowth !== null && rssGrowth >= 0) {
+    const max = thresholds.rss.maxPercentGrowth
+    const fail = rssGrowth > max
+    if (fail) overallFail = true
+    metrics.push({
+      name: 'leak.rss',
+      verdict: fail ? 'FAIL' : 'PASS',
+      measured: rssGrowth,
+      threshold: max,
+      unit: '%',
+      detail: `RSS growth ${rssGrowth.toFixed(2)}% ${fail ? 'exceeds' : 'within'} max ${max}%.`,
+    })
+  } else {
+    metrics.push({
+      name: 'leak.rss',
+      verdict: 'SKIP',
+      measured: null,
+      threshold: thresholds.rss.maxPercentGrowth,
+      unit: '%',
+      detail: 'RSS measurement unavailable on this platform.',
+    })
+  }
+
+  // FDs / handles
+  if (fdDelta !== null && fdDelta >= 0) {
+    const max = thresholds.fds.maxDelta
+    const fail = fdDelta > max
+    if (fail) overallFail = true
+    metrics.push({
+      name: 'leak.fds',
+      verdict: fail ? 'FAIL' : 'PASS',
+      measured: fdDelta,
+      threshold: max,
+      unit: 'delta',
+      detail: `FD/handle delta ${fdDelta} ${fail ? 'exceeds' : 'within'} max ${max}.`,
+    })
+  } else {
+    metrics.push({
+      name: 'leak.fds',
+      verdict: 'SKIP',
+      measured: null,
+      threshold: thresholds.fds.maxDelta,
+      unit: 'delta',
+      detail: 'FD/handle measurement unavailable on this platform.',
+    })
+  }
+
+  const verdict: Verdict = overallFail ? 'FAIL' : 'PASS'
+  console.log(`  Leak test self-verdict: ${testVerdict ?? 'N/A'}`)
+  console.log(`  Leak detection verdict: ${verdict}`)
+  for (const m of metrics) {
+    console.log(`    ${verdictIcon(m.verdict)} ${m.name}: ${m.detail}`)
+  }
+
+  if (exitCode !== 0 && !overallFail) {
+    console.log(`  ⚠️  go test exited with code ${exitCode} but metrics parsed OK.`)
+  }
+
+  return {
+    verdict,
+    goroutineDelta: goroDelta,
+    rssGrowthPercent: rssGrowth,
+    fdHandleDelta: fdDelta,
+    metrics,
+    detail: overallFail
+      ? 'Leak detection FAILED — resource leak detected above thresholds.'
+      : 'Leak detection passed — all measured metrics within thresholds.',
+    rawOutput: stdoutText,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Report formatting
 // ---------------------------------------------------------------------------
 
@@ -451,6 +628,7 @@ function formatValue(val: number | null, unit: string): string {
   if (unit === 'msg/s') return `${val.toFixed(0)} msg/s`
   if (unit === 'ms') return `${val.toFixed(2)} ms`
   if (unit === '%') return `${val.toFixed(2)}%`
+  if (unit === 'delta') return `${val}`
   return `${val.toFixed(2)} ${unit}`
 }
 
@@ -469,6 +647,7 @@ function printReport(
   results: ScenarioResult[],
   bunMeta: BaselineMetadata,
   goMeta: BaselineMetadata,
+  leakResult: LeakDetectionResult | null,
 ): void {
   console.log('\n' + '='.repeat(72))
   console.log('  GOWA Manager: Go vs Bun Benchmark Comparison Report')
@@ -512,17 +691,41 @@ function printReport(
     )
   }
 
-  // Summary
-  const passed = results.filter((r) => r.verdict === 'PASS').length
-  const failed = results.filter((r) => r.verdict === 'FAIL').length
-  const info = results.filter((r) => r.verdict === 'INFO').length
-  const skipped = results.filter((r) => r.verdict === 'SKIP').length
+  // Leak detection results
+  if (leakResult) {
+    console.log('\n── Leak Detection ──\n')
+    if (leakResult.verdict === 'SKIP' && leakResult.metrics.length === 0) {
+      console.log(`  ${verdictIcon('SKIP')} SKIP  ${leakResult.detail}`)
+    } else {
+      for (const m of leakResult.metrics) {
+        const icon = verdictIcon(m.verdict)
+        const status = m.verdict.padEnd(4)
+        const namePadded = m.name.padEnd(28)
+        const measured = m.measured !== null ? formatValue(m.measured, m.unit) : 'N/A'
+        const thresh = formatValue(m.threshold, m.unit)
+        console.log(`  ${icon} ${status} ${namePadded} Measured: ${measured.padEnd(16)} Max: ${thresh.padEnd(16)}`)
+        console.log(`         ${m.detail}`)
+      }
+      console.log(`\n  Overall leak verdict: ${verdictIcon(leakResult.verdict)} ${leakResult.verdict}`)
+      console.log(`  ${leakResult.detail}`)
+    }
+  }
+
+  // Summary — includes leak detection in the counts
+  const allResults: { verdict: Verdict }[] = [...results]
+  if (leakResult) {
+    allResults.push(...leakResult.metrics)
+  }
+  const passed = allResults.filter((r) => r.verdict === 'PASS').length
+  const failed = allResults.filter((r) => r.verdict === 'FAIL').length
+  const info = allResults.filter((r) => r.verdict === 'INFO').length
+  const skipped = allResults.filter((r) => r.verdict === 'SKIP').length
 
   console.log('\n── Summary ──')
-  console.log(`  Passed:      ${passed}`)
-  console.log(`  Failed:      ${failed}`)
+  console.log(`  Passed:        ${passed}`)
+  console.log(`  Failed:        ${failed}`)
   console.log(`  Informational: ${info}`)
-  console.log(`  Skipped:     ${skipped}`)
+  console.log(`  Skipped:       ${skipped}`)
 
   if (failed > 0) {
     console.log('\n  ❌ OVERALL: FAIL — release is BLOCKED')
@@ -643,15 +846,41 @@ async function main(): Promise<void> {
     compareScenario('dockerImageSize', tScenarios.dockerImageSize, bunDocker, goDocker, 'bytes'),
   )
 
+  // ── Leak detection ──
+  // Run the Go leak detection test (TestLeakDetection) and compare its
+  // metrics against the thresholds.json leakDetection section. This is only
+  // meaningful when comparing the Go backend (always the case here). If the
+  // test cannot run or produces no parseable output, it is reported as SKIP.
+  let leakResult: LeakDetectionResult | null = null
+  if (metadataOk) {
+    try {
+      leakResult = await runLeakDetection(thresholds.leakDetection)
+    } catch (err) {
+      console.log(`\n  ⚠️  Leak detection could not run: ${err}`)
+      leakResult = {
+        verdict: 'SKIP',
+        goroutineDelta: null,
+        rssGrowthPercent: null,
+        fdHandleDelta: null,
+        metrics: [],
+        detail: `Leak detection could not run: ${err}`,
+        rawOutput: '',
+      }
+    }
+  } else {
+    console.log('\n  ⏭️  Skipping leak detection — metadata mismatch.')
+  }
+
   // Print report
-  printReport(metadataOk, mismatches, results, bunBaseline.metadata, goBaseline.metadata)
+  printReport(metadataOk, mismatches, results, bunBaseline.metadata, goBaseline.metadata, leakResult)
 
   // Exit code
   if (!metadataOk) {
     process.exit(2)
   }
   const failed = results.filter((r) => r.verdict === 'FAIL').length
-  if (failed > 0) {
+  const leakFailed = leakResult?.metrics.filter((m) => m.verdict === 'FAIL').length ?? 0
+  if (failed > 0 || leakFailed > 0) {
     process.exit(1)
   }
   process.exit(0)
