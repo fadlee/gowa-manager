@@ -1,0 +1,259 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://fadlee.github.io/gowa-manager/baseline.schema.json",
+  "title": "GOWA Manager Backend Performance Baseline",
+  "description": "Schema for benchmark results captured by scripts/benchmark-backends.ts. Each scenario stores raw samples plus median and p95 statistics. Results are machine-specific and must not be compared across unlike machines.",
+  "type": "object",
+  "required": ["metadata", "scenarios"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": [
+        "backend",
+        "os",
+        "arch",
+        "cpu",
+        "cpuCount",
+        "runtimeVersion",
+        "goVersion",
+        "sampleCount",
+        "fixtureCommit",
+        "capturedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": ["bun", "go"],
+          "description": "Which backend was benchmarked."
+        },
+        "os": {
+          "type": "string",
+          "description": "Operating system (e.g. linux, darwin, win32)."
+        },
+        "arch": {
+          "type": "string",
+          "description": "CPU architecture (e.g. x64, arm64)."
+        },
+        "cpu": {
+          "type": "string",
+          "description": "CPU model name."
+        },
+        "cpuCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Logical CPU core count."
+        },
+        "runtimeVersion": {
+          "type": "string",
+          "description": "Bun version (bun --version)."
+        },
+        "goVersion": {
+          "type": "string",
+          "description": "Go toolchain version (go version). Empty if Go is not installed."
+        },
+        "sampleCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default number of samples per scenario."
+        },
+        "fixtureCommit": {
+          "type": "string",
+          "description": "Git SHA at capture time."
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of capture."
+        },
+        "host": {
+          "type": "string",
+          "description": "Hostname or machine identifier (optional)."
+        }
+      }
+    },
+    "scenarios": {
+      "type": "object",
+      "required": [
+        "coldStartup",
+        "idleRss",
+        "crudLatency",
+        "proxyHttp",
+        "webSocket",
+        "monitoringCost",
+        "gracefulShutdown",
+        "executableSize",
+        "dockerImageSize"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "coldStartup": {
+          "$ref": "#/definitions/durationScenario",
+          "description": "Time from process start to first 200 on GET /api/health."
+        },
+        "idleRss": {
+          "$ref": "#/definitions/sizeScenario",
+          "description": "Resident Set Size (bytes) after 5 s stabilization."
+        },
+        "crudLatency": {
+          "type": "object",
+          "required": ["operations", "median", "p95", "sampleCount"],
+          "additionalProperties": false,
+          "properties": {
+            "operations": {
+              "type": "object",
+              "required": ["create", "read", "update", "delete"],
+              "additionalProperties": false,
+              "properties": {
+                "create": { "$ref": "#/definitions/distribution" },
+                "read": { "$ref": "#/definitions/distribution" },
+                "update": { "$ref": "#/definitions/distribution" },
+                "delete": { "$ref": "#/definitions/distribution" }
+              }
+            },
+            "median": {
+              "type": "number",
+              "description": "Median latency across all CRUD operations (ms)."
+            },
+            "p95": {
+              "type": "number",
+              "description": "95th percentile latency across all CRUD operations (ms)."
+            },
+            "sampleCount": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of instances created per sample run."
+            }
+          }
+        },
+        "proxyHttp": {
+          "type": "object",
+          "required": ["small", "large"],
+          "additionalProperties": false,
+          "properties": {
+            "small": {
+              "type": "object",
+              "required": ["bodySizeBytes", "requestsPerSec", "latency"],
+              "additionalProperties": false,
+              "properties": {
+                "bodySizeBytes": { "type": "integer", "minimum": 0 },
+                "requestsPerSec": { "$ref": "#/definitions/distribution" },
+                "latency": { "$ref": "#/definitions/distribution" }
+              }
+            },
+            "large": {
+              "type": "object",
+              "required": ["bodySizeBytes", "requestsPerSec", "latency"],
+              "additionalProperties": false,
+              "properties": {
+                "bodySizeBytes": { "type": "integer", "minimum": 0 },
+                "requestsPerSec": { "$ref": "#/definitions/distribution" },
+                "latency": { "$ref": "#/definitions/distribution" }
+              }
+            }
+          }
+        },
+        "webSocket": {
+          "type": "object",
+          "required": ["clientCount", "messagesPerClient", "messagesPerSec", "latency"],
+          "additionalProperties": false,
+          "properties": {
+            "clientCount": { "type": "integer", "minimum": 1 },
+            "messagesPerClient": { "type": "integer", "minimum": 1 },
+            "messagesPerSec": { "$ref": "#/definitions/distribution" },
+            "latency": { "$ref": "#/definitions/distribution" }
+          }
+        },
+        "monitoringCost": {
+          "type": "object",
+          "required": ["instanceCount", "windowSeconds", "cpuPercent", "rssBytes"],
+          "additionalProperties": false,
+          "properties": {
+            "instanceCount": { "type": "integer", "minimum": 0 },
+            "windowSeconds": { "type": "number", "minimum": 0 },
+            "cpuPercent": { "$ref": "#/definitions/distribution" },
+            "rssBytes": { "$ref": "#/definitions/distribution" }
+          }
+        },
+        "gracefulShutdown": {
+          "$ref": "#/definitions/durationScenario",
+          "description": "Time from SIGTERM to process exit."
+        },
+        "executableSize": {
+          "$ref": "#/definitions/sizeScenario",
+          "description": "Size of the compiled standalone binary (bytes)."
+        },
+        "dockerImageSize": {
+          "type": "object",
+          "required": ["available", "sizeBytes"],
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "type": "boolean",
+              "description": "Whether Docker was available to measure image size."
+            },
+            "sizeBytes": {
+              "type": ["number", "null"],
+              "description": "Docker image size in bytes, or null if Docker is unavailable."
+            },
+            "imageName": {
+              "type": ["string", "null"],
+              "description": "Docker image name/tag measured."
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "distribution": {
+      "type": "object",
+      "required": ["raw", "median", "p95", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "Individual sample values."
+        },
+        "median": { "type": "number" },
+        "p95": { "type": "number" },
+        "unit": {
+          "type": "string",
+          "description": "Unit of measurement (e.g. ms, bytes, req/s, msg/s, %)."
+        }
+      }
+    },
+    "durationScenario": {
+      "type": "object",
+      "required": ["raw", "median", "p95", "unit", "sampleCount"],
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "Individual duration samples."
+        },
+        "median": { "type": "number" },
+        "p95": { "type": "number" },
+        "unit": { "type": "string" },
+        "sampleCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "sizeScenario": {
+      "type": "object",
+      "required": ["raw", "median", "p95", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "median": { "type": "number" },
+        "p95": { "type": "number" },
+        "unit": { "type": "string" }
+      }
+    }
+  }
+}
