@@ -95,8 +95,16 @@ func (r *Registry) MarkExited(instanceID int64, generation int64, state State) e
 
 func (r *Registry) Remove(instanceID int64) error {
 	r.mu.Lock()
-	delete(r.entries, instanceID)
+	entry := r.entries[instanceID]
 	r.mu.Unlock()
+	if entry == nil {
+		return nil
+	}
+
+	entry.mu.Lock()
+	entry.hasProcess = false
+	entry.snapshot = ProcessSnapshot{}
+	entry.mu.Unlock()
 	return nil
 }
 

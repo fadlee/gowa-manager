@@ -138,6 +138,44 @@ func TestRegistryRemoveIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRegistryRemovePreservesActiveOperationGate(t *testing.T) {
+	registry := NewRegistry()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := registry.WithOperation(505, func(generation int64) (ProcessSnapshot, error) {
+			close(started)
+			<-release
+			return ProcessSnapshot{InstanceID: 505, Generation: generation, State: StateRunning, PID: 1001}, nil
+		})
+		done <- err
+	}()
+
+	<-started
+	if err := registry.Remove(505); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+
+	operationRan := false
+	_, err := registry.WithOperation(505, func(generation int64) (ProcessSnapshot, error) {
+		operationRan = true
+		return ProcessSnapshot{InstanceID: 505, Generation: generation, State: StateRunning, PID: 1002}, nil
+	})
+	close(release)
+
+	if !errors.Is(err, ErrOperationInProgress) {
+		t.Fatalf("overlapping WithOperation() after Remove error = %v, want ErrOperationInProgress", err)
+	}
+	if operationRan {
+		t.Fatal("overlapping WithOperation() ran while first operation was active")
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("first WithOperation() error = %v", err)
+	}
+}
+
 func TestRegistryStatusReadsAreRaceFreeSnapshots(t *testing.T) {
 	registry := NewRegistry()
 	if _, err := registry.WithOperation(55, func(generation int64) (ProcessSnapshot, error) {
