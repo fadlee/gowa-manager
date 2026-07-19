@@ -12,23 +12,33 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/buildinfo"
 	"github.com/fadlee/gowa-manager/internal/config"
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
+	"github.com/fadlee/gowa-manager/internal/instances"
 	"github.com/fadlee/gowa-manager/internal/ownership"
 	staticassets "github.com/fadlee/gowa-manager/internal/static"
+	"github.com/fadlee/gowa-manager/internal/system"
+	"github.com/fadlee/gowa-manager/internal/versions"
 )
 
 type Releaser interface{ Release() error }
 type Closer interface{ Close() error }
 
+type DBHandle interface {
+	Closer
+	SQLDB() *database.DB
+}
+
 type Options struct {
-	Config      config.Config
-	Logger      *slog.Logger
-	AcquireLock func(dataDir string) (Releaser, error)
-	OpenDB      func(context.Context, string) (Closer, error)
-	Listen      func(network, address string) (net.Listener, error)
-	OnStarted   func(addr string)
+	Config        config.Config
+	Logger        *slog.Logger
+	AcquireLock   func(dataDir string) (Releaser, error)
+	OpenDB        func(context.Context, string) (Closer, error)
+	BuildHTTPDeps func(context.Context, httpDepsOptions) (httpapi.Dependencies, error)
+	Listen        func(network, address string) (net.Listener, error)
+	OnStarted     func(addr string)
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -48,6 +58,10 @@ func Run(ctx context.Context, opts Options) error {
 	if listen == nil {
 		listen = net.Listen
 	}
+	buildDeps := opts.BuildHTTPDeps
+	if buildDeps == nil {
+		buildDeps = buildHTTPDeps
+	}
 
 	lock, err := acquireLock(opts.Config.DataDir)
 	if err != nil {
@@ -60,22 +74,37 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}()
 
-	db, err := openDB(ctx, opts.Config.DataDir)
+	dbCloser, err := openDB(ctx, opts.Config.DataDir)
 	if err != nil {
 		return err
 	}
 	closeDB := true
 	defer func() {
 		if closeDB {
-			_ = db.Close()
+			_ = dbCloser.Close()
 		}
 	}()
+	db, ok := dbFromCloser(dbCloser)
+	deps := httpapi.Dependencies{Logger: logger, StaticFS: staticassets.FS()}
+	if ok {
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DB: db, DataDir: opts.Config.DataDir, Logger: logger})
+		if err != nil {
+			return err
+		}
+		deps = builtDeps
+	} else if opts.BuildHTTPDeps != nil {
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DataDir: opts.Config.DataDir, Logger: logger})
+		if err != nil {
+			return err
+		}
+		deps = builtDeps
+	}
 
 	ln, err := listenFirstAvailable(listen, opts.Config.Port)
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: httpapi.New(httpapi.Dependencies{Logger: logger, StaticFS: staticassets.FS()})}
+	server := &http.Server{Handler: httpapi.New(deps)}
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- server.Serve(ln)
@@ -101,7 +130,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	if err := db.Close(); err != nil {
+	if err := dbCloser.Close(); err != nil {
 		return err
 	}
 	closeDB = false
@@ -110,6 +139,127 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	releaseLock = false
 	return nil
+}
+
+type httpDepsOptions struct {
+	DB      *database.DB
+	DataDir string
+	Logger  *slog.Logger
+}
+
+func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencies, error) {
+	if opts.DB == nil || opts.DB.SQL == nil {
+		return httpapi.Dependencies{}, errors.New("database handle is required")
+	}
+	repo := instances.NewSQLiteRepository(opts.DB.SQL)
+	filesystem, err := instances.NewFilesystem(opts.DataDir)
+	if err != nil {
+		return httpapi.Dependencies{}, err
+	}
+	portAllocator := system.NewPortAllocator(repo)
+	lifecycle := runtimeNotReadyLifecycle{}
+	serviceLifecycle := runtimeNotReadyInstanceLifecycle{}
+	deviceClient := instances.NewDeviceClient(instances.DeviceClientOptions{})
+	releases := versions.NewGitHubClient("", nil)
+	versionService := versions.NewService(opts.DataDir, releases)
+	versionInstaller := versions.NewInstaller(opts.DataDir, releases, nil)
+	instanceService := instances.NewService(repo, filesystem, portAllocator, serviceLifecycle, instances.WithDeviceCacheCleaner(deviceClient))
+	return httpapi.Dependencies{
+		Logger:            opts.Logger,
+		StaticFS:          staticassets.FS(),
+		Instances:         instanceService,
+		InstanceLifecycle: lifecycle,
+		DeviceClient:      deviceClient,
+		ConnectionTester:  instances.NewConnectionTester(instances.ConnectionTesterOptions{}),
+		AdminLinkIssuer:   runtimeNotReadyAdminLinks{},
+		System:            system.NewSystemService(repo, opts.DataDir, buildinfo.DisplayVersion()),
+		PortAllocator:     portAllocator,
+		PortChecker:       appPortChecker{},
+		Versions:          versionServiceAdapter{service: versionService},
+		VersionInstaller:  versionInstaller,
+	}, nil
+}
+
+func dbFromCloser(closer Closer) (*database.DB, bool) {
+	if db, ok := closer.(*database.DB); ok {
+		return db, true
+	}
+	if handle, ok := closer.(DBHandle); ok {
+		return handle.SQLDB(), true
+	}
+	return nil, false
+}
+
+type runtimeNotReadyLifecycle struct{}
+
+func (runtimeNotReadyLifecycle) Start(context.Context, int64) (httpapi.InstanceStatus, error) {
+	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+}
+
+func (runtimeNotReadyLifecycle) Stop(context.Context, int64) (httpapi.InstanceStatus, error) {
+	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+}
+
+func (runtimeNotReadyLifecycle) Kill(context.Context, int64) (httpapi.InstanceStatus, error) {
+	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+}
+
+func (runtimeNotReadyLifecycle) Restart(context.Context, int64) (httpapi.InstanceStatus, error) {
+	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+}
+
+func (runtimeNotReadyLifecycle) Status(context.Context, int64) (httpapi.InstanceStatus, error) {
+	return httpapi.InstanceStatus{}, instances.ErrRuntimeNotReady
+}
+
+type runtimeNotReadyInstanceLifecycle struct{}
+
+func (runtimeNotReadyInstanceLifecycle) Stop(context.Context, int64) (instances.Status, error) {
+	return instances.Status{}, instances.ErrRuntimeNotReady
+}
+
+func (runtimeNotReadyInstanceLifecycle) Status(context.Context, int64) (instances.Status, error) {
+	return instances.Status{}, instances.ErrRuntimeNotReady
+}
+
+type runtimeNotReadyAdminLinks struct{}
+
+func (runtimeNotReadyAdminLinks) CreateAdminLink(context.Context, instances.Instance) (httpapi.AdminLink, error) {
+	return httpapi.AdminLink{}, instances.ErrRuntimeNotReady
+}
+
+type appPortChecker struct{}
+
+func (appPortChecker) IsPortAvailable(port int) bool { return system.IsPortAvailable(port) }
+
+type versionServiceAdapter struct{ service *versions.Service }
+
+func (a versionServiceAdapter) GetInstalledVersions() ([]versions.VersionInfo, error) {
+	return a.service.GetInstalledVersions()
+}
+
+func (a versionServiceAdapter) GetAvailableVersions(ctx context.Context, limit int) ([]versions.VersionInfo, error) {
+	return a.service.GetAvailableVersions(ctx, limit)
+}
+
+func (a versionServiceAdapter) IsVersionAvailable(ctx context.Context, version string) (bool, error) {
+	return a.service.IsVersionAvailable(ctx, version)
+}
+
+func (a versionServiceAdapter) GetVersionBinaryPath(version string) string {
+	return a.service.GetVersionBinaryPath(version)
+}
+
+func (a versionServiceAdapter) GetVersionsSize() (map[string]int64, error) {
+	return a.service.GetVersionsSize()
+}
+
+func (a versionServiceAdapter) RemoveVersion(_ context.Context, version string) error {
+	return a.service.RemoveVersion(version)
+}
+
+func (a versionServiceAdapter) Cleanup(_ context.Context, keepCount int) ([]string, error) {
+	return a.service.Cleanup(keepCount)
 }
 
 func SignalContext(parent context.Context) (context.Context, context.CancelFunc) {

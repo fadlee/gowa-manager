@@ -1,15 +1,25 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/config"
+	"github.com/fadlee/gowa-manager/internal/database"
+	"github.com/fadlee/gowa-manager/internal/httpapi"
+	"github.com/fadlee/gowa-manager/internal/instances"
 )
 
 type fakeLock struct {
@@ -89,6 +99,32 @@ func TestRunDatabaseFailureReleasesLock(t *testing.T) {
 	}
 }
 
+func TestRunWiringFailureClosesDatabaseAndReleasesLock(t *testing.T) {
+	events := []string{}
+	wantErr := errors.New("wiring fail")
+	err := Run(context.Background(), Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir()},
+		AcquireLock: func(string) (Releaser, error) {
+			events = append(events, "lock")
+			return &fakeLock{events: &events}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			events = append(events, "db")
+			return &fakeDB{events: &events}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			events = append(events, "wiring")
+			return httpapi.Dependencies{}, wantErr
+		},
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Run() error = %v, want %v", err, wantErr)
+	}
+	if !equal(events, []string{"lock", "db", "wiring", "db-close", "lock-release"}) {
+		t.Fatalf("events = %#v", events)
+	}
+}
+
 func TestRunFallsBackToNextAvailablePort(t *testing.T) {
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -127,6 +163,142 @@ func TestRunFallsBackToNextAvailablePort(t *testing.T) {
 	if err := <-errCh; err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
+}
+
+func TestBuildHTTPDepsSharesDatabaseAcrossServices(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	db, err := database.Open(ctx, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := httpapi.New(deps)
+
+	created := createInstanceViaHandler(t, handler, "shared-db")
+	repo := instances.NewSQLiteRepository(db.SQL)
+	items, err := repo.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != created.ID || items[0].Name != "shared-db" {
+		t.Fatalf("repository list = %#v, want created instance %#v", items, created)
+	}
+}
+
+func TestBuildHTTPDepsWiresConfiguredDataPaths(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	db, err := database.Open(ctx, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := httpapi.New(deps)
+	created := createInstanceViaHandler(t, handler, "paths")
+	if info, err := os.Stat(filepath.Join(dataDir, "instances", int64Text(created.ID))); err != nil || !info.IsDir() {
+		t.Fatalf("instance directory stat error = %v, info = %#v", err, info)
+	}
+
+	configReq := httptest.NewRequest(http.MethodGet, "/api/system/config", nil)
+	configResp := httptest.NewRecorder()
+	handler.ServeHTTP(configResp, configReq)
+	if configResp.Code != http.StatusOK {
+		t.Fatalf("system config status = %d body = %s", configResp.Code, configResp.Body.String())
+	}
+	var systemConfig httpapi.SystemConfig
+	if err := json.NewDecoder(configResp.Body).Decode(&systemConfig); err != nil {
+		t.Fatal(err)
+	}
+	wantDataDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if systemConfig.DataDirectory != wantDataDir {
+		t.Fatalf("data_directory = %q, want %q", systemConfig.DataDirectory, wantDataDir)
+	}
+
+	versionReq := httptest.NewRequest(http.MethodGet, "/api/system/versions/v1.2.3/available", nil)
+	versionResp := httptest.NewRecorder()
+	handler.ServeHTTP(versionResp, versionReq)
+	if versionResp.Code != http.StatusOK {
+		t.Fatalf("version available status = %d body = %s", versionResp.Code, versionResp.Body.String())
+	}
+	var versionBody struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(versionResp.Body).Decode(&versionBody); err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(versionBody.Path) != filepath.Join(wantDataDir, "bin", "versions", "v1.2.3") {
+		t.Fatalf("version path = %q", versionBody.Path)
+	}
+}
+
+func TestBuildHTTPDepsLifecycleRoutesReturnRuntimeNotReady(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	db, err := database.Open(ctx, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := httpapi.New(deps)
+	created := createInstanceViaHandler(t, handler, "runtime")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/instances/"+int64Text(created.ID)+"/start", nil)
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("start status = %d body = %s", resp.Code, resp.Body.String())
+	}
+	if !bytes.Contains(resp.Body.Bytes(), []byte(instances.ErrRuntimeNotReady.Error())) {
+		t.Fatalf("start body = %s, want runtime-not-ready error", resp.Body.String())
+	}
+}
+
+type appInstanceResponse struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+func createInstanceViaHandler(t *testing.T, handler http.Handler, name string) appInstanceResponse {
+	t.Helper()
+	body := bytes.NewBufferString(`{"name":"` + name + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/instances", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d body = %s", resp.Code, resp.Body.String())
+	}
+	var created appInstanceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == 0 {
+		t.Fatalf("created ID = 0")
+	}
+	return created
+}
+
+func int64Text(value int64) string {
+	return fmt.Sprintf("%d", value)
 }
 
 type discardWriter struct{}
