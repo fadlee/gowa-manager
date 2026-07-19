@@ -65,6 +65,25 @@ func (r *Registry) Update(instanceID int64, generation int64, snapshot ProcessSn
 	return nil
 }
 
+func (r *Registry) Transition(instanceID int64, generation int64, from State, snapshot ProcessSnapshot) error {
+	r.mu.Lock()
+	entry := r.entries[instanceID]
+	r.mu.Unlock()
+	if entry == nil {
+		return ErrStaleGeneration
+	}
+
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if !entry.hasProcess || entry.snapshot.Generation != generation || entry.snapshot.State != from {
+		return ErrStaleGeneration
+	}
+	snapshot.InstanceID = instanceID
+	snapshot.Generation = generation
+	entry.snapshot = snapshot
+	return nil
+}
+
 func (r *Registry) WithOperation(instanceID int64, operation OperationFunc) (ProcessSnapshot, error) {
 	entry := r.entryFor(instanceID)
 

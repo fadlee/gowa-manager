@@ -179,7 +179,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 		}
 		return ProcessSnapshot{}, err
 	}
-	if err := s.registry.Update(config.InstanceID, snapshot.Generation, snapshot); err != nil {
+	if err := s.registry.Transition(config.InstanceID, snapshot.Generation, StateStarting, snapshot); err != nil {
 		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrProcessExited, err)
 	}
 	return snapshot, nil

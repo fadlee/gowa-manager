@@ -117,6 +117,54 @@ func TestRegistryRejectsStaleExitUpdate(t *testing.T) {
 	}
 }
 
+func TestRegistryTransitionRejectsChangedStateForSameGeneration(t *testing.T) {
+	registry := NewRegistry()
+	starting, err := registry.Register(11, ProcessSnapshot{State: StateStarting, PID: 1001})
+	if err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if err := registry.MarkExited(11, starting.Generation, StateStopped); err != nil {
+		t.Fatalf("MarkExited() error = %v", err)
+	}
+
+	running := starting
+	running.State = StateRunning
+	err = registry.Transition(11, starting.Generation, StateStarting, running)
+	if !errors.Is(err, ErrStaleGeneration) {
+		t.Fatalf("Transition() error = %v, want ErrStaleGeneration", err)
+	}
+	snapshot, ok := registry.Get(11)
+	if !ok || snapshot.State != StateStopped || snapshot.Generation != starting.Generation {
+		t.Fatalf("snapshot after rejected transition = %+v ok %v, want same generation stopped", snapshot, ok)
+	}
+}
+
+func TestRegistryTransitionRejectsStaleGeneration(t *testing.T) {
+	registry := NewRegistry()
+	first, err := registry.Register(12, ProcessSnapshot{State: StateStarting, PID: 1001})
+	if err != nil {
+		t.Fatalf("first Register() error = %v", err)
+	}
+	if err := registry.MarkExited(12, first.Generation, StateStopped); err != nil {
+		t.Fatalf("MarkExited() error = %v", err)
+	}
+	second, err := registry.Register(12, ProcessSnapshot{State: StateStarting, PID: 1002})
+	if err != nil {
+		t.Fatalf("second Register() error = %v", err)
+	}
+
+	running := first
+	running.State = StateRunning
+	err = registry.Transition(12, first.Generation, StateStarting, running)
+	if !errors.Is(err, ErrStaleGeneration) {
+		t.Fatalf("Transition() error = %v, want ErrStaleGeneration", err)
+	}
+	snapshot, ok := registry.Get(12)
+	if !ok || snapshot.Generation != second.Generation || snapshot.PID != 1002 || snapshot.State != StateStarting {
+		t.Fatalf("snapshot after stale transition = %+v ok %v, want second starting generation", snapshot, ok)
+	}
+}
+
 func TestRegistryFailedOperationDoesNotInvalidateCurrentProcessExit(t *testing.T) {
 	registry := NewRegistry()
 	running, err := registry.WithOperation(10, func(generation int64) (ProcessSnapshot, error) {

@@ -207,6 +207,44 @@ func TestSupervisorExitDuringPendingReadinessUpdatesMatchingGeneration(t *testin
 	}
 }
 
+func TestSupervisorExitDuringRunningStatusCallbackDoesNotResurrectProcess(t *testing.T) {
+	proc := newFakeProcess(1106)
+	runningStatusStarted := make(chan struct{})
+	releaseRunningStatus := make(chan struct{})
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	s.ready = func(context.Context, ProcessSnapshot) error { return nil }
+	s.onStatus = func(ctx context.Context, snapshot ProcessSnapshot) error {
+		if snapshot.State != StateRunning {
+			return nil
+		}
+		close(runningStatusStarted)
+		select {
+		case <-releaseRunningStatus:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 17, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+	<-runningStatusStarted
+
+	proc.exit(errors.New("boom"))
+	s.waitForExitCallbacks(t, 1)
+	close(releaseRunningStatus)
+	if err := <-startDone; !errors.Is(err, ErrProcessExited) {
+		t.Fatalf("Start() error = %v, want ErrProcessExited", err)
+	}
+	snapshot, ok := s.Status(17)
+	if !ok || snapshot.State == StateRunning || snapshot.Generation != 1 {
+		t.Fatalf("Status() = %+v ok %v, want generation 1 not running after exit", snapshot, ok)
+	}
+}
+
 func TestSupervisorImmediateCrash(t *testing.T) {
 	proc := newFakeProcess(1002)
 	proc.exit(errors.New("boom"))
