@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -55,6 +56,9 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 			events = append(events, "db")
 			return &fakeDB{events: &events}, nil
 		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			return httpapi.Dependencies{}, nil
+		},
 		Listen: func(network, address string) (net.Listener, error) {
 			events = append(events, "listen")
 			ln, err := net.Listen(network, "127.0.0.1:0")
@@ -74,6 +78,27 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 	want := []string{"lock", "db", "listen", "db-close", "lock-release"}
 	if !equal(events, want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
+	}
+}
+
+func TestRunRejectsDatabaseWithoutSQLiteHandle(t *testing.T) {
+	events := []string{}
+	err := Run(context.Background(), Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir()},
+		AcquireLock: func(string) (Releaser, error) {
+			events = append(events, "lock")
+			return &fakeLock{events: &events}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			events = append(events, "db")
+			return &fakeDB{events: &events}, nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "sqlite connection") {
+		t.Fatalf("Run() error = %v, want sqlite handle error", err)
+	}
+	if !equal(events, []string{"lock", "db", "db-close", "lock-release"}) {
+		t.Fatalf("events = %#v", events)
 	}
 }
 
@@ -145,6 +170,9 @@ func TestRunFallsBackToNextAvailablePort(t *testing.T) {
 			Logger:      slog.New(slog.NewTextHandler(discardWriter{}, nil)),
 			AcquireLock: func(string) (Releaser, error) { return &fakeLock{events: &[]string{}}, nil },
 			OpenDB:      func(context.Context, string) (Closer, error) { return &fakeDB{events: &[]string{}}, nil },
+			BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+				return httpapi.Dependencies{}, nil
+			},
 			OnStarted: func(addr string) {
 				startedPort = parsePortFromAddr(addr)
 				once.Do(func() { close(started) })

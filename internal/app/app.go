@@ -98,6 +98,8 @@ func Run(ctx context.Context, opts Options) error {
 			return err
 		}
 		deps = builtDeps
+	} else {
+		return errors.New("database handle does not expose sqlite connection")
 	}
 
 	ln, err := listenFirstAvailable(listen, opts.Config.Port)
