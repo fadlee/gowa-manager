@@ -1,0 +1,5 @@
+{
+  "name": "contract-alpha",
+  "config": "{\"webhook\":\"https://example.invalid/gowa/contract\",\"log_level\":\"debug\",\"features\":{\"devices\":true}}",
+  "gowa_version": "v9.8.7"
+}
