@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Manifest describing the expected shape of sanitized production data samples used by the Go/Bun compatibility test harness (test/compat/production-data_test.go). This file documents what samples SHOULD contain; it does NOT contain or reference any real production data.",
+  "schemaVersion": 1,
+  "note": "Do not commit real tokens, URLs, phone/device data, credentials, or media. Samples must be produced by scripts/ops/sanitize-db.ts before being supplied to the harness.",
+  "instancesTable": {
+    "name": "instances",
+    "columns": [
+      "id",
+      "key",
+      "name",
+      "port",
+      "status",
+      "config",
+      "gowa_version",
+      "created_at",
+      "updated_at",
+      "error_message"
+    ],
+    "additiveColumns": [
+      "gowa_version",
+      "error_message"
+    ]
+  },
+  "expectedStatuses": [
+    "stopped",
+    "running",
+    "error",
+    "starting",
+    "stopping"
+  ],
+  "configFeatureFlags": {
+    "description": "Feature flag NAMES (booleans only) that may appear in the sanitized config JSON. Values are always boolean true/false in sanitized samples — never real URLs, tokens, or secrets.",
+    "flags": [
+      "webhook",
+      "auth",
+      "proxy",
+      "autoUpdate",
+      "metrics"
+    ]
+  },
+  "versionLayouts": {
+    "description": "gowa_version values that may appear in samples. 'latest' is the default; explicit semver tags reflect pinned installs.",
+    "allowed": [
+      "latest",
+      "v1.8.0",
+      "v1.8.1",
+      "v1.7.0",
+      "v1.6.0"
+    ]
+  },
+  "filesystemCategories": {
+    "description": "Expected directory structure under the data directory. Not all categories must be present in every sample, but the harness verifies the structure is not corrupted by Go startup.",
+    "categories": [
+      "bin/",
+      "bin/versions/",
+      "instances/",
+      "gowa.db"
+    ]
+  },
+  "rowCountRanges": {
+    "description": "Acceptable row-count ranges for the instances table in each sample. Ranges keep the harness fast while exercising realistic shapes.",
+    "min": 0,
+    "max": 500
+  },
+  "samples": [
+    {
+      "name": "small-empty",
+      "description": "A freshly initialized database with zero instances. Validates that Go startup does not fail on an empty DB and that the schema is created idempotently.",
+      "expectedRowCount": { "min": 0, "max": 0 },
+      "statusesPresent": [],
+      "versionsPresent": []
+    },
+    {
+      "name": "small-stopped",
+      "description": "A small set of stopped instances. Validates basic read paths and migration idempotency without side effects from process reconciliation.",
+      "expectedRowCount": { "min": 1, "max": 20 },
+      "statusesPresent": ["stopped"],
+      "versionsPresent": ["latest"]
+    },
+    {
+      "name": "mixed-statuses",
+      "description": "A mix of stopped, running, and error instances. Validates that Go reconciliation handles each status without destructive mutation.",
+      "expectedRowCount": { "min": 5, "max": 100 },
+      "statusesPresent": ["stopped", "running", "error"],
+      "versionsPresent": ["latest", "v1.8.0", "v1.7.0"]
+    },
+    {
+      "name": "large-deployed",
+      "description": "A larger production-like dataset to exercise read performance and ensure startup completes within reasonable time.",
+      "expectedRowCount": { "min": 100, "max": 500 },
+      "statusesPresent": ["stopped", "running", "error", "starting"],
+      "versionsPresent": ["latest", "v1.8.1", "v1.8.0", "v1.7.0", "v1.6.0"]
+    }
+  ]
+}
