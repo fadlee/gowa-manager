@@ -117,6 +117,34 @@ func TestRegistryRejectsStaleExitUpdate(t *testing.T) {
 	}
 }
 
+func TestRegistryFailedOperationDoesNotInvalidateCurrentProcessExit(t *testing.T) {
+	registry := NewRegistry()
+	running, err := registry.WithOperation(10, func(generation int64) (ProcessSnapshot, error) {
+		return ProcessSnapshot{InstanceID: 10, Generation: generation, State: StateRunning, PID: 1001}, nil
+	})
+	if err != nil {
+		t.Fatalf("running WithOperation() error = %v", err)
+	}
+
+	operationErr := errors.New("operation failed")
+	if _, err := registry.WithOperation(10, func(generation int64) (ProcessSnapshot, error) {
+		return ProcessSnapshot{}, operationErr
+	}); !errors.Is(err, operationErr) {
+		t.Fatalf("failed WithOperation() error = %v, want %v", err, operationErr)
+	}
+
+	if err := registry.MarkExited(10, running.Generation, StateStopped); err != nil {
+		t.Fatalf("MarkExited() after failed operation error = %v", err)
+	}
+	snapshot, ok := registry.Get(10)
+	if !ok {
+		t.Fatal("Get() ok = false")
+	}
+	if snapshot.Generation != running.Generation || snapshot.State != StateStopped {
+		t.Fatalf("snapshot after MarkExited() = %+v, want generation %d stopped", snapshot, running.Generation)
+	}
+}
+
 func TestRegistryRemoveIsIdempotent(t *testing.T) {
 	registry := NewRegistry()
 	if err := registry.Remove(404); err != nil {
@@ -173,6 +201,55 @@ func TestRegistryRemovePreservesActiveOperationGate(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("first WithOperation() error = %v", err)
+	}
+}
+
+func TestRegistryRemoveDuringActiveOperationPreventsResurrection(t *testing.T) {
+	registry := NewRegistry()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := registry.WithOperation(506, func(generation int64) (ProcessSnapshot, error) {
+			close(started)
+			<-release
+			return ProcessSnapshot{InstanceID: 506, Generation: generation, State: StateRunning, PID: 1001}, nil
+		})
+		done <- err
+	}()
+
+	<-started
+	if err := registry.Remove(506); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("WithOperation() error = %v", err)
+	}
+	if _, ok := registry.Get(506); ok {
+		t.Fatal("Get() ok = true after Remove completed over active operation")
+	}
+}
+
+func TestRegistryPanicDuringOperationClearsActiveGate(t *testing.T) {
+	registry := NewRegistry()
+
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != "boom" {
+				t.Fatalf("recovered panic = %v, want boom", recovered)
+			}
+		}()
+		_, _ = registry.WithOperation(606, func(generation int64) (ProcessSnapshot, error) {
+			panic("boom")
+		})
+	}()
+
+	if _, err := registry.WithOperation(606, func(generation int64) (ProcessSnapshot, error) {
+		return ProcessSnapshot{InstanceID: 606, Generation: generation, State: StateRunning, PID: 1001}, nil
+	}); err != nil {
+		t.Fatalf("WithOperation() after panic error = %v", err)
 	}
 }
 

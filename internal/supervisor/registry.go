@@ -18,11 +18,12 @@ type Registry struct {
 }
 
 type registryEntry struct {
-	mu         sync.Mutex
-	busy       bool
-	generation int64
-	snapshot   ProcessSnapshot
-	hasProcess bool
+	mu               sync.Mutex
+	busy             bool
+	nextGeneration   int64
+	removeGeneration int64
+	snapshot         ProcessSnapshot
+	hasProcess       bool
 }
 
 func NewRegistry() *Registry {
@@ -38,17 +39,27 @@ func (r *Registry) WithOperation(instanceID int64, operation OperationFunc) (Pro
 		return ProcessSnapshot{}, ErrOperationInProgress
 	}
 	entry.busy = true
-	entry.generation++
-	generation := entry.generation
+	entry.nextGeneration++
+	generation := entry.nextGeneration
+	removeGeneration := entry.removeGeneration
 	entry.mu.Unlock()
 
-	snapshot, err := operation(generation)
+	var snapshot ProcessSnapshot
+	var err error
+	defer func() {
+		entry.mu.Lock()
+		entry.busy = false
+		entry.mu.Unlock()
+	}()
+	snapshot, err = operation(generation)
 
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
-	entry.busy = false
 	if err != nil {
 		return ProcessSnapshot{}, err
+	}
+	if entry.removeGeneration != removeGeneration {
+		return snapshot, nil
 	}
 	snapshot.InstanceID = instanceID
 	snapshot.Generation = generation
@@ -83,7 +94,7 @@ func (r *Registry) MarkExited(instanceID int64, generation int64, state State) e
 
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
-	if generation != entry.generation {
+	if entry.hasProcess && generation != entry.snapshot.Generation {
 		return ErrStaleGeneration
 	}
 	if !entry.hasProcess {
@@ -102,6 +113,7 @@ func (r *Registry) Remove(instanceID int64) error {
 	}
 
 	entry.mu.Lock()
+	entry.removeGeneration++
 	entry.hasProcess = false
 	entry.snapshot = ProcessSnapshot{}
 	entry.mu.Unlock()
