@@ -34,6 +34,17 @@ type StartConfig struct {
 	StartedAt    time.Time
 }
 
+type ProcessConfig struct {
+	InstanceID int64
+	Path       string
+	Args       []string
+	Env        map[string]string
+}
+
+type Platform interface {
+	Start(context.Context, ProcessConfig) (Process, error)
+}
+
 type Starter func(context.Context, StartConfig) (Process, error)
 type ReadinessProbe func(context.Context, ProcessSnapshot) error
 type StatusCallback func(context.Context, ProcessSnapshot) error
@@ -41,7 +52,7 @@ type ExitCallback func(ProcessSnapshot)
 
 type SupervisorConfig struct {
 	Registry       *Registry
-	Starter        Starter
+	Platform       Platform
 	ReadinessProbe ReadinessProbe
 	StatusCallback StatusCallback
 	ExitCallback   ExitCallback
@@ -50,7 +61,7 @@ type SupervisorConfig struct {
 
 type Supervisor struct {
 	registry *Registry
-	starter  Starter
+	platform Platform
 	ready    ReadinessProbe
 	onStatus StatusCallback
 	onExit   ExitCallback
@@ -71,9 +82,9 @@ func New(config SupervisorConfig) *Supervisor {
 	if registry == nil {
 		registry = NewRegistry()
 	}
-	starter := config.Starter
-	if starter == nil {
-		starter = defaultStarter
+	platform := config.Platform
+	if platform == nil {
+		platform = defaultPlatform{}
 	}
 	ready := config.ReadinessProbe
 	if ready == nil {
@@ -87,7 +98,7 @@ func New(config SupervisorConfig) *Supervisor {
 	if now == nil {
 		now = time.Now
 	}
-	return &Supervisor{registry: registry, starter: starter, ready: ready, onStatus: onStatus, onExit: config.ExitCallback, now: now, startMu: make(map[int64]*sync.Mutex), processes: make(map[processKey]Process)}
+	return &Supervisor{registry: registry, platform: platform, ready: ready, onStatus: onStatus, onExit: config.ExitCallback, now: now, startMu: make(map[int64]*sync.Mutex), processes: make(map[processKey]Process)}
 }
 
 func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnapshot, error) {
@@ -104,7 +115,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 	if startedAt.IsZero() {
 		startedAt = s.now()
 	}
-	proc, err := s.starter(ctx, config)
+	proc, err := s.platform.Start(ctx, ProcessConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env})
 	if err != nil {
 		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrStartFailed, err)
 	}
@@ -286,6 +297,8 @@ func (s *Supervisor) handleExit(instanceID, generation int64, snapshot ProcessSn
 	_ = proc.Close()
 }
 
-func defaultStarter(ctx context.Context, config StartConfig) (Process, error) {
+type defaultPlatform struct{}
+
+func (defaultPlatform) Start(ctx context.Context, config ProcessConfig) (Process, error) {
 	return startPlatformProcess(ctx, platformProcessConfig{Path: config.Path, Args: config.Args, Env: config.Env})
 }

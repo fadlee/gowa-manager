@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -455,6 +456,37 @@ func TestSupervisorConcurrentStartStopRaces(t *testing.T) {
 	wg.Wait()
 }
 
+func TestSupervisorLifecycleDoesNotLeakGoroutines(t *testing.T) {
+	base := runtime.NumGoroutine()
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return newFakeProcess(3000), nil })
+
+	for i := int64(0); i < 75; i++ {
+		instanceID := 1000 + i
+		if _, err := s.Start(context.Background(), StartConfig{InstanceID: instanceID, Path: "fakegowa", ReadyTimeout: time.Second}); err != nil {
+			t.Fatalf("Start(%d) error = %v", instanceID, err)
+		}
+		if i%2 == 0 {
+			if _, err := s.Stop(context.Background(), instanceID); err != nil {
+				t.Fatalf("Stop(%d) error = %v", instanceID, err)
+			}
+			continue
+		}
+		if _, err := s.Kill(context.Background(), instanceID); err != nil {
+			t.Fatalf("Kill(%d) error = %v", instanceID, err)
+		}
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		runtime.GC()
+		if got := runtime.NumGoroutine(); got <= base+8 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("goroutines after lifecycle cycles = %d, want at most %d", runtime.NumGoroutine(), base+8)
+}
+
 type fakeProcess struct {
 	pid int
 
@@ -517,17 +549,23 @@ func newTestSupervisor(t *testing.T, starter Starter) *testSupervisor {
 	ts.onStatus = func(context.Context, ProcessSnapshot) error { return nil }
 	ts.Supervisor = New(SupervisorConfig{
 		Registry: NewRegistry(),
-		Starter: func(ctx context.Context, config StartConfig) (Process, error) {
+		Platform: starterPlatform(func(ctx context.Context, config ProcessConfig) (Process, error) {
 			ts.mu.Lock()
 			ts.starts++
 			ts.mu.Unlock()
-			return starter(ctx, config)
-		},
+			return starter(ctx, StartConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env})
+		}),
 		ReadinessProbe: func(ctx context.Context, snapshot ProcessSnapshot) error { return ts.ready(ctx, snapshot) },
 		StatusCallback: func(ctx context.Context, snapshot ProcessSnapshot) error { return ts.onStatus(ctx, snapshot) },
 		ExitCallback:   func(snapshot ProcessSnapshot) { ts.mu.Lock(); ts.exits++; ts.exitCond.Broadcast(); ts.mu.Unlock() },
 	})
 	return ts
+}
+
+type starterPlatform func(context.Context, ProcessConfig) (Process, error)
+
+func (p starterPlatform) Start(ctx context.Context, config ProcessConfig) (Process, error) {
+	return p(ctx, config)
 }
 
 func (s *testSupervisor) startCalls() int { s.mu.Lock(); defer s.mu.Unlock(); return s.starts }
