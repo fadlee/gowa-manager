@@ -201,7 +201,7 @@ func (a *AutoUpdate) Check(ctx context.Context) (httpapi.AutoUpdateCheckResult, 
 	// cleaned or removed — it is preserved for rollback.
 	a.logger.Info("auto-update: installing version", "version", latest.Version)
 	if _, err := a.installer.Install(ctx, latest.Version); err != nil {
-		a.logger.Error("auto-update: error during update check", "error", err)
+		a.logger.Error("auto-update: install failed", "version", latest.Version, "error", err)
 		return httpapi.AutoUpdateCheckResult{Success: false}, nil
 	}
 	a.logger.Info("auto-update: version installed successfully", "version", latest.Version)
