@@ -50,14 +50,26 @@ func TestLinuxProcessGracefulStopSignalsProcessGroup(t *testing.T) {
 func TestLinuxProcessForcedKillTerminatesIgnoredSignal(t *testing.T) {
 	proc := startLinuxProcess(t, "ignore-term", nil)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	if err := proc.Stop(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+	if err := proc.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	waitForLinuxProcessExit(t, proc, 3*time.Second)
 	if linuxProcessExists(proc.PID()) {
 		t.Fatalf("process %d still exists after forced Stop", proc.PID())
+	}
+}
+
+func TestLinuxProcessStopContextCancellationDoesNotForceKill(t *testing.T) {
+	proc := startLinuxProcess(t, "ignore-term", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := proc.Stop(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop() error = %v, want %v", err, context.DeadlineExceeded)
+	}
+	if !linuxProcessExists(proc.PID()) {
+		t.Fatalf("process %d exited after cancelled Stop; want caller-controlled cleanup", proc.PID())
 	}
 }
 
@@ -76,6 +88,67 @@ func TestLinuxProcessTerminatesSpawnedDescendants(t *testing.T) {
 	}
 	waitForLinuxPIDExit(t, proc.PID(), 3*time.Second)
 	waitForLinuxPIDExit(t, childPID, 3*time.Second)
+}
+
+func TestLinuxProcessKillTerminatesDescendantAfterLeaderExit(t *testing.T) {
+	childPIDFile := filepath.Join(t.TempDir(), "child.pid")
+	proc := startLinuxProcessNoHealth(t, "spawn-child-exit", map[string]string{
+		"FAKE_GOWA_CHILD_PID_FILE": childPIDFile,
+	})
+	childPID := waitForLinuxPIDFile(t, childPIDFile, 3*time.Second)
+	waitForLinuxProcessExit(t, proc, 3*time.Second)
+	if !linuxProcessExists(childPID) {
+		t.Fatalf("child process %d was not running after leader exit", childPID)
+	}
+
+	if err := proc.Kill(); err != nil {
+		t.Fatalf("Kill() error = %v", err)
+	}
+	waitForLinuxPIDExit(t, childPID, 3*time.Second)
+}
+
+func TestLinuxProcessCloseTerminatesDescendantAfterLeaderExit(t *testing.T) {
+	childPIDFile := filepath.Join(t.TempDir(), "child.pid")
+	proc := startLinuxProcessNoHealth(t, "spawn-child-exit", map[string]string{
+		"FAKE_GOWA_CHILD_PID_FILE": childPIDFile,
+	})
+	childPID := waitForLinuxPIDFile(t, childPIDFile, 3*time.Second)
+	waitForLinuxProcessExit(t, proc, 3*time.Second)
+	if !linuxProcessExists(childPID) {
+		t.Fatalf("child process %d was not running after leader exit", childPID)
+	}
+
+	if err := proc.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	waitForLinuxPIDExit(t, childPID, 3*time.Second)
+	if err := proc.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+}
+
+func TestLinuxProcessMergeEnvironmentPreservesCaseSensitiveKeys(t *testing.T) {
+	merged := mergeEnvironment([]string{"PATH=/usr/bin", "Path=/custom/bin", "HOME=/tmp"}, map[string]string{
+		"PATH": "/bin",
+	})
+
+	entries := map[string]string{}
+	for _, entry := range merged {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			t.Fatalf("environment entry %q has no separator", entry)
+		}
+		entries[key] = value
+	}
+	if entries["PATH"] != "/bin" {
+		t.Fatalf("PATH = %q, want /bin", entries["PATH"])
+	}
+	if entries["Path"] != "/custom/bin" {
+		t.Fatalf("Path = %q, want /custom/bin", entries["Path"])
+	}
+	if entries["HOME"] != "/tmp" {
+		t.Fatalf("HOME = %q, want /tmp", entries["HOME"])
+	}
 }
 
 func TestLinuxProcessWaitReapsChild(t *testing.T) {
@@ -119,6 +192,19 @@ func TestLinuxProcessCancellationBeforeStartLeavesNoProcess(t *testing.T) {
 
 func startLinuxProcess(t *testing.T, mode string, env map[string]string) *linuxProcess {
 	t.Helper()
+	proc, port := startLinuxProcessWithPort(t, mode, env)
+	waitForLinuxHealth(t, port, 3*time.Second)
+	return proc
+}
+
+func startLinuxProcessNoHealth(t *testing.T, mode string, env map[string]string) *linuxProcess {
+	t.Helper()
+	proc, _ := startLinuxProcessWithPort(t, mode, env)
+	return proc
+}
+
+func startLinuxProcessWithPort(t *testing.T, mode string, env map[string]string) (*linuxProcess, int) {
+	t.Helper()
 	port := freeLinuxPort(t)
 	mergedEnv := map[string]string{"FAKE_GOWA_MODE": mode}
 	for key, value := range env {
@@ -133,8 +219,7 @@ func startLinuxProcess(t *testing.T, mode string, env map[string]string) *linuxP
 		t.Fatalf("startPlatformProcess() error = %v", err)
 	}
 	t.Cleanup(func() { cleanupLinuxProcess(t, proc) })
-	waitForLinuxHealth(t, port, 3*time.Second)
-	return proc
+	return proc, port
 }
 
 func cleanupLinuxProcess(t *testing.T, proc *linuxProcess) {
@@ -237,6 +322,12 @@ func waitForLinuxPIDFile(t *testing.T, path string, deadline time.Duration) int 
 func linuxProcessExists(pid int) bool {
 	if pid <= 0 {
 		return false
+	}
+	if data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat")); err == nil {
+		fields := strings.Fields(string(data))
+		if len(fields) >= 3 && fields[2] == "Z" {
+			return false
+		}
 	}
 	err := syscall.Kill(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)

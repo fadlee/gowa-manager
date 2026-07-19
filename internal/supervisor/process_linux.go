@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,10 +24,12 @@ type platformProcessConfig struct {
 }
 
 type linuxProcess struct {
-	pid int
+	pid  int
+	pgid int
 
 	mu       sync.Mutex
 	cmd      *exec.Cmd
+	closed   bool
 	waitOnce sync.Once
 	waitDone chan struct{}
 	waitErr  error
@@ -47,7 +51,7 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*l
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start process: %w", err)
 	}
-	proc := &linuxProcess{pid: cmd.Process.Pid, cmd: cmd, waitDone: make(chan struct{})}
+	proc := &linuxProcess{pid: cmd.Process.Pid, pgid: cmd.Process.Pid, cmd: cmd, waitDone: make(chan struct{})}
 	proc.startWait()
 
 	select {
@@ -91,9 +95,6 @@ func (p *linuxProcess) Stop(ctx context.Context) error {
 	case <-p.waitDone:
 		return p.waitErr
 	case <-ctx.Done():
-		if err := p.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-			return err
-		}
 		return ctx.Err()
 	case <-time.After(500 * time.Millisecond):
 		return p.Kill()
@@ -111,18 +112,25 @@ func (p *linuxProcess) Close() error {
 	if p == nil {
 		return os.ErrInvalid
 	}
-	if p.currentCmd() != nil {
+	if p.isClosed() {
+		return nil
+	}
+	if err := p.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
 		select {
 		case <-p.waitDone:
 		default:
-			_ = p.Kill()
-			select {
-			case <-p.waitDone:
-			case <-time.After(3 * time.Second):
-			}
 		}
+		if !p.processGroupHasLiveMembers() {
+			p.markClosed()
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
-	return nil
+	return fmt.Errorf("cleanup timed out for process group %d", p.processGroupID())
 }
 
 func (p *linuxProcess) startWait() {
@@ -154,17 +162,71 @@ func (p *linuxProcess) currentCmd() *exec.Cmd {
 	return p.cmd
 }
 
+func (p *linuxProcess) processGroupID() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return 0
+	}
+	return p.pgid
+}
+
+func (p *linuxProcess) isClosed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.closed
+}
+
+func (p *linuxProcess) markClosed() {
+	p.mu.Lock()
+	p.closed = true
+	p.pgid = 0
+	p.mu.Unlock()
+}
+
 func (p *linuxProcess) signalGroup(signal syscall.Signal) error {
-	if p.currentCmd() == nil {
+	pgid := p.processGroupID()
+	if pgid == 0 {
 		return os.ErrProcessDone
 	}
-	if err := syscall.Kill(-p.pid, signal); err != nil {
+	if err := syscall.Kill(-pgid, signal); err != nil {
 		if errors.Is(err, syscall.ESRCH) {
 			return os.ErrProcessDone
 		}
-		return fmt.Errorf("signal process group for process %d: %w", p.pid, err)
+		return fmt.Errorf("signal process group %d for process %d: %w", pgid, p.pid, err)
 	}
 	return nil
+}
+
+func (p *linuxProcess) processGroupHasLiveMembers() bool {
+	pgid := p.processGroupID()
+	if pgid == 0 {
+		return false
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		err := syscall.Kill(-pgid, 0)
+		return err == nil || errors.Is(err, syscall.EPERM)
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+		stat, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+		if err != nil {
+			continue
+		}
+		fields := strings.Fields(string(stat))
+		if len(fields) < 5 || fields[2] == "Z" {
+			continue
+		}
+		memberPGID, err := strconv.Atoi(fields[4])
+		if err == nil && memberPGID == pgid {
+			return true
+		}
+	}
+	return false
 }
 
 func mergedEnvironment(env map[string]string) []string {

@@ -36,6 +36,13 @@ func main() {
 		}
 		defer cleanupChild(child)
 	}
+	if mode == "spawn-child-exit" {
+		if _, err := spawnChild(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if mode == "ignore-term" {
 		signal.Ignore(os.Interrupt, syscall.SIGTERM)
@@ -108,8 +115,11 @@ func parsePort(args []string) (int, error) {
 	return 0, fmt.Errorf("missing --port or -p")
 }
 
-func spawnChild() (*exec.Cmd, error) {
-	cmd := exec.Command(os.Args[0], "--fake-gowa-child")
+func spawnChild(args ...string) (*exec.Cmd, error) {
+	if len(args) == 0 {
+		args = []string{"--fake-gowa-child"}
+	}
+	cmd := exec.Command(os.Args[0], args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
