@@ -67,9 +67,15 @@ type Supervisor struct {
 	onExit   ExitCallback
 	now      func() time.Time
 
-	mu        sync.Mutex
-	startMu   map[int64]*sync.Mutex
-	processes map[processKey]Process
+	mu           sync.Mutex
+	startMu      map[int64]*startLock
+	processes    map[processKey]Process
+	stopTimeouts map[processKey]time.Duration
+}
+
+type startLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 type processKey struct {
@@ -98,16 +104,16 @@ func New(config SupervisorConfig) *Supervisor {
 	if now == nil {
 		now = time.Now
 	}
-	return &Supervisor{registry: registry, platform: platform, ready: ready, onStatus: onStatus, onExit: config.ExitCallback, now: now, startMu: make(map[int64]*sync.Mutex), processes: make(map[processKey]Process)}
+	return &Supervisor{registry: registry, platform: platform, ready: ready, onStatus: onStatus, onExit: config.ExitCallback, now: now, startMu: make(map[int64]*startLock), processes: make(map[processKey]Process), stopTimeouts: make(map[processKey]time.Duration)}
 }
 
 func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnapshot, error) {
 	if snapshot, ok := s.registry.Get(config.InstanceID); ok && (snapshot.State == StateStarting || snapshot.State == StateRunning) {
 		return snapshot, nil
 	}
-	startMu := s.startLock(config.InstanceID)
-	startMu.Lock()
-	defer startMu.Unlock()
+	startMu := s.acquireStartLock(config.InstanceID)
+	startMu.mu.Lock()
+	defer s.releaseStartLock(config.InstanceID, startMu)
 	if snapshot, ok := s.registry.Get(config.InstanceID); ok && (snapshot.State == StateStarting || snapshot.State == StateRunning) {
 		return snapshot, nil
 	}
@@ -140,7 +146,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 		waitDone <- err
 		exitDone <- err
 	}()
-	s.storeProcess(config.InstanceID, snapshot.Generation, proc)
+	s.storeProcess(config.InstanceID, snapshot.Generation, proc, config.StopTimeout)
 	go s.handleExit(config.InstanceID, snapshot.Generation, snapshot, proc, exitDone)
 
 	readyTimeout := config.ReadyTimeout
@@ -158,7 +164,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 	case err := <-readyErr:
 		if err != nil {
 			_ = s.registry.Remove(config.InstanceID)
-			if s.takeProcess(config.InstanceID, snapshot.Generation) != nil {
+			if proc, _ := s.takeProcess(config.InstanceID, snapshot.Generation); proc != nil {
 				s.cleanupProcess(proc)
 			}
 			if errors.Is(err, context.DeadlineExceeded) {
@@ -168,7 +174,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 		}
 	case <-ctx.Done():
 		_ = s.registry.Remove(config.InstanceID)
-		if s.takeProcess(config.InstanceID, snapshot.Generation) != nil {
+		if proc, _ := s.takeProcess(config.InstanceID, snapshot.Generation); proc != nil {
 			s.cleanupProcess(proc)
 		}
 		return ProcessSnapshot{}, ctx.Err()
@@ -186,7 +192,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 	snapshot.State = StateRunning
 	if err := s.onStatus(ctx, snapshot); err != nil {
 		_ = s.registry.Remove(config.InstanceID)
-		if s.takeProcess(config.InstanceID, snapshot.Generation) != nil {
+		if proc, _ := s.takeProcess(config.InstanceID, snapshot.Generation); proc != nil {
 			s.cleanupProcess(proc)
 		}
 		return ProcessSnapshot{}, err
@@ -214,12 +220,12 @@ func (s *Supervisor) stopWith(ctx context.Context, instanceID int64, force bool)
 	if !ok || current.State == StateStopped || current.State == StateFailed {
 		return ProcessSnapshot{}, ErrNotRunning
 	}
-	return s.registry.WithOperation(instanceID, func(generation int64) (ProcessSnapshot, error) {
+	stopped, err := s.registry.WithOperation(instanceID, func(generation int64) (ProcessSnapshot, error) {
 		current, ok := s.registry.Get(instanceID)
 		if !ok || current.State == StateStopped || current.State == StateFailed {
 			return ProcessSnapshot{}, ErrNotRunning
 		}
-		proc := s.takeProcess(current.InstanceID, current.Generation)
+		proc := s.getProcess(current.InstanceID, current.Generation)
 		if proc == nil {
 			return ProcessSnapshot{}, ErrNotRunning
 		}
@@ -228,52 +234,93 @@ func (s *Supervisor) stopWith(ctx context.Context, instanceID int64, force bool)
 		if err := s.onStatus(ctx, stopping); err != nil {
 			return ProcessSnapshot{}, err
 		}
+		proc, stopTimeout := s.takeProcess(current.InstanceID, current.Generation)
+		if proc == nil {
+			return ProcessSnapshot{}, ErrNotRunning
+		}
 		var err error
 		if force {
 			err = proc.Kill()
 		} else {
-			err = proc.Stop(ctx)
+			stopCtx := ctx
+			var cancel context.CancelFunc
+			if stopTimeout > 0 {
+				stopCtx, cancel = context.WithTimeout(ctx, stopTimeout)
+			}
+			err = proc.Stop(stopCtx)
+			if cancel != nil {
+				cancel()
+			}
 		}
 		if closeErr := proc.Close(); err == nil {
 			err = closeErr
 		}
 		if err != nil {
+			s.storeProcess(current.InstanceID, current.Generation, proc, stopTimeout)
 			return ProcessSnapshot{}, err
 		}
 		stopped := current
 		stopped.Generation = generation
 		stopped.State = StateStopped
-		if err := s.onStatus(ctx, stopped); err != nil {
-			return ProcessSnapshot{}, err
-		}
 		return stopped, nil
 	})
+	if err != nil {
+		return ProcessSnapshot{}, err
+	}
+	if err := s.onStatus(ctx, stopped); err != nil {
+		return stopped, err
+	}
+	return stopped, nil
 }
 
-func (s *Supervisor) storeProcess(instanceID, generation int64, proc Process) {
+func (s *Supervisor) storeProcess(instanceID, generation int64, proc Process, stopTimeout time.Duration) {
 	s.mu.Lock()
-	s.processes[processKey{instanceID: instanceID, generation: generation}] = proc
+	key := processKey{instanceID: instanceID, generation: generation}
+	s.processes[key] = proc
+	s.stopTimeouts[key] = stopTimeout
 	s.mu.Unlock()
 }
 
-func (s *Supervisor) startLock(instanceID int64) *sync.Mutex {
+func (s *Supervisor) acquireStartLock(instanceID int64) *startLock {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	startMu := s.startMu[instanceID]
 	if startMu == nil {
-		startMu = &sync.Mutex{}
+		startMu = &startLock{}
 		s.startMu[instanceID] = startMu
 	}
+	startMu.refs++
 	return startMu
 }
 
-func (s *Supervisor) takeProcess(instanceID, generation int64) Process {
+func (s *Supervisor) releaseStartLock(instanceID int64, startMu *startLock) {
+	startMu.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.startMu[instanceID] != startMu {
+		return
+	}
+	startMu.refs--
+	if startMu.refs == 0 {
+		delete(s.startMu, instanceID)
+	}
+}
+
+func (s *Supervisor) getProcess(instanceID, generation int64) Process {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.processes[processKey{instanceID: instanceID, generation: generation}]
+}
+
+func (s *Supervisor) takeProcess(instanceID, generation int64) (Process, time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := processKey{instanceID: instanceID, generation: generation}
 	proc := s.processes[key]
+	stopTimeout := s.stopTimeouts[key]
 	delete(s.processes, key)
-	return proc
+	delete(s.stopTimeouts, key)
+	return proc, stopTimeout
 }
 
 func (s *Supervisor) cleanupProcess(proc Process) {
@@ -283,7 +330,7 @@ func (s *Supervisor) cleanupProcess(proc Process) {
 
 func (s *Supervisor) handleExit(instanceID, generation int64, snapshot ProcessSnapshot, proc Process, waitDone <-chan error) {
 	<-waitDone
-	if s.takeProcess(instanceID, generation) == nil {
+	if proc, _ := s.takeProcess(instanceID, generation); proc == nil {
 		return
 	}
 	exited := snapshot

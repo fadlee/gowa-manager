@@ -363,6 +363,102 @@ func TestSupervisorForceKill(t *testing.T) {
 	}
 }
 
+func TestSupervisorStopCallbackFailureKeepsProcessControllable(t *testing.T) {
+	proc := newFakeProcess(1011)
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	if _, err := s.Start(context.Background(), StartConfig{InstanceID: 23, Path: "fakegowa", ReadyTimeout: time.Second}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	s.onStatus = func(_ context.Context, snapshot ProcessSnapshot) error {
+		if snapshot.State == StateStopping {
+			return errors.New("db unavailable")
+		}
+		return nil
+	}
+
+	if _, err := s.Stop(context.Background(), 23); err == nil {
+		t.Fatal("Stop() error = nil, want callback failure")
+	}
+	if proc.stopped() || proc.killed() || proc.closed() {
+		t.Fatalf("process stopped=%v killed=%v closed=%v, want handle still controllable", proc.stopped(), proc.killed(), proc.closed())
+	}
+	s.onStatus = func(context.Context, ProcessSnapshot) error { return nil }
+	snapshot, err := s.Kill(context.Background(), 23)
+	if err != nil {
+		t.Fatalf("Kill() after failed Stop() error = %v", err)
+	}
+	if snapshot.State != StateStopped || !proc.killed() || !proc.closed() {
+		t.Fatalf("Kill() snapshot=%+v killed=%v closed=%v, want deterministic cleanup", snapshot, proc.killed(), proc.closed())
+	}
+}
+
+func TestSupervisorFinalStoppedCallbackFailureDoesNotLeaveStaleRunningStatus(t *testing.T) {
+	proc := newFakeProcess(1012)
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	if _, err := s.Start(context.Background(), StartConfig{InstanceID: 24, Path: "fakegowa", ReadyTimeout: time.Second}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	s.onStatus = func(_ context.Context, snapshot ProcessSnapshot) error {
+		if snapshot.State == StateStopped {
+			return errors.New("db unavailable")
+		}
+		return nil
+	}
+
+	snapshot, err := s.Stop(context.Background(), 24)
+	if err == nil {
+		t.Fatal("Stop() error = nil, want final callback failure")
+	}
+	if snapshot.State != StateStopped {
+		t.Fatalf("Stop() snapshot = %+v, want stopped despite callback failure", snapshot)
+	}
+	status, ok := s.Status(24)
+	if !ok || status.State != StateStopped {
+		t.Fatalf("Status() = %+v ok %v, want stopped not stale running", status, ok)
+	}
+	if !proc.stopped() || !proc.closed() {
+		t.Fatalf("process stopped=%v closed=%v, want gone and handle cleaned", proc.stopped(), proc.closed())
+	}
+	if _, err := s.Kill(context.Background(), 24); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("Kill() after final callback failure error = %v, want ErrNotRunning", err)
+	}
+}
+
+func TestSupervisorStopUsesConfiguredStopTimeout(t *testing.T) {
+	proc := newFakeProcess(1013)
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	stopTimeout := 25 * time.Millisecond
+	if _, err := s.Start(context.Background(), StartConfig{InstanceID: 25, Path: "fakegowa", ReadyTimeout: time.Second, StopTimeout: stopTimeout}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	if _, err := s.Stop(context.Background(), 25); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if got := proc.stopDeadlineTimeout(); got < stopTimeout/2 || got > stopTimeout*2 {
+		t.Fatalf("Stop() context timeout = %v, want around %v", got, stopTimeout)
+	}
+}
+
+func TestSupervisorStartLocksAreCleanedUp(t *testing.T) {
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return newFakeProcess(1014), nil })
+	for i := int64(0); i < 10; i++ {
+		instanceID := 100 + i
+		if _, err := s.Start(context.Background(), StartConfig{InstanceID: instanceID, Path: "fakegowa", ReadyTimeout: time.Second}); err != nil {
+			t.Fatalf("Start(%d) error = %v", instanceID, err)
+		}
+		if _, err := s.Kill(context.Background(), instanceID); err != nil {
+			t.Fatalf("Kill(%d) error = %v", instanceID, err)
+		}
+	}
+	s.Supervisor.mu.Lock()
+	got := len(s.Supervisor.startMu)
+	s.Supervisor.mu.Unlock()
+	if got != 0 {
+		t.Fatalf("start lock count = %d, want 0", got)
+	}
+}
+
 func TestSupervisorRestartGenerationIgnoresStaleExit(t *testing.T) {
 	first := newFakeProcess(1006)
 	second := newFakeProcess(1007)
@@ -490,13 +586,14 @@ func TestSupervisorLifecycleDoesNotLeakGoroutines(t *testing.T) {
 type fakeProcess struct {
 	pid int
 
-	mu         sync.Mutex
-	stopCount  int
-	killCount  int
-	closeCount int
-	exitOnce   sync.Once
-	waitDone   chan struct{}
-	waitErr    error
+	mu           sync.Mutex
+	stopCount    int
+	killCount    int
+	closeCount   int
+	stopDeadline time.Time
+	exitOnce     sync.Once
+	waitDone     chan struct{}
+	waitErr      error
 }
 
 func newFakeProcess(pid int) *fakeProcess {
@@ -514,6 +611,7 @@ func (p *fakeProcess) Wait(ctx context.Context) error {
 func (p *fakeProcess) Stop(ctx context.Context) error {
 	p.mu.Lock()
 	p.stopCount++
+	p.stopDeadline, _ = ctx.Deadline()
 	p.mu.Unlock()
 	p.exit(nil)
 	return nil
@@ -530,6 +628,15 @@ func (p *fakeProcess) exit(err error) { p.exitOnce.Do(func() { p.waitErr = err; 
 func (p *fakeProcess) stopped() bool  { p.mu.Lock(); defer p.mu.Unlock(); return p.stopCount > 0 }
 func (p *fakeProcess) killed() bool   { p.mu.Lock(); defer p.mu.Unlock(); return p.killCount > 0 }
 func (p *fakeProcess) closed() bool   { p.mu.Lock(); defer p.mu.Unlock(); return p.closeCount > 0 }
+func (p *fakeProcess) stopDeadlineTimeout() time.Duration {
+	p.mu.Lock()
+	deadline := p.stopDeadline
+	p.mu.Unlock()
+	if deadline.IsZero() {
+		return 0
+	}
+	return time.Until(deadline)
+}
 
 type testSupervisor struct {
 	*Supervisor
