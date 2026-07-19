@@ -11,6 +11,7 @@ import (
 
 type Config struct {
 	Port          int
+	Host          string
 	AdminUsername string
 	AdminPassword string
 	DataDir       string
@@ -30,6 +31,7 @@ const (
 func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 	cfg := Config{
 		Port:           envPort(getenv("PORT")),
+		Host:           envDefault(getenv("HOST"), "127.0.0.1"),
 		AdminUsername:  envDefault(getenv("ADMIN_USERNAME"), "admin"),
 		AdminPassword:  envDefault(getenv("ADMIN_PASSWORD"), "password"),
 		DataDir:        envDefault(getenv("DATA_DIR"), "./data"),
@@ -57,6 +59,13 @@ func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 				return cfg, action, err
 			}
 			cfg.Port = port
+			i = next
+		case "--host":
+			value, next, err := valueArg(args, i, arg)
+			if err != nil {
+				return cfg, action, err
+			}
+			cfg.Host = value
 			i = next
 		case "-u", "--admin-username":
 			value, next, err := valueArg(args, i, arg)
@@ -104,6 +113,7 @@ USAGE:
 
 OPTIONS:
   -p, --port <port>              Server port (default: 3000)
+  --host <host>                  Server bind host (default: 127.0.0.1; use 0.0.0.0 for Docker)
   -u, --admin-username <user>    Admin username (default: admin)
   -P, --admin-password <pass>    Admin password (default: password)
   -d, --data-dir <path>          Data directory (default: ./data)
@@ -118,6 +128,7 @@ EXAMPLES:
 
 ENVIRONMENT VARIABLES:
   PORT              Server port
+  HOST              Server bind host (default: 127.0.0.1; use 0.0.0.0 for Docker)
   ADMIN_USERNAME    Admin username
   ADMIN_PASSWORD    Admin password
   DATA_DIR          Data directory

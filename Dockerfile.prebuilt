@@ -1,31 +1,56 @@
-# Prebuilt variant: reuse binaries compiled by the release workflow
-# (no builder/compile stage). Intended for CI use with docker buildx
-# multi-platform builds where binaries are provided via ./binaries/.
-FROM frolvlad/alpine-glibc:latest
+# syntax=docker/dockerfile:1
+#
+# Prebuilt variant for the Go backend.
+#
+# Reuses verified, architecture-specific Go binaries produced by the release
+# workflow (scripts/release/build-go.ts). Intended for CI use with Docker
+# buildx multi-platform builds where binaries are provided via ./binaries/.
+#
+# The Go binary is statically linked (CGO_ENABLED=0) and uses modernc.org/sqlite
+# (pure Go), so no C library is required at runtime. ffmpeg is installed
+# because GOWA child processes rely on it for media processing. Bun is NOT
+# included in this image.
+#
+# This image supports Go candidate tags during stabilization. The `latest` tag
+# is NOT repointed here -- that is a canary promotion decision.
+
+FROM alpine:latest
 
 ARG TARGETARCH
 
-# Install ffmpeg and ca-certificates
-RUN apk add --no-cache ffmpeg ca-certificates
+# ffmpeg: required by GOWA child processes for media processing.
+# ca-certificates: TLS for GOWA binary downloads and webhook calls.
+# tzdata: timezone data for scheduling/log timestamps.
+RUN apk add --no-cache ffmpeg ca-certificates tzdata
+
+# Create a non-root user/group and a writable data directory.
+RUN addgroup -S app && adduser -S -G app app \
+    && mkdir -p /data \
+    && chown -R app:app /data
 
 WORKDIR /app
 
-# Copy pre-built binaries and select the one matching the build platform.
-# buildx sets TARGETARCH=amd64|arm64; binaries are named accordingly.
+# Copy the verified, pre-built Go binaries and select the one matching the
+# build platform. buildx sets TARGETARCH=amd64|arm64; binaries are named
+# gowa-manager-linux-<arch> by the release build script.
 COPY binaries/ ./binaries/
 RUN mv ./binaries/gowa-manager-linux-${TARGETARCH} ./gowa-manager \
   && chmod +x ./gowa-manager \
   && rm -rf ./binaries
 
-# Create data/bin directory
-RUN mkdir -p data/bin
+# /data is the volume mount point for persistent state (SQLite DB, lock file,
+# downloaded GOWA binaries). It is writable by the non-root user.
+VOLUME ["/data"]
 
 EXPOSE 3000
 
-ENV PORT=3000
-ENV ADMIN_USERNAME=admin
-ENV ADMIN_PASSWORD=password
-ENV DATA_DIR=/app/data
+ENV PORT=3000 \
+    HOST=0.0.0.0 \
+    ADMIN_USERNAME=admin \
+    ADMIN_PASSWORD=password \
+    DATA_DIR=/data
 
-# Start the application
-CMD ["./gowa-manager"]
+USER app
+
+# Exec form so the Go binary receives signals directly (graceful SIGTERM).
+ENTRYPOINT ["./gowa-manager"]

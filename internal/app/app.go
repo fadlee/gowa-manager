@@ -153,7 +153,7 @@ func Run(ctx context.Context, opts Options) error {
 		return errors.New("database handle does not expose sqlite connection")
 	}
 
-	ln, err := listenFirstAvailable(listen, opts.Config.Port)
+	ln, err := listenFirstAvailable(listen, opts.Config.Host, opts.Config.Port)
 	if err != nil {
 		return err
 	}
@@ -670,13 +670,16 @@ func SignalContext(parent context.Context) (context.Context, context.CancelFunc)
 	return ctx, stop
 }
 
-func listenFirstAvailable(listen func(network, address string) (net.Listener, error), startPort int) (net.Listener, error) {
+func listenFirstAvailable(listen func(network, address string) (net.Listener, error), host string, startPort int) (net.Listener, error) {
+	if host == "" {
+		host = "127.0.0.1"
+	}
 	if startPort == 0 {
-		return listen("tcp", "127.0.0.1:0")
+		return listen("tcp", host+":0")
 	}
 	var lastErr error
 	for port := startPort; port < startPort+100 && port <= 65535; port++ {
-		ln, err := listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		ln, err := listen("tcp", fmt.Sprintf("%s:%d", host, port))
 		if err == nil {
 			return ln, nil
 		}
