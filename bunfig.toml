@@ -1,5 +1,8 @@
 [test]
 preload = ["./test/setup.ts"]
+# Playwright E2E specs use @playwright/test APIs and must be run separately
+# via `bun run test:e2e:go` (Playwright runner), not `bun test`.
+pathIgnorePatterns = ["test/e2e/**"]
 # NOTE: Bun's coverageThreshold is per-file (not aggregate) as of v1.3.x,
 # and several modules (proxy/index.ts, version-manager.ts) are intentionally
 # below 90% due to network/spawn dependencies. Aggregate coverage is enforced
