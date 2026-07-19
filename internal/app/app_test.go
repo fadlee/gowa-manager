@@ -350,6 +350,9 @@ func TestBuildHTTPDepsManagementRoutesSmoke(t *testing.T) {
 	if len(items) != 0 {
 		t.Fatalf("list after delete = %#v, want empty", items)
 	}
+	if err := db.IntegrityCheck(context.Background()); err != nil {
+		t.Fatalf("IntegrityCheck() error = %v", err)
+	}
 }
 
 type appInstanceResponse struct {
