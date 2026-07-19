@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/auth"
+	"github.com/fadlee/gowa-manager/internal/observability"
 	"github.com/fadlee/gowa-manager/internal/proxy"
 )
 
@@ -48,6 +49,12 @@ type Dependencies struct {
 	WSBridge       *proxy.WSBridge
 	MagicAuth      *auth.MagicAuthService
 	InstanceLookup InstanceLookup
+
+	// Metrics is an optional, opt-in observability collector. When non-nil
+	// and enabled, a /metrics endpoint is registered OUTSIDE Basic Auth;
+	// it enforces its own loopback-only access check and emits a stable
+	// Prometheus text format with bounded-cardinality labels.
+	Metrics *observability.Metrics
 }
 
 // InstanceDirResolver resolves an instance ID to its data directory path.
@@ -96,6 +103,13 @@ func New(deps Dependencies) http.Handler {
 	// their own authentication via magic admin cookies and instance-level
 	// Basic Auth injected by the proxy layer.
 	registerProxyRoutes(mux, deps)
+
+	// Metrics endpoint is outside Basic Auth. It enforces its own
+	// loopback-only access check and is only registered when the opt-in
+	// collector is enabled.
+	if deps.Metrics != nil && deps.Metrics.Enabled() {
+		mux.HandleFunc("/metrics", deps.Metrics.Handler())
+	}
 
 	if deps.TestPanicRoute {
 		mux.HandleFunc("/api/__panic", func(http.ResponseWriter, *http.Request) { panic("test panic") })

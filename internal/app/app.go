@@ -19,6 +19,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/httpapi"
 	"github.com/fadlee/gowa-manager/internal/instances"
 	"github.com/fadlee/gowa-manager/internal/monitoring"
+	"github.com/fadlee/gowa-manager/internal/observability"
 	"github.com/fadlee/gowa-manager/internal/ownership"
 	"github.com/fadlee/gowa-manager/internal/scheduler"
 	staticassets "github.com/fadlee/gowa-manager/internal/static"
@@ -135,13 +136,13 @@ func Run(ctx context.Context, opts Options) error {
 	db, ok := dbFromCloser(dbCloser)
 	deps := httpapi.Dependencies{Logger: logger, StaticFS: staticassets.FS()}
 	if ok {
-		builtDeps, err := buildDeps(ctx, httpDepsOptions{DB: db, DataDir: opts.Config.DataDir, Logger: logger})
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DB: db, DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled})
 		if err != nil {
 			return err
 		}
 		deps = builtDeps
 	} else if opts.BuildHTTPDeps != nil {
-		builtDeps, err := buildDeps(ctx, httpDepsOptions{DataDir: opts.Config.DataDir, Logger: logger})
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled})
 		if err != nil {
 			return err
 		}
@@ -299,9 +300,10 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 type httpDepsOptions struct {
-	DB      *database.DB
-	DataDir string
-	Logger  *slog.Logger
+	DB             *database.DB
+	DataDir        string
+	Logger         *slog.Logger
+	MetricsEnabled bool
 }
 
 func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencies, error) {
@@ -335,6 +337,10 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		Logger:    opts.Logger,
 	})
 
+	// Opt-in observability collector. Disabled by default; the /metrics
+	// endpoint is only registered when MetricsEnabled is true.
+	metrics := observability.NewMetrics(opts.MetricsEnabled)
+
 	return httpapi.Dependencies{
 		Logger:              opts.Logger,
 		StaticFS:            staticassets.FS(),
@@ -350,6 +356,7 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		Versions:            versionServiceAdapter{service: versionService},
 		VersionInstaller:    versionInstaller,
 		InstanceDirResolver: filesystem,
+		Metrics:             metrics,
 	}, nil
 }
 
