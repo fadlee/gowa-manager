@@ -265,7 +265,7 @@ func (s *LifecycleService) stopWith(ctx context.Context, id int64, force bool) (
 		return LifecycleStatus{}, err
 	}
 	var snapshot supervisor.ProcessSnapshot
-	if current, ok := s.supervisor.Status(id); ok {
+	if current, ok := s.supervisor.Status(id); ok && current.State != supervisor.StateStopped && current.State != supervisor.StateFailed {
 		if force {
 			snapshot, err = s.supervisor.Kill(ctx, id)
 		} else {
