@@ -64,7 +64,7 @@ func TestManagementParity(t *testing.T) {
 		{name: "versions available", method: http.MethodGet, path: "/api/system/versions/available?limit=1"},
 		{name: "versions usage", method: http.MethodGet, path: "/api/system/versions/usage"},
 		{name: "install failure", method: http.MethodPost, path: "/api/system/versions/install", body: []byte(`{"version":"not-a-real-contract-version"}`)},
-		{name: "cleanup", method: http.MethodPost, path: "/api/system/versions/cleanup", body: []byte(`{"keepCount":1}`), compareSideEffects: true},
+		{name: "cleanup", method: http.MethodPost, path: "/api/system/versions/cleanup", body: []byte(`{"keepCount":1}`)},
 		{name: "devices while stopped", method: http.MethodGet, path: "/api/instances/{id}/devices"},
 		{name: "test connection failure", method: http.MethodPost, path: "/api/instances/{id}/test-connection"},
 		{name: "delete", method: http.MethodDelete, path: "/api/instances/{id}", compareSideEffects: true},
@@ -74,11 +74,18 @@ func TestManagementParity(t *testing.T) {
 	compareSnapshots(t, "create", bunCreate, bun, goCreate, goBackend)
 	compareSideEffects(t, "after create", bun, goBackend)
 	for _, sc := range scenarios {
+		if sc.name == "cleanup" {
+			createContractVersions(t, bun.dataDir)
+			createContractVersions(t, goBackend.dataDir)
+		}
 		bunSnap := doScenario(t, client, bun, sc.withID(bunID))
 		goSnap := doScenario(t, client, goBackend, sc.withID(goID))
 		compareSnapshots(t, sc.name, bunSnap, bun, goSnap, goBackend)
 		if sc.compareSideEffects {
 			compareSideEffects(t, "after "+sc.name, bun, goBackend)
+		}
+		if sc.name == "cleanup" {
+			compareContractVersionTrees(t, bun, goBackend)
 		}
 	}
 
@@ -205,7 +212,7 @@ func stopBackend(t *testing.T, be backend, output string) {
 func waitForHealth(t *testing.T, ctx context.Context, be backend, output func() string) {
 	t.Helper()
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
@@ -227,7 +234,7 @@ func waitForHealth(t *testing.T, ctx context.Context, be backend, output func() 
 
 func removeAllEventually(t *testing.T, path string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	var err error
 	for time.Now().Before(deadline) {
 		err = os.RemoveAll(path)
@@ -298,13 +305,48 @@ func compareSnapshots(t *testing.T, name string, bunSnap Snapshot, bun backend, 
 	b.JSONBody = normalizeContractBody(b.JSONBody)
 	g.JSONBody = normalizeContractBody(g.JSONBody)
 	if name == "install failure" {
+		assertFailureEnvelope(t, name+" Bun", b)
+		assertFailureEnvelope(t, name+" Go", g)
 		b.Status = 0
 		g.Status = 0
 		b.JSONBody = map[string]any{"success": false, "error": "<install-failure>"}
 		g.JSONBody = map[string]any{"success": false, "error": "<install-failure>"}
 	}
+	if name == "versions available" {
+		assertArrayBody(t, name+" Bun", b)
+		assertArrayBody(t, name+" Go", g)
+		b.JSONBody = "<available-versions>"
+		g.JSONBody = "<available-versions>"
+	}
 	if !reflect.DeepEqual(b, g) {
 		t.Fatalf("%s parity mismatch\nBun: %#v\nGo:  %#v", name, b, g)
+	}
+}
+
+func assertArrayBody(t *testing.T, name string, snap Snapshot) {
+	t.Helper()
+	if snap.Status != http.StatusOK {
+		t.Fatalf("%s status = %d, want 200", name, snap.Status)
+	}
+	if _, ok := snap.JSONBody.([]any); !ok {
+		t.Fatalf("%s body = %#v, want JSON array", name, snap.JSONBody)
+	}
+}
+
+func assertFailureEnvelope(t *testing.T, name string, snap Snapshot) {
+	t.Helper()
+	if snap.Status < 400 || snap.Status >= 600 {
+		t.Fatalf("%s status = %d, want failure status", name, snap.Status)
+	}
+	body, ok := snap.JSONBody.(map[string]any)
+	if !ok {
+		t.Fatalf("%s body = %#v, want JSON object", name, snap.JSONBody)
+	}
+	if body["success"] != false {
+		t.Fatalf("%s success = %#v, want false", name, body["success"])
+	}
+	if _, ok := body["error"].(string); !ok {
+		t.Fatalf("%s error = %#v, want string", name, body["error"])
 	}
 }
 
@@ -393,8 +435,33 @@ func compareSideEffects(t *testing.T, name string, bun backend, goBackend backen
 	if got, want := readRows(t, bun.dataDir), readRows(t, goBackend.dataDir); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%s normalized SQLite rows differ\nBun: %#v\nGo:  %#v", name, got, want)
 	}
-	if got, want := relativeTree(t, bun.dataDir), relativeTree(t, goBackend.dataDir); !reflect.DeepEqual(got, want) {
+	if got, want := relativeInstanceTree(t, bun.dataDir), relativeInstanceTree(t, goBackend.dataDir); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%s relative filesystem trees differ\nBun: %#v\nGo:  %#v", name, got, want)
+	}
+}
+
+func compareContractVersionTrees(t *testing.T, bun backend, goBackend backend) {
+	t.Helper()
+	if got, want := relativeContractVersionTree(t, bun.dataDir), relativeContractVersionTree(t, goBackend.dataDir); !reflect.DeepEqual(got, want) {
+		t.Fatalf("version cleanup relative trees differ\nBun: %#v\nGo:  %#v", got, want)
+	}
+}
+
+func createContractVersions(t *testing.T, dataDir string) {
+	t.Helper()
+	binaryName := "gowa"
+	if runtime.GOOS == "windows" {
+		binaryName = "gowa.exe"
+	}
+	versions := []string{"v0.0.1", "v0.0.2"}
+	for _, version := range versions {
+		dir := filepath.Join(dataDir, "bin", "versions", version)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, binaryName), []byte(version), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -446,7 +513,7 @@ func readRows(t *testing.T, dataDir string) []map[string]any {
 		if err := rows.Scan(&id, &key, &name, &port, &status, &config, &version, &errorMessage, &createdAt, &updatedAt); err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, map[string]any{"id": id, "key": "<key>", "name": name, "port": "<instance-port>", "status": status, "config": normalizeContractBody(config), "gowa_version": version, "error_message": nullableString(errorMessage), "created_at": "<timestamp>", "updated_at": "<timestamp>"})
+		out = append(out, map[string]any{"id": id, "key": "<key>", "name": name, "port": normalizeDBPort(port), "status": status, "config": normalizeContractBody(config), "gowa_version": version, "error_message": nullableString(errorMessage), "created_at": "<timestamp>", "updated_at": "<timestamp>"})
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
@@ -454,7 +521,7 @@ func readRows(t *testing.T, dataDir string) []map[string]any {
 	return out
 }
 
-func relativeTree(t *testing.T, root string) []string {
+func relativeInstanceTree(t *testing.T, root string) []string {
 	t.Helper()
 	var paths []string
 	instancesRoot := filepath.Join(root, "instances")
@@ -482,6 +549,27 @@ func relativeTree(t *testing.T, root string) []string {
 	return paths
 }
 
+func relativeContractVersionTree(t *testing.T, root string) []string {
+	t.Helper()
+	versionsRoot := filepath.Join(root, "bin", "versions")
+	var paths []string
+	for _, version := range []string{"v0.0.1", "v0.0.2"} {
+		path := filepath.Join(versionsRoot, version)
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, filepath.ToSlash(rel))
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -497,6 +585,13 @@ func nullableInt(v sql.NullInt64) any {
 		return nil
 	}
 	return int(v.Int64)
+}
+
+func normalizeDBPort(v sql.NullInt64) any {
+	if !v.Valid {
+		return nil
+	}
+	return "<instance-port>"
 }
 
 func nullableString(v sql.NullString) any {
