@@ -487,6 +487,55 @@ func TestRuntimeParity_DeleteWhileRunning(t *testing.T) {
 	assertDBIntegrity(t, goBackend.dataDir)
 }
 
+// TestRuntimeParity_ResetWhileRunning compares Bun and Go behavior when
+// resetting data for an instance that is currently running. Both backends
+// stop the instance, clear its on-disk data, and set status to "stopped".
+func TestRuntimeParity_ResetWhileRunning(t *testing.T) {
+	if _, err := exec.LookPath("bun"); err != nil {
+		t.Skipf("bun executable not found; skipping runtime parity: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	repoRoot := findRepoRoot(t)
+	bunBackend := startBackend(t, ctx, repoRoot, "bun")
+	goBackend := startBackend(t, ctx, repoRoot, "go")
+
+	installFakeGOWARuntime(t, bunBackend.dataDir, runtimeTestVersion)
+	installFakeGOWARuntime(t, goBackend.dataDir, runtimeTestVersion)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	bunInst := createRuntimeInstance(t, client, bunBackend, "runtime-reset-bun", runtimeTestVersion)
+	goInst := createRuntimeInstance(t, client, goBackend, "runtime-reset-go", runtimeTestVersion)
+
+	startInstance(t, client, bunBackend, bunInst.ID)
+	startInstance(t, client, goBackend, goInst.ID)
+	waitForRuntimeStatus(t, client, bunBackend, bunInst.ID, "running", 15*time.Second)
+	waitForRuntimeStatus(t, client, goBackend, goInst.ID, "running", 10*time.Second)
+
+	// Both backends stop the instance and clear its data directory, then
+	// set the DB status to "stopped".
+	bunStatus, bunBody := runtimeRequest(t, client, bunBackend, http.MethodPost, fmt.Sprintf("/api/instances/%d/reset-data", bunInst.ID), nil, nil)
+	goStatus, goBody := runtimeRequest(t, client, goBackend, http.MethodPost, fmt.Sprintf("/api/instances/%d/reset-data", goInst.ID), nil, nil)
+	if bunStatus != goStatus {
+		t.Fatalf("reset while running status mismatch: Bun=%d Go=%d\nBun: %s\nGo:  %s", bunStatus, goStatus, string(bunBody), string(goBody))
+	}
+	if bunStatus != http.StatusOK {
+		t.Fatalf("reset while running status = %d, want 200; body = %s", bunStatus, string(bunBody))
+	}
+
+	// Both backends should report "stopped" after reset.
+	bunFinal := waitForRuntimeStatus(t, client, bunBackend, bunInst.ID, "stopped", 10*time.Second)
+	goFinal := waitForRuntimeStatus(t, client, goBackend, goInst.ID, "stopped", 10*time.Second)
+	if bunFinal.Status != "stopped" || goFinal.Status != "stopped" {
+		t.Fatalf("instance not stopped after reset: Bun=%q Go=%q", bunFinal.Status, goFinal.Status)
+	}
+
+	assertDBIntegrity(t, bunBackend.dataDir)
+	assertDBIntegrity(t, goBackend.dataDir)
+}
+
 // TestRuntimeParity_Crash verifies the Go backend correctly detects and
 // persists a "failed" status when the GOWA binary crashes immediately on
 // start. This is a Go-only test because the Bun backend does not

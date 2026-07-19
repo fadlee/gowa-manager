@@ -125,6 +125,67 @@ func TestRuntimeFaults_KillDuringRestart(t *testing.T) {
 	assertDBIntegrity(t, be.dataDir)
 }
 
+// TestRuntimeFaults_KillDuringDBWrite verifies that force-killing the manager
+// while it is processing a stop request (which writes "stopped" status to the
+// DB via UpdateStatus) leaves no duplicate child process and the database
+// passes PRAGMA integrity_check. This targets the DB status-write window
+// specifically: the supervisor has already signalled the process, and the
+// manager is about to persist the new status.
+func TestRuntimeFaults_KillDuringDBWrite(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	repoRoot := findRepoRoot(t)
+	be := startBackend(t, ctx, repoRoot, "go")
+	installFakeGOWARuntime(t, be.dataDir, runtimeTestVersion)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	inst := createRuntimeInstance(t, client, be, "faults-kill-dbwrite", runtimeTestVersion)
+	startInstance(t, client, be, inst.ID)
+	waitForRuntimeStatus(t, client, be, inst.ID, "running", 10*time.Second)
+
+	// Issue a stop request in a goroutine and kill the manager mid-flight.
+	// The stop operation involves: supervisor.Stop (signal process) →
+	// repo.UpdateStatus (DB write) → clearRuntimeCaches. Killing during
+	// this window tests DB integrity under abrupt termination.
+	stopDone := make(chan struct{}, 1)
+	go func() {
+		defer func() { stopDone <- struct{}{} }()
+		req, _ := http.NewRequest(http.MethodPost, be.baseURL+fmt.Sprintf("/api/instances/%d/stop", inst.ID), nil)
+		req.SetBasicAuth(contractUser, contractPass)
+		resp, err := client.Do(req)
+		if err != nil {
+			return
+		}
+		_, _ = readAll(resp.Body)
+		resp.Body.Close()
+	}()
+
+	// Kill quickly to catch the DB-write window.
+	time.Sleep(100 * time.Millisecond)
+	if be.cmd != nil && be.cmd.Process != nil {
+		forceKillProcess(be.cmd.Process.Pid)
+	}
+	be.cmd = nil
+	<-stopDone
+
+	time.Sleep(500 * time.Millisecond)
+	killProcessesUsingDataDir(be.dataDir)
+
+	assertNoFakeGOWAChildren(t, be.dataDir)
+
+	// Restart the manager and verify it comes up healthy with an intact
+	// database. The instance may be in "running" or "stopped" state
+	// depending on exactly when the kill landed; either way the manager
+	// must recover.
+	restarted := restartBackend(t, ctx, repoRoot, be.dataDir)
+	// Verify the manager is functional by starting the instance cleanly.
+	startInstance(t, client, restarted, inst.ID)
+	waitForRuntimeStatus(t, client, restarted, inst.ID, "running", 20*time.Second)
+	assertFakeGOWAChildCount(t, 1)
+	assertDBIntegrity(t, be.dataDir)
+}
+
 // TestRuntimeFaults_Leak repeats 100 start/stop cycles on a single instance
 // and asserts stable goroutine count, no surviving child PIDs, stable
 // registry size, and DB integrity. On Linux it also checks file descriptor
