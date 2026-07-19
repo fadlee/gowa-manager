@@ -1,13 +1,18 @@
 package httpapi
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/fadlee/gowa-manager/internal/auth"
+	"github.com/fadlee/gowa-manager/internal/proxy"
 )
 
 type Dependencies struct {
@@ -34,6 +39,15 @@ type Dependencies struct {
 	// consulted by any HTTP route. Defined locally to avoid an import cycle
 	// with the scheduler package.
 	InstanceDirResolver InstanceDirResolver
+
+	// Proxy-related dependencies. The /app/{key}/* routes are registered
+	// outside the manager's Basic Auth middleware; they handle their own
+	// authentication via magic admin cookies and instance-level Basic
+	// Auth. When any of these are non-nil the proxy routes are exposed.
+	HTTPProxy      *proxy.HTTPProxy
+	WSBridge       *proxy.WSBridge
+	MagicAuth      *auth.MagicAuthService
+	InstanceLookup InstanceLookup
 }
 
 // InstanceDirResolver resolves an instance ID to its data directory path.
@@ -77,6 +91,11 @@ func New(deps Dependencies) http.Handler {
 	mux.Handle("/api/instances", protectedHandler)
 	mux.Handle("/api/instances/", protectedHandler)
 	mux.Handle("/api/system/", protectedHandler)
+
+	// Proxy routes (/app/{key}/*) are outside Basic Auth. They handle
+	// their own authentication via magic admin cookies and instance-level
+	// Basic Auth injected by the proxy layer.
+	registerProxyRoutes(mux, deps)
 
 	if deps.TestPanicRoute {
 		mux.HandleFunc("/api/__panic", func(http.ResponseWriter, *http.Request) { panic("test panic") })
@@ -158,6 +177,28 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
+}
+
+// Hijack delegates to the underlying ResponseWriter's Hijack method so
+// that WebSocket upgrades and other connection-hijacking handlers work
+// through the request-ID middleware. If the underlying writer does not
+// implement http.Hijacker, an error is returned.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrHijacked
+	}
+	return h.Hijack()
+}
+
+// Flush delegates to the underlying ResponseWriter's Flush method so
+// that streaming responses and WebSocket upgrades work through the
+// middleware. If the underlying writer does not implement http.Flusher,
+// Flush is a no-op.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func newRequestID() string {
