@@ -30,6 +30,41 @@ func NewRegistry() *Registry {
 	return &Registry{entries: make(map[int64]*registryEntry)}
 }
 
+func (r *Registry) Register(instanceID int64, snapshot ProcessSnapshot) (ProcessSnapshot, error) {
+	entry := r.entryFor(instanceID)
+
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.hasProcess && (entry.snapshot.State == StateStarting || entry.snapshot.State == StateRunning) {
+		return entry.snapshot, ErrAlreadyRunning
+	}
+	entry.nextGeneration++
+	snapshot.InstanceID = instanceID
+	snapshot.Generation = entry.nextGeneration
+	entry.snapshot = snapshot
+	entry.hasProcess = true
+	return snapshot, nil
+}
+
+func (r *Registry) Update(instanceID int64, generation int64, snapshot ProcessSnapshot) error {
+	r.mu.Lock()
+	entry := r.entries[instanceID]
+	r.mu.Unlock()
+	if entry == nil {
+		return ErrStaleGeneration
+	}
+
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if !entry.hasProcess || entry.snapshot.Generation != generation {
+		return ErrStaleGeneration
+	}
+	snapshot.InstanceID = instanceID
+	snapshot.Generation = generation
+	entry.snapshot = snapshot
+	return nil
+}
+
 func (r *Registry) WithOperation(instanceID int64, operation OperationFunc) (ProcessSnapshot, error) {
 	entry := r.entryFor(instanceID)
 

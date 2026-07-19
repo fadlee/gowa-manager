@@ -44,6 +44,169 @@ func TestSupervisorDuplicateStartReturnsCurrentStateWithoutDuplicateProcess(t *t
 	}
 }
 
+func TestSupervisorStatusObservesStartingWhileReadinessPending(t *testing.T) {
+	proc := newFakeProcess(1101)
+	readyStarted := make(chan struct{})
+	releaseReady := make(chan struct{})
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	s.ready = func(ctx context.Context, snapshot ProcessSnapshot) error {
+		close(readyStarted)
+		select {
+		case <-releaseReady:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 12, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+	<-readyStarted
+
+	snapshot, ok := s.Status(12)
+	if !ok || snapshot.State != StateStarting || snapshot.PID != 1101 || snapshot.Generation != 1 {
+		t.Fatalf("Status() = %+v ok %v, want starting pid 1101 generation 1", snapshot, ok)
+	}
+	close(releaseReady)
+	if err := <-startDone; err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+}
+
+func TestSupervisorDuplicateStartDuringPendingReadinessReturnsStartingWithoutDuplicateProcess(t *testing.T) {
+	proc := newFakeProcess(1102)
+	readyStarted := make(chan struct{})
+	releaseReady := make(chan struct{})
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	s.ready = func(ctx context.Context, snapshot ProcessSnapshot) error {
+		close(readyStarted)
+		select {
+		case <-releaseReady:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 13, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+	<-readyStarted
+
+	snapshot, err := s.Start(context.Background(), StartConfig{InstanceID: 13, Path: "fakegowa", ReadyTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("duplicate Start() error = %v", err)
+	}
+	if snapshot.State != StateStarting || snapshot.PID != 1102 || snapshot.Generation != 1 {
+		t.Fatalf("duplicate Start() snapshot = %+v, want current starting", snapshot)
+	}
+	if got := s.startCalls(); got != 1 {
+		t.Fatalf("starter calls = %d, want 1", got)
+	}
+	close(releaseReady)
+	if err := <-startDone; err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+}
+
+func TestSupervisorStopDuringPendingReadinessTerminatesProcess(t *testing.T) {
+	proc := newFakeProcess(1103)
+	readyStarted := make(chan struct{})
+	releaseReady := make(chan struct{})
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	s.ready = func(ctx context.Context, snapshot ProcessSnapshot) error {
+		close(readyStarted)
+		select {
+		case <-releaseReady:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 14, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+	<-readyStarted
+
+	snapshot, err := s.Stop(context.Background(), 14)
+	if err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if snapshot.State != StateStopped || !proc.stopped() || proc.killed() {
+		t.Fatalf("Stop() snapshot=%+v stopped=%v killed=%v, want stopped gracefully", snapshot, proc.stopped(), proc.killed())
+	}
+	close(releaseReady)
+	if err := <-startDone; !errors.Is(err, ErrProcessExited) {
+		t.Fatalf("pending Start() error = %v, want ErrProcessExited", err)
+	}
+}
+
+func TestSupervisorKillDuringPendingReadinessTerminatesProcess(t *testing.T) {
+	proc := newFakeProcess(1104)
+	readyStarted := make(chan struct{})
+	releaseReady := make(chan struct{})
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	s.ready = func(ctx context.Context, snapshot ProcessSnapshot) error {
+		close(readyStarted)
+		select {
+		case <-releaseReady:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 15, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+	<-readyStarted
+
+	snapshot, err := s.Kill(context.Background(), 15)
+	if err != nil {
+		t.Fatalf("Kill() error = %v", err)
+	}
+	if snapshot.State != StateStopped || !proc.killed() {
+		t.Fatalf("Kill() snapshot=%+v killed=%v, want stopped and killed", snapshot, proc.killed())
+	}
+	close(releaseReady)
+	if err := <-startDone; !errors.Is(err, ErrProcessExited) {
+		t.Fatalf("pending Start() error = %v, want ErrProcessExited", err)
+	}
+}
+
+func TestSupervisorExitDuringPendingReadinessUpdatesMatchingGeneration(t *testing.T) {
+	proc := newFakeProcess(1105)
+	readyStarted := make(chan struct{})
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	s.ready = func(ctx context.Context, snapshot ProcessSnapshot) error {
+		close(readyStarted)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	startDone := make(chan error, 1)
+	go func() {
+		_, err := s.Start(context.Background(), StartConfig{InstanceID: 16, Path: "fakegowa", ReadyTimeout: time.Second})
+		startDone <- err
+	}()
+	<-readyStarted
+
+	proc.exit(errors.New("boom"))
+	if err := <-startDone; !errors.Is(err, ErrProcessExited) {
+		t.Fatalf("Start() error = %v, want ErrProcessExited", err)
+	}
+	s.waitForExitCallbacks(t, 1)
+	snapshot, ok := s.Status(16)
+	if !ok || snapshot.State != StateStopped || snapshot.Generation != 1 {
+		t.Fatalf("Status() = %+v ok %v, want stopped generation 1", snapshot, ok)
+	}
+}
+
 func TestSupervisorImmediateCrash(t *testing.T) {
 	proc := newFakeProcess(1002)
 	proc.exit(errors.New("boom"))

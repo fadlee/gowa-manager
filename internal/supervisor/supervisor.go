@@ -57,6 +57,7 @@ type Supervisor struct {
 	now      func() time.Time
 
 	mu        sync.Mutex
+	startMu   sync.Mutex
 	processes map[processKey]Process
 }
 
@@ -93,72 +94,95 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 	if snapshot, ok := s.registry.Get(config.InstanceID); ok && (snapshot.State == StateStarting || snapshot.State == StateRunning) {
 		return snapshot, nil
 	}
-	return s.registry.WithOperation(config.InstanceID, func(generation int64) (ProcessSnapshot, error) {
-		if snapshot, ok := s.registry.Get(config.InstanceID); ok && (snapshot.State == StateStarting || snapshot.State == StateRunning) {
-			return snapshot, nil
-		}
-		startedAt := config.StartedAt
-		if startedAt.IsZero() {
-			startedAt = s.now()
-		}
-		proc, err := s.starter(ctx, config)
-		if err != nil {
-			return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrStartFailed, err)
-		}
-		waitDone := make(chan error, 1)
-		go func() { waitDone <- proc.Wait(context.Background()) }()
-
-		snapshot := ProcessSnapshot{InstanceID: config.InstanceID, Generation: generation, State: StateStarting, PID: proc.PID(), StartedAt: startedAt}
-		if err := s.onStatus(ctx, snapshot); err != nil {
-			s.cleanupProcess(proc)
-			return ProcessSnapshot{}, err
-		}
-
-		readyTimeout := config.ReadyTimeout
-		if readyTimeout <= 0 {
-			readyTimeout = 30 * time.Second
-		}
-		readyCtx, cancel := context.WithTimeout(ctx, readyTimeout)
-		defer cancel()
-		readyErr := make(chan error, 1)
-		go func() { readyErr <- s.ready(readyCtx, snapshot) }()
-
-		select {
-		case err := <-waitDone:
-			s.cleanupProcess(proc)
-			return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrProcessExited, err)
-		case err := <-readyErr:
-			if err != nil {
-				s.cleanupProcess(proc)
-				if errors.Is(err, context.DeadlineExceeded) {
-					return ProcessSnapshot{}, ErrStartTimeout
-				}
-				return ProcessSnapshot{}, err
-			}
-		case <-ctx.Done():
-			s.cleanupProcess(proc)
-			return ProcessSnapshot{}, ctx.Err()
-		}
-		earlyExitGrace := time.NewTimer(10 * time.Millisecond)
-		select {
-		case err := <-waitDone:
-			if !earlyExitGrace.Stop() {
-				<-earlyExitGrace.C
-			}
-			s.cleanupProcess(proc)
-			return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrProcessExited, err)
-		case <-earlyExitGrace.C:
-		}
-
-		snapshot.State = StateRunning
-		if err := s.onStatus(ctx, snapshot); err != nil {
-			s.cleanupProcess(proc)
-			return ProcessSnapshot{}, err
-		}
-		s.storeProcess(config.InstanceID, generation, proc)
-		go s.handleExit(config.InstanceID, generation, snapshot, proc, waitDone)
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	if snapshot, ok := s.registry.Get(config.InstanceID); ok && (snapshot.State == StateStarting || snapshot.State == StateRunning) {
 		return snapshot, nil
-	})
+	}
+	startedAt := config.StartedAt
+	if startedAt.IsZero() {
+		startedAt = s.now()
+	}
+	proc, err := s.starter(ctx, config)
+	if err != nil {
+		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrStartFailed, err)
+	}
+	snapshot, err := s.registry.Register(config.InstanceID, ProcessSnapshot{State: StateStarting, PID: proc.PID(), StartedAt: startedAt})
+	if errors.Is(err, ErrAlreadyRunning) {
+		s.cleanupProcess(proc)
+		return snapshot, nil
+	}
+	if err != nil {
+		s.cleanupProcess(proc)
+		return ProcessSnapshot{}, err
+	}
+	if err := s.onStatus(ctx, snapshot); err != nil {
+		_ = s.registry.Remove(config.InstanceID)
+		s.cleanupProcess(proc)
+		return ProcessSnapshot{}, err
+	}
+	waitDone := make(chan error, 1)
+	exitDone := make(chan error, 1)
+	go func() {
+		err := proc.Wait(context.Background())
+		waitDone <- err
+		exitDone <- err
+	}()
+	s.storeProcess(config.InstanceID, snapshot.Generation, proc)
+	go s.handleExit(config.InstanceID, snapshot.Generation, snapshot, proc, exitDone)
+
+	readyTimeout := config.ReadyTimeout
+	if readyTimeout <= 0 {
+		readyTimeout = 30 * time.Second
+	}
+	readyCtx, cancel := context.WithTimeout(ctx, readyTimeout)
+	defer cancel()
+	readyErr := make(chan error, 1)
+	go func() { readyErr <- s.ready(readyCtx, snapshot) }()
+
+	select {
+	case err := <-waitDone:
+		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrProcessExited, err)
+	case err := <-readyErr:
+		if err != nil {
+			_ = s.registry.Remove(config.InstanceID)
+			if s.takeProcess(config.InstanceID, snapshot.Generation) != nil {
+				s.cleanupProcess(proc)
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				return ProcessSnapshot{}, ErrStartTimeout
+			}
+			return ProcessSnapshot{}, err
+		}
+	case <-ctx.Done():
+		_ = s.registry.Remove(config.InstanceID)
+		if s.takeProcess(config.InstanceID, snapshot.Generation) != nil {
+			s.cleanupProcess(proc)
+		}
+		return ProcessSnapshot{}, ctx.Err()
+	}
+	earlyExitGrace := time.NewTimer(10 * time.Millisecond)
+	select {
+	case err := <-waitDone:
+		if !earlyExitGrace.Stop() {
+			<-earlyExitGrace.C
+		}
+		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrProcessExited, err)
+	case <-earlyExitGrace.C:
+	}
+
+	snapshot.State = StateRunning
+	if err := s.onStatus(ctx, snapshot); err != nil {
+		_ = s.registry.Remove(config.InstanceID)
+		if s.takeProcess(config.InstanceID, snapshot.Generation) != nil {
+			s.cleanupProcess(proc)
+		}
+		return ProcessSnapshot{}, err
+	}
+	if err := s.registry.Update(config.InstanceID, snapshot.Generation, snapshot); err != nil {
+		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrProcessExited, err)
+	}
+	return snapshot, nil
 }
 
 func (s *Supervisor) Stop(ctx context.Context, instanceID int64) (ProcessSnapshot, error) {
