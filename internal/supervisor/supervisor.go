@@ -329,13 +329,17 @@ func (s *Supervisor) cleanupProcess(proc Process) {
 }
 
 func (s *Supervisor) handleExit(instanceID, generation int64, snapshot ProcessSnapshot, proc Process, waitDone <-chan error) {
-	<-waitDone
+	waitErr := <-waitDone
 	if proc, _ := s.takeProcess(instanceID, generation); proc == nil {
 		return
 	}
 	exited := snapshot
 	exited.State = StateStopped
-	if err := s.registry.MarkExited(instanceID, generation, StateStopped); errors.Is(err, ErrStaleGeneration) {
+	if waitErr != nil {
+		exited.State = StateFailed
+		exited.ExitError = waitErr.Error()
+	}
+	if err := s.registry.MarkExited(instanceID, generation, exited.State); errors.Is(err, ErrStaleGeneration) {
 		return
 	}
 	if s.onExit != nil {

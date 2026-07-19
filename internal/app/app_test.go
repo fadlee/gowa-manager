@@ -21,6 +21,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
 	"github.com/fadlee/gowa-manager/internal/instances"
+	"github.com/fadlee/gowa-manager/internal/supervisor"
 )
 
 type fakeLock struct {
@@ -301,6 +302,41 @@ func TestBuildHTTPDepsWiresRealLifecycleStatusRoute(t *testing.T) {
 	}
 	if status.ID != created.ID || status.Name != "runtime" || status.Status != "stopped" || status.PID != nil {
 		t.Fatalf("status body = %#v, want stopped lifecycle status", status)
+	}
+}
+
+func TestAppLifecycleCallbacksPersistSupervisorExit(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	db, err := database.Open(ctx, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := instances.NewSQLiteRepository(db.SQL)
+	created, err := repo.Create(ctx, instances.CreateInput{Name: "callbacks", Config: `{}`, GOWAVersion: "v1.0.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callbacks := appLifecycleCallbacks{repo: repo}
+
+	if err := callbacks.PersistSupervisorStatus(ctx, supervisor.ProcessSnapshot{InstanceID: created.ID, State: supervisor.StateRunning, PID: 123}); err != nil {
+		t.Fatalf("PersistSupervisorStatus error = %v", err)
+	}
+	callbacks.PersistSupervisorExit(supervisor.ProcessSnapshot{InstanceID: created.ID, State: supervisor.StateRunning, PID: 123, ExitError: "exit status 1 --password=hunter2"})
+
+	updated, err := repo.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != "failed" {
+		t.Fatalf("status = %q, want failed", updated.Status)
+	}
+	if updated.ErrorMessage == nil || !strings.Contains(*updated.ErrorMessage, "exit status 1") {
+		t.Fatalf("error message = %v, want safe exit error", updated.ErrorMessage)
+	}
+	if updated.ErrorMessage != nil && strings.Contains(*updated.ErrorMessage, "hunter2") {
+		t.Fatalf("error message exposes secret: %q", *updated.ErrorMessage)
 	}
 }
 

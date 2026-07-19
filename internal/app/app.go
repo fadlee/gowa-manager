@@ -164,7 +164,8 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 	releases := versions.NewGitHubClient("", nil)
 	versionService := versions.NewService(opts.DataDir, releases)
 	versionInstaller := versions.NewInstaller(opts.DataDir, releases, nil)
-	processSupervisor := supervisor.New(supervisor.SupervisorConfig{})
+	lifecycleCallbacks := appLifecycleCallbacks{repo: repo, cache: deviceClient}
+	processSupervisor := supervisor.New(supervisor.SupervisorConfig{StatusCallback: lifecycleCallbacks.PersistSupervisorStatus, ExitCallback: lifecycleCallbacks.PersistSupervisorExit})
 	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient})
 	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient))
 	return httpapi.Dependencies{
@@ -216,6 +217,23 @@ func (a appHTTPLifecycle) Status(ctx context.Context, id int64) (httpapi.Instanc
 }
 
 type appServiceLifecycle struct{ service *instances.LifecycleService }
+
+type appLifecycleCallbacks struct {
+	repo  instances.Repository
+	cache instances.DeviceCacheCleaner
+}
+
+func (a appLifecycleCallbacks) service() *instances.LifecycleService {
+	return instances.NewLifecycleService(instances.LifecycleOptions{Repository: a.repo, DeviceCache: a.cache})
+}
+
+func (a appLifecycleCallbacks) PersistSupervisorStatus(ctx context.Context, snapshot supervisor.ProcessSnapshot) error {
+	return a.service().PersistSupervisorStatus(ctx, snapshot)
+}
+
+func (a appLifecycleCallbacks) PersistSupervisorExit(snapshot supervisor.ProcessSnapshot) {
+	a.service().PersistSupervisorExit(snapshot)
+}
 
 func (a appServiceLifecycle) Stop(ctx context.Context, id int64) (instances.Status, error) {
 	status, err := a.service.Stop(ctx, id)

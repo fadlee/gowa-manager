@@ -28,4 +28,5 @@ type ProcessSnapshot struct {
 	State      State
 	PID        int
 	StartedAt  time.Time
+	ExitError  string
 }

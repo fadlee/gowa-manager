@@ -3,6 +3,7 @@ package instances
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/supervisor"
@@ -138,6 +139,48 @@ func (s *LifecycleService) Status(ctx context.Context, id int64) (LifecycleStatu
 		return s.statusFrom(instance, snapshot, true), nil
 	}
 	return s.statusFrom(instance, supervisor.ProcessSnapshot{}, false), nil
+}
+
+func (s *LifecycleService) PersistSupervisorStatus(ctx context.Context, snapshot supervisor.ProcessSnapshot) error {
+	status := string(snapshot.State)
+	var message *string
+	if snapshot.State == supervisor.StateFailed {
+		safeMessage := safeSupervisorExitMessage(snapshot.ExitError)
+		message = &safeMessage
+	}
+	_, err := s.repo.UpdateStatus(ctx, snapshot.InstanceID, status, message)
+	if err == nil && (snapshot.State == supervisor.StateStopped || snapshot.State == supervisor.StateFailed) && s.cache != nil {
+		s.cache.ClearCache(snapshot.InstanceID)
+	}
+	return err
+}
+
+func (s *LifecycleService) PersistSupervisorExit(snapshot supervisor.ProcessSnapshot) {
+	if snapshot.ExitError != "" {
+		snapshot.State = supervisor.StateFailed
+	} else {
+		snapshot.State = supervisor.StateStopped
+	}
+	_ = s.PersistSupervisorStatus(context.Background(), snapshot)
+}
+
+func safeSupervisorExitMessage(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "process exited unexpectedly"
+	}
+	fields := strings.Fields(message)
+	for i, field := range fields {
+		lower := strings.ToLower(field)
+		if strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "password") || strings.Contains(lower, "key") {
+			fields[i] = "[redacted]"
+		}
+	}
+	message = strings.Join(fields, " ")
+	if len(message) > 200 {
+		message = message[:200]
+	}
+	return message
 }
 
 func (s *LifecycleService) ensurePort(ctx context.Context, instance Instance) (int, error) {

@@ -181,6 +181,46 @@ func TestLifecycleStatusUsesRegistryFieldsAndLastKnownStatus(t *testing.T) {
 	}
 }
 
+func TestLifecycleSupervisorExitCallbackPersistsFailedAndClearsCache(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstance(1, "running", 3000)
+	secret := "--token=super-secret-value"
+
+	lc.PersistSupervisorExit(supervisor.ProcessSnapshot{InstanceID: 1, State: supervisor.StateRunning, PID: 42, ExitError: "process exited with status 1 " + secret})
+
+	instance := deps.repo.instances[1]
+	if instance.Status != "failed" {
+		t.Fatalf("status = %q, want failed", instance.Status)
+	}
+	if instance.ErrorMessage == nil || !strings.Contains(*instance.ErrorMessage, "process exited with status 1") {
+		t.Fatalf("error message = %v, want safe exit error", instance.ErrorMessage)
+	}
+	if instance.ErrorMessage != nil && strings.Contains(*instance.ErrorMessage, secret) {
+		t.Fatalf("error message exposes secret: %q", *instance.ErrorMessage)
+	}
+	if !reflect.DeepEqual(deps.cache.cleared, []int64{1}) {
+		t.Fatalf("cleared cache = %#v, want [1]", deps.cache.cleared)
+	}
+}
+
+func TestLifecycleSupervisorExitCallbackPersistsStoppedAndClearsCache(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstance(1, "running", 3000)
+
+	lc.PersistSupervisorExit(supervisor.ProcessSnapshot{InstanceID: 1, State: supervisor.StateRunning, PID: 42})
+
+	instance := deps.repo.instances[1]
+	if instance.Status != "stopped" {
+		t.Fatalf("status = %q, want stopped", instance.Status)
+	}
+	if instance.ErrorMessage != nil {
+		t.Fatalf("error message = %v, want nil", instance.ErrorMessage)
+	}
+	if !reflect.DeepEqual(deps.cache.cleared, []int64{1}) {
+		t.Fatalf("cleared cache = %#v, want [1]", deps.cache.cleared)
+	}
+}
+
 type testLifecycleDeps struct {
 	repo       *fakeLifecycleRepo
 	fs         *fakeLifecycleFS

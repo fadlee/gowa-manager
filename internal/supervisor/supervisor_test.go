@@ -259,8 +259,8 @@ func TestSupervisorExitDuringPendingReadinessUpdatesMatchingGeneration(t *testin
 	}
 	s.waitForExitCallbacks(t, 1)
 	snapshot, ok := s.Status(16)
-	if !ok || snapshot.State != StateStopped || snapshot.Generation != 1 {
-		t.Fatalf("Status() = %+v ok %v, want stopped generation 1", snapshot, ok)
+	if !ok || snapshot.State != StateFailed || snapshot.Generation != 1 {
+		t.Fatalf("Status() = %+v ok %v, want failed generation 1", snapshot, ok)
 	}
 }
 
