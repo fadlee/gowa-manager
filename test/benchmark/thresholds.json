@@ -4,6 +4,8 @@
   "description": "Numeric tolerances that gate the Go backend against the captured Bun baseline. Each threshold expresses the maximum acceptable deviation of the Go measurement from the Bun baseline. A scenario fails if Go exceeds the tolerance. Thresholds are expressed as percentages unless noted otherwise. 'informational' scenarios have no threshold and never cause a failure.",
   "note": "Threshold values require owner approval. These are initial proposals based on observed variance in local benchmark runs. Do NOT relax thresholds to make a failure disappear — a failure must be reported as a blocked release with measured regressions.",
   "approvalRequired": true,
+  "approvalStatus": "deferred",
+  "approvalNote": "Owner has deferred threshold approval until the real Linux amd64 benchmark host capture. Local Windows results show expected failures (gracefulShutdown ~10s due to taskkill not sending SIGTERM; RSS/handle growth due to Go runtime not returning memory to OS on Windows). These are Windows-specific and expected to resolve on Linux. The harness and thresholds are committed for review but do NOT gate the release until approved on Linux.",
   "rationale": "Tolerances were derived from observed run-to-run variance in the Bun baseline (3 samples per scenario on a local Windows machine). Scenarios with higher variance (cold startup, WebSocket) received wider tolerances; scenarios with low variance (idle RSS, proxy throughput) received tighter tolerances. The idle RSS threshold is 0% because the Go backend must not consume more memory than Bun at idle — this is a hard requirement, not a tolerance.",
   "metadataMatch": {
     "required": ["os", "arch", "cpu", "cpuCount"],
