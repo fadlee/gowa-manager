@@ -4,12 +4,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -568,5 +570,231 @@ func TestRollback_NoPasswordsPrinted(t *testing.T) {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("rollback JSON output contains password-related field: %q", forbidden)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Staging rehearsal integration test
+// ---------------------------------------------------------------------------
+
+// TestRollback_StagingRehearsal simulates the full staging rehearsal flow:
+//  1. Start a Go manager on a temp port with a temp data dir
+//  2. Create a test instance (mutation)
+//  3. Run a backup
+//  4. Run rollback in dry-run mode (verify plan is correct)
+//  5. Stop the Go manager
+//  6. Run rollback with --execute using the current DB (compatible path)
+//  7. Verify integrity check passes
+//  8. Run a second rehearsal: corrupt the DB, then run rollback with --execute
+//     using the backup (restore path)
+//  9. Verify backup restore succeeds and integrity passes
+//
+// This is an integration test — it's OK if it takes longer.  It skips if the
+// Go binary can't be built or sqlite3 is not available.
+func TestRollback_StagingRehearsal(t *testing.T) {
+	skipIfNoSqlite3(t)
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("pwsh"); err != nil {
+			t.Skip("pwsh not available")
+		}
+	} else {
+		if _, err := exec.LookPath("sh"); err != nil {
+			t.Skip("sh not available")
+		}
+	}
+
+	// Build the Go manager binary.
+	bin := managerBinary(t)
+
+	// Create a valid data dir with instances and a fake GOWA binary.
+	dataDir := createValidDataDir(t)
+	defer os.RemoveAll(filepath.Dir(dataDir))
+
+	// 1. Start the Go manager on a free port.
+	port := freePort(t)
+	cmd := exec.Command(bin,
+		"--port", fmt.Sprint(port),
+		"--data-dir", dataDir,
+		"--admin-username", "admin",
+		"--admin-password", "password",
+	)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start Go manager: %v", err)
+	}
+	goPid := cmd.Process.Pid
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	if !waitForReady(t, baseURL, 15*time.Second) {
+		_ = cmd.Process.Kill()
+		t.Fatalf("Go manager did not become ready on %s", baseURL)
+	}
+
+	// 2. Create a test instance via the API (mutation).
+	createBody := `{"name":"rehearsal-test","gowa_version":"` + fakeGOWAVersion + `"}`
+	createReq, _ := http.NewRequest(http.MethodPost, baseURL+"/api/instances", strings.NewReader(createBody))
+	createReq.SetBasicAuth("admin", "password")
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("create instance: %v", err)
+	}
+	if createResp.StatusCode != http.StatusOK && createResp.StatusCode != http.StatusCreated {
+		_ = cmd.Process.Kill()
+		t.Fatalf("create instance: unexpected status %d", createResp.StatusCode)
+	}
+	createResp.Body.Close()
+
+	// 3. Run a backup (pre-cutover backup).
+	backupDir := filepath.Join(filepath.Dir(dataDir), "rehearsal-backup")
+	r := runScript(t, "backup", []string{
+		"-DataDir", dataDir,
+		"-BackupDir", backupDir,
+	})
+	assertExitCode(t, r, 0)
+
+	// 4. Run rollback in dry-run mode (verify plan is correct).
+	dryRun := runScript(t, "rollback", []string{
+		"--go-pid", fmt.Sprint(goPid),
+		"--go-version", "test-v1.0.0",
+		"--backup-dir", backupDir,
+		"--data-dir", dataDir,
+	})
+	assertExitCode(t, dryRun, 0)
+	if dryRun.JSON["mode"] != "dry_run" {
+		t.Fatalf("dry-run mode = %v, want dry_run", dryRun.JSON["mode"])
+	}
+
+	// 5. Stop the Go manager.
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}
+
+	// Build a fake Bun binary for the rollback.
+	bunBinary := buildFakeBunForRollback(t)
+	correctChecksum := computeFileSHA256(t, bunBinary)
+	defer killFakeBun(t) // kill any fake-bun started by the rollback script
+
+	// 6. Run rollback with --execute using the current DB (compatible path).
+	//    The Go manager is stopped, so we use --override-ambiguous-state.
+	//    The bun-url is unreachable so smoke will fail, but we only care
+	//    about the integrity_check and db_strategy steps.
+	execResult := runScript(t, "rollback", []string{
+		"--execute",
+		"--backup-dir", backupDir,
+		"--go-pid", fmt.Sprint(goPid),
+		"--go-version", "test-v1.0.0",
+		"--bun-binary", bunBinary,
+		"--bun-checksum", correctChecksum,
+		"--data-dir", dataDir,
+		"--bun-url", "http://127.0.0.1:1", // unreachable so smoke will fail
+		"--override-ambiguous-state",
+	})
+
+	// 7. Verify integrity_check step passes and db_strategy uses current DB.
+	steps, ok := execResult.JSON["steps"].([]any)
+	if !ok {
+		t.Fatalf("steps not an array: %v\nstdout: %s", execResult.JSON["steps"], execResult.RawStdout)
+	}
+	integrityPassed := false
+	dbStrategyPassed := false
+	for _, s := range steps {
+		m, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := m["name"].(string)
+		status, _ := m["status"].(string)
+		if name == "integrity_check" && status == "pass" {
+			integrityPassed = true
+		}
+		if name == "db_strategy" && status == "pass" {
+			dbStrategyPassed = true
+		}
+	}
+	if !integrityPassed {
+		t.Fatalf("expected integrity_check step to pass (compatible path), steps: %v\nstdout: %s",
+			steps, execResult.RawStdout)
+	}
+	if !dbStrategyPassed {
+		t.Fatalf("expected db_strategy step to pass (compatible path), steps: %v\nstdout: %s",
+			steps, execResult.RawStdout)
+	}
+	if execResult.JSON["db_strategy"] != "use_current" {
+		t.Fatalf("db_strategy = %v, want use_current\nstdout: %s",
+			execResult.JSON["db_strategy"], execResult.RawStdout)
+	}
+
+	// 8. Second rehearsal: corrupt the DB, then run rollback with --execute
+	//    using the backup (restore path).
+	dbPath := filepath.Join(dataDir, "gowa.db")
+	garbage := []byte("SQLite format 3\x00" + strings.Repeat("\xff", 512))
+	if err := os.WriteFile(dbPath, garbage, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Kill any fake-bun processes from the first run before the second.
+	killFakeBun(t)
+
+	restoreResult := runScript(t, "rollback", []string{
+		"--execute",
+		"--backup-dir", backupDir,
+		"--go-pid", fmt.Sprint(goPid),
+		"--go-version", "test-v1.0.0",
+		"--bun-binary", bunBinary,
+		"--bun-checksum", correctChecksum,
+		"--data-dir", dataDir,
+		"--bun-url", "http://127.0.0.1:1", // unreachable so smoke will fail
+		"--override-ambiguous-state",
+	})
+
+	// 9. Verify backup restore succeeds and integrity passes.
+	restoreSteps, ok := restoreResult.JSON["steps"].([]any)
+	if !ok {
+		t.Fatalf("restore steps not an array: %v\nstdout: %s",
+			restoreResult.JSON["steps"], restoreResult.RawStdout)
+	}
+	restoreDbStrategyPassed := false
+	for _, s := range restoreSteps {
+		m, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := m["name"].(string)
+		status, _ := m["status"].(string)
+		if name == "db_strategy" && status == "pass" {
+			restoreDbStrategyPassed = true
+		}
+	}
+	if !restoreDbStrategyPassed {
+		t.Fatalf("expected db_strategy step to pass (restore path), steps: %v\nstdout: %s",
+			restoreSteps, restoreResult.RawStdout)
+	}
+	if restoreResult.JSON["db_strategy"] != "restore_backup" {
+		t.Fatalf("db_strategy = %v, want restore_backup\nstdout: %s",
+			restoreResult.JSON["db_strategy"], restoreResult.RawStdout)
+	}
+
+	// Verify the DB was actually restored (integrity check passes on the
+	// restored DB file).
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("restored DB file not found: %v", err)
+	}
+	// Use sqlite3 to verify the restored DB.
+	sqlite3Path, err := exec.LookPath("sqlite3")
+	if err != nil {
+		t.Skip("sqlite3 not available for post-restore verification")
+	}
+	integrityCmd := exec.Command(sqlite3Path, dbPath, "PRAGMA integrity_check;")
+	integrityOut, err := integrityCmd.Output()
+	if err != nil {
+		t.Fatalf("sqlite3 integrity check on restored DB failed: %v\noutput: %s", err, integrityOut)
+	}
+	integrityStr := strings.TrimSpace(string(integrityOut))
+	if integrityStr != "ok" {
+		t.Fatalf("restored DB integrity check = %q, want ok", integrityStr)
 	}
 }

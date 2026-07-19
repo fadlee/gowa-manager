@@ -147,6 +147,48 @@ function Invoke-PostCheck([string]$Name, [string]$Path, [bool]$UseAuth, [int]$Ex
   }
 }
 
+# Invoke-GetCheckMulti accepts multiple acceptable status codes (used for
+# proxy endpoints that may return 200, 502, or 503 depending on whether
+# the upstream instance is running).
+function Invoke-GetCheckMulti([string]$Name, [string]$Path, [bool]$UseAuth, [int[]]$Expects) {
+  $fullUrl = "$Url$Path"
+  try {
+    $headers = @{}
+    if ($UseAuth) { $headers['Authorization'] = $authHeader }
+    $resp = Invoke-WebRequest -Uri $fullUrl -Method Get -Headers $headers -UseBasicParsing -TimeoutSec 3
+    $status = [int]$resp.StatusCode
+  } catch {
+    $status = 0
+    if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+  }
+  $matched = $false
+  foreach ($expect in $Expects) {
+    if ($status -eq $expect) { $matched = $true; break }
+  }
+  $expectsStr = $Expects -join ' '
+  if ($matched) {
+    Add-Check $Name 'pass' $status "GET $Path -> $status"
+    $script:passCount++
+  } else {
+    Add-Check $Name 'fail' $status "GET $Path expected one of $expectsStr got $status"
+    Add-Error "$Name`: GET $Path expected one of $expectsStr got $status"
+    $script:failCount++
+  }
+}
+
+# Fetch the response body (for JSON parsing).  Does not record a check.
+function Fetch-Body([string]$Path, [bool]$UseAuth) {
+  $fullUrl = "$Url$Path"
+  try {
+    $headers = @{}
+    if ($UseAuth) { $headers['Authorization'] = $authHeader }
+    $resp = Invoke-WebRequest -Uri $fullUrl -Method Get -Headers $headers -UseBasicParsing -TimeoutSec 3
+    return $resp.Content
+  } catch {
+    return ''
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Non-destructive checks
 # ---------------------------------------------------------------------------
@@ -162,6 +204,40 @@ Invoke-PostCheck 'auth_login' '/api/auth/login' $true 200
 
 # GET /api/instances - with Basic Auth, expect 200.
 Invoke-GetCheck 'instances' '/api/instances' $true 200
+
+# Parse the instances list to get the first instance's id and key for
+# the detail/status/proxy checks below.
+$firstId = ''
+$firstKey = ''
+$instancesBody = Fetch-Body '/api/instances' $true
+if ($instancesBody) {
+  try {
+    $instancesJson = $instancesBody | ConvertFrom-Json
+    if ($instancesJson -and $instancesJson.Count -gt 0) {
+      $firstId = [string]$instancesJson[0].id
+      $firstKey = [string]$instancesJson[0].key
+    }
+  } catch {
+    # JSON parse failed — leave firstId/firstKey empty.
+  }
+}
+
+if ($firstId -and $firstKey) {
+  # GET /api/instances/{id} - instance detail, with Basic Auth, expect 200.
+  Invoke-GetCheck 'instance_detail' "/api/instances/$firstId" $true 200
+  # GET /api/instances/{id}/status - instance status, with Basic Auth, expect 200.
+  Invoke-GetCheck 'instance_status' "/api/instances/$firstId/status" $true 200
+  # GET /app/{key}/status - proxy status, no auth.  Accept 200, 502, 503.
+  Invoke-GetCheckMulti 'proxy_status' "/app/$firstKey/status" $false @(200, 502, 503)
+  # GET /app/{key}/health - proxy health, no auth.  Same multi-accept.
+  Invoke-GetCheckMulti 'proxy_health' "/app/$firstKey/health" $false @(200, 502, 503)
+} else {
+  # No instances available — skip these checks (not failures).
+  Add-Check 'instance_detail' 'skip' 0 'no instances available - skipped'
+  Add-Check 'instance_status' 'skip' 0 'no instances available - skipped'
+  Add-Check 'proxy_status' 'skip' 0 'no instances available - skipped'
+  Add-Check 'proxy_health' 'skip' 0 'no instances available - skipped'
+}
 
 # GET /api/system/status - with Basic Auth, expect 200.
 Invoke-GetCheck 'system_status' '/api/system/status' $true 200
@@ -181,22 +257,133 @@ if ($Metrics) {
 # Destructive checks (only when -Destructive and -TestKey supplied)
 # ---------------------------------------------------------------------------
 if ($Destructive) {
-  $body = @{ name = "smoke-test-$TestKey"; gowa_version = 'v1.0.0' } | ConvertTo-Json -Compress
+  # Full lifecycle: create -> start -> status -> stop -> delete.
+  # Each step is recorded.  If any step fails, we continue to the next
+  # (best-effort cleanup).  The delete step is always attempted.
+
+  # 1. Create: POST /api/instances with the test key.
+  $createBody = @{ name = "smoke-test-$TestKey"; gowa_version = 'v1.0.0' } | ConvertTo-Json -Compress
+  $destructiveId = ''
   try {
     $headers = @{ Authorization = $authHeader; 'Content-Type' = 'application/json' }
-    $resp = Invoke-WebRequest -Uri "$Url/api/instances" -Method Post -Headers $headers -Body $body -UseBasicParsing -TimeoutSec 3
-    $status = [int]$resp.StatusCode
+    $createResp = Invoke-WebRequest -Uri "$Url/api/instances" -Method Post -Headers $headers -Body $createBody -UseBasicParsing -TimeoutSec 5
+    $createStatus = [int]$createResp.StatusCode
+    $createBodyResp = $createResp.Content
   } catch {
-    $status = 0
-    if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+    $createStatus = 0
+    $createBodyResp = ''
+    if ($_.Exception.Response) { $createStatus = [int]$_.Exception.Response.StatusCode }
   }
-  if ($status -eq 200 -or $status -eq 201) {
-    Add-Check 'destructive_create' 'pass' $status "POST /api/instances -> $status"
+  if ($createStatus -eq 200 -or $createStatus -eq 201) {
+    Add-Check 'destructive_create' 'pass' $createStatus "POST /api/instances -> $createStatus"
     $script:passCount++
   } else {
-    Add-Check 'destructive_create' 'fail' $status "POST /api/instances expected 200/201 got $status"
-    Add-Error "destructive_create: POST /api/instances expected 200/201 got $status"
+    Add-Check 'destructive_create' 'fail' $createStatus "POST /api/instances expected 200/201 got $createStatus"
+    Add-Error "destructive_create: POST /api/instances expected 200/201 got $createStatus"
     $script:failCount++
+  }
+
+  # Parse the instance ID from the create response.
+  if ($createBodyResp) {
+    try {
+      $createdObj = $createBodyResp | ConvertFrom-Json
+      if ($createdObj.id) { $destructiveId = [string]$createdObj.id }
+    } catch {}
+  }
+
+  # If we don't have an ID from the create response, try listing instances.
+  if (-not $destructiveId) {
+    $listBody = Fetch-Body '/api/instances' $true
+    if ($listBody) {
+      try {
+        $listJson = $listBody | ConvertFrom-Json
+        $found = $listJson | Where-Object { $_.name -eq "smoke-test-$TestKey" } | Select-Object -First 1
+        if ($found -and $found.id) { $destructiveId = [string]$found.id }
+      } catch {}
+    }
+  }
+
+  # 2. Start: POST /api/instances/{id}/start
+  if ($destructiveId) {
+    try {
+      $headers = @{ Authorization = $authHeader }
+      $startResp = Invoke-WebRequest -Uri "$Url/api/instances/$destructiveId/start" -Method Post -Headers $headers -UseBasicParsing -TimeoutSec 5
+      $startStatus = [int]$startResp.StatusCode
+    } catch {
+      $startStatus = 0
+      if ($_.Exception.Response) { $startStatus = [int]$_.Exception.Response.StatusCode }
+    }
+    if ($startStatus -eq 200 -or $startStatus -eq 201) {
+      Add-Check 'destructive_start' 'pass' $startStatus "POST /api/instances/$destructiveId/start -> $startStatus"
+      $script:passCount++
+    } else {
+      Add-Check 'destructive_start' 'fail' $startStatus "POST /api/instances/$destructiveId/start expected 200 got $startStatus"
+      Add-Error "destructive_start: failed with status $startStatus"
+      $script:failCount++
+    }
+
+    # 3. Wait briefly, then check status: GET /api/instances/{id}/status
+    Start-Sleep -Seconds 1
+    try {
+      $headers = @{ Authorization = $authHeader }
+      $dstStatusResp = Invoke-WebRequest -Uri "$Url/api/instances/$destructiveId/status" -Method Get -Headers $headers -UseBasicParsing -TimeoutSec 3
+      $dstStatus = [int]$dstStatusResp.StatusCode
+    } catch {
+      $dstStatus = 0
+      if ($_.Exception.Response) { $dstStatus = [int]$_.Exception.Response.StatusCode }
+    }
+    if ($dstStatus -eq 200) {
+      Add-Check 'destructive_status' 'pass' $dstStatus "GET /api/instances/$destructiveId/status -> $dstStatus"
+      $script:passCount++
+    } else {
+      Add-Check 'destructive_status' 'fail' $dstStatus "GET /api/instances/$destructiveId/status expected 200 got $dstStatus"
+      Add-Error "destructive_status: failed with status $dstStatus"
+      $script:failCount++
+    }
+
+    # 4. Stop: POST /api/instances/{id}/stop
+    try {
+      $headers = @{ Authorization = $authHeader }
+      $stopResp = Invoke-WebRequest -Uri "$Url/api/instances/$destructiveId/stop" -Method Post -Headers $headers -UseBasicParsing -TimeoutSec 5
+      $stopStatus = [int]$stopResp.StatusCode
+    } catch {
+      $stopStatus = 0
+      if ($_.Exception.Response) { $stopStatus = [int]$_.Exception.Response.StatusCode }
+    }
+    if ($stopStatus -eq 200 -or $stopStatus -eq 201) {
+      Add-Check 'destructive_stop' 'pass' $stopStatus "POST /api/instances/$destructiveId/stop -> $stopStatus"
+      $script:passCount++
+    } else {
+      Add-Check 'destructive_stop' 'fail' $stopStatus "POST /api/instances/$destructiveId/stop expected 200 got $stopStatus"
+      Add-Error "destructive_stop: failed with status $stopStatus"
+      $script:failCount++
+    }
+  } else {
+    Add-Check 'destructive_start' 'skip' 0 'no instance ID - skipped'
+    Add-Check 'destructive_status' 'skip' 0 'no instance ID - skipped'
+    Add-Check 'destructive_stop' 'skip' 0 'no instance ID - skipped'
+  }
+
+  # 5. Delete: DELETE /api/instances/{id} — always attempted.
+  if ($destructiveId) {
+    try {
+      $headers = @{ Authorization = $authHeader }
+      $deleteResp = Invoke-WebRequest -Uri "$Url/api/instances/$destructiveId" -Method Delete -Headers $headers -UseBasicParsing -TimeoutSec 5
+      $deleteStatus = [int]$deleteResp.StatusCode
+    } catch {
+      $deleteStatus = 0
+      if ($_.Exception.Response) { $deleteStatus = [int]$_.Exception.Response.StatusCode }
+    }
+    if ($deleteStatus -eq 200 -or $deleteStatus -eq 204) {
+      Add-Check 'destructive_delete' 'pass' $deleteStatus "DELETE /api/instances/$destructiveId -> $deleteStatus"
+      $script:passCount++
+    } else {
+      Add-Check 'destructive_delete' 'fail' $deleteStatus "DELETE /api/instances/$destructiveId expected 200/204 got $deleteStatus"
+      Add-Error "destructive_delete: failed with status $deleteStatus"
+      $script:failCount++
+    }
+  } else {
+    Add-Check 'destructive_delete' 'skip' 0 'no instance ID - skipped'
   }
 }
 

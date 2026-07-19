@@ -210,6 +210,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$EXECUTE" = false ]; then
   add_step "dry_run" "pass" "dry-run mode - no changes made"
+  add_step "plan_verify_go_process" "skip" "would verify Go PID $(jstr "$GO_PID") is running and record version $(jstr "$GO_VERSION")"
   add_step "plan_stop_go" "skip" "would stop Go PID $(jstr "$GO_PID")"
   add_step "plan_quiesce" "skip" "would wait for lifecycle operations to quiesce"
   add_step "plan_record_children" "skip" "would record child process state from $(jstr "$DATA_DIR")"
@@ -247,14 +248,16 @@ EOF
   log "Bun URL:      $BUN_URL"
   log ""
   log "Plan:"
+  log "  0. Verify Go process (PID ${GO_PID:-<not specified>}, version ${GO_VERSION:-<not specified>})"
   log "  1. Stop Go traffic (PID ${GO_PID:-<not specified>})"
   log "  2. Wait for lifecycle operations to quiesce"
   log "  3. Record child process state from $DATA_DIR"
   log "  4. Capture logs and current DB"
   log "  5. Run SQLite integrity and schema checks"
   log "  6. Choose DB strategy (use current or restore backup)"
-  log "  7. Start pinned Bun binary"
-  log "  8. Run Bun smoke tests against $BUN_URL"
+  log "  7. Verify Bun binary checksum"
+  log "  8. Start pinned Bun binary"
+  log "  9. Run Bun smoke tests against $BUN_URL"
   log ""
   log "Result: DRY-RUN — no changes made. Use --execute to perform rollback."
   exit 0
@@ -264,25 +267,47 @@ fi
 # EXECUTE mode
 # ---------------------------------------------------------------------------
 exit_code=0
+DB_STRATEGY="none"
+GO_PID_VERIFIED=false
 
-# Step 1: Stop Go traffic (stop the Go process by PID).
+# Step 0: Verify Go process is running and record version info.
+# The --go-version is recorded as the expected version.  Runtime version
+# verification is not possible without querying the process directly.
 if kill -0 "$GO_PID" 2>/dev/null; then
-  if kill -TERM "$GO_PID" 2>/dev/null; then
-    add_step "stop_go" "pass" "sent SIGTERM to PID $GO_PID"
+  add_step "verify_go_process" "pass" "Go PID $GO_PID is running; expected version $GO_VERSION (runtime version verification not possible without querying process directly)"
+  GO_PID_VERIFIED=true
+else
+  if [ "$OVERRIDE_AMBIGUOUS" = true ]; then
+    add_step "verify_go_process" "pass" "Go PID $GO_PID not running (override); expected version $GO_VERSION"
+    add_warning "Go PID $GO_PID not running; proceeded due to --override-ambiguous-state"
+    GO_PID_VERIFIED=true
   else
-    add_step "stop_go" "fail" "failed to send SIGTERM to PID $GO_PID"
-    add_error "cannot stop Go process: kill -TERM $GO_PID failed"
+    add_step "verify_go_process" "fail" "Go PID $GO_PID is not running; expected version $GO_VERSION"
+    add_error "Go PID $GO_PID is not running; cannot verify Go process"
     exit_code=1
   fi
-else
-  # Process not running — ambiguous state.
-  if [ "$OVERRIDE_AMBIGUOUS" = true ]; then
-    add_step "stop_go" "pass" "Go PID $GO_PID not running (override-ambiguous-state)"
-    add_warning "Go PID $GO_PID was not running; proceeded due to --override-ambiguous-state"
+fi
+
+# Step 1: Stop Go traffic (stop the Go process by PID).
+if [ "$exit_code" -eq 0 ]; then
+  if kill -0 "$GO_PID" 2>/dev/null; then
+    if kill -TERM "$GO_PID" 2>/dev/null; then
+      add_step "stop_go" "pass" "sent SIGTERM to PID $GO_PID"
+    else
+      add_step "stop_go" "fail" "failed to send SIGTERM to PID $GO_PID"
+      add_error "cannot stop Go process: kill -TERM $GO_PID failed"
+      exit_code=1
+    fi
   else
-    add_step "stop_go" "fail" "Go PID $GO_PID not running and --override-ambiguous-state not set"
-    add_error "Go PID $GO_PID is not running; use --override-ambiguous-state to proceed"
-    exit_code=1
+    # Process not running — ambiguous state.
+    if [ "$OVERRIDE_AMBIGUOUS" = true ]; then
+      add_step "stop_go" "pass" "Go PID $GO_PID not running (override-ambiguous-state)"
+      add_warning "Go PID $GO_PID was not running; proceeded due to --override-ambiguous-state"
+    else
+      add_step "stop_go" "fail" "Go PID $GO_PID not running and --override-ambiguous-state not set"
+      add_error "Go PID $GO_PID is not running; use --override-ambiguous-state to proceed"
+      exit_code=1
+    fi
   fi
 fi
 
@@ -333,15 +358,18 @@ if [ "$exit_code" -eq 0 ]; then
 fi
 
 # Step 4: Capture logs and current DB (call backup.sh).
+# The capture goes to a subdirectory so the original pre-cutover backup
+# in $BACKUP_DIR is preserved for the db_strategy restore step.
 if [ "$exit_code" -eq 0 ]; then
   _script_dir=$(dirname "$0" 2>/dev/null)
   _backup_script="$_script_dir/backup.sh"
+  _capture_dir="$BACKUP_DIR/rollback-capture"
   if [ -f "$_backup_script" ]; then
-    # Run backup.sh to capture the current DB state.
-    _backup_out=$(sh "$_backup_script" --data-dir "$DATA_DIR" --backup-dir "$BACKUP_DIR" 2>/dev/null)
+    # Run backup.sh to capture the current DB state to a subdirectory.
+    _backup_out=$(sh "$_backup_script" --data-dir "$DATA_DIR" --backup-dir "$_capture_dir" 2>/dev/null)
     _backup_exit=$?
     if [ "$_backup_exit" -eq 0 ]; then
-      add_step "capture_logs_db" "pass" "backup.sh completed to $BACKUP_DIR"
+      add_step "capture_logs_db" "pass" "backup.sh completed to $_capture_dir"
     else
       if [ "$OVERRIDE_AMBIGUOUS" = true ]; then
         add_step "capture_logs_db" "pass" "backup.sh failed (override)"
@@ -359,6 +387,9 @@ if [ "$exit_code" -eq 0 ]; then
 fi
 
 # Step 5: Run SQLite integrity check and schema check.
+# Sets DB_COMPATIBLE for the db_strategy step.  Does NOT abort on failure
+# — the db_strategy step handles recovery by restoring from backup.
+DB_COMPATIBLE=false
 if [ "$exit_code" -eq 0 ]; then
   DB_PATH="$DATA_DIR/gowa.db"
   if [ -f "$DB_PATH" ] && command -v "$SQLITE_BIN" >/dev/null 2>&1; then
@@ -366,29 +397,31 @@ if [ "$exit_code" -eq 0 ]; then
     if [ "$_integrity" = "ok" ]; then
       add_step "integrity_check" "pass" "SQLite integrity check: ok"
     else
-      if [ "$OVERRIDE_AMBIGUOUS" = true ]; then
-        add_step "integrity_check" "pass" "integrity check: $_integrity (override)"
-        add_warning "SQLite integrity check returned: $_integrity; proceeded due to override"
-      else
-        add_step "integrity_check" "fail" "integrity check: $_integrity"
-        add_error "SQLite integrity check failed: $_integrity"
-        exit_code=1
-      fi
+      add_step "integrity_check" "fail" "integrity check: $_integrity"
     fi
     # Schema check: verify instances table exists.
     _schema=$("$SQLITE_BIN" "$DB_PATH" \
       "SELECT name FROM sqlite_master WHERE type='table' AND name='instances';" 2>/dev/null | head -1)
     if [ "$_schema" = "instances" ]; then
-      add_step "schema_check" "pass" "instances table present"
-    else
-      if [ "$OVERRIDE_AMBIGUOUS" = true ]; then
-        add_step "schema_check" "pass" "instances table missing (override)"
-        add_warning "instances table not found; proceeded due to override"
+      # Column check: verify required columns (same as preflight).
+      required_cols="id key name port status config gowa_version created_at updated_at error_message"
+      _cols_missing=0
+      for col in $required_cols; do
+        if ! "$SQLITE_BIN" "$DB_PATH" "PRAGMA table_info(instances);" 2>/dev/null | grep -q "|$col|"; then
+          _cols_missing=$((_cols_missing + 1))
+        fi
+      done
+      if [ "$_cols_missing" -eq 0 ]; then
+        add_step "schema_check" "pass" "instances table present with all required columns"
       else
-        add_step "schema_check" "fail" "instances table missing"
-        add_error "schema check failed: instances table not found"
-        exit_code=1
+        add_step "schema_check" "fail" "instances table missing $_cols_missing required column(s)"
       fi
+    else
+      add_step "schema_check" "fail" "instances table missing"
+    fi
+    # Determine overall compatibility.
+    if [ "$_integrity" = "ok" ] && [ "$_schema" = "instances" ] && [ "$_cols_missing" -eq 0 ]; then
+      DB_COMPATIBLE=true
     fi
   else
     add_step "integrity_check" "skip" "DB or sqlite3 unavailable"
@@ -396,7 +429,64 @@ if [ "$exit_code" -eq 0 ]; then
   fi
 fi
 
-# Step 6: Verify Bun binary checksum before starting.
+# Step 6: DB strategy — use current DB if compatible, or restore from backup.
+if [ "$exit_code" -eq 0 ]; then
+  if [ "$DB_COMPATIBLE" = true ]; then
+    add_step "db_strategy" "pass" "using current DB (compatible)"
+    DB_STRATEGY="use_current"
+  else
+    DB_STRATEGY="restore_backup"
+    _script_dir=$(dirname "$0" 2>/dev/null)
+    _backup_script="$_script_dir/backup.sh"
+    _restore_ok=false
+    if [ -f "$_backup_script" ]; then
+      # Verify the backup manifest.
+      _verify_out=$(sh "$_backup_script" --verify --data-dir "$DATA_DIR" --backup-dir "$BACKUP_DIR" 2>/dev/null)
+      _verify_exit=$?
+      if [ "$_verify_exit" -eq 0 ]; then
+        # Copy the backup DB file to the data dir.
+        _backup_db="$BACKUP_DIR/gowa.db"
+        if [ -f "$_backup_db" ]; then
+          if cp "$_backup_db" "$DATA_DIR/gowa.db" 2>/dev/null; then
+            # Verify the restored DB passes integrity check.
+            if [ -f "$DATA_DIR/gowa.db" ] && command -v "$SQLITE_BIN" >/dev/null 2>&1; then
+              _restored_integrity=$("$SQLITE_BIN" "$DATA_DIR/gowa.db" "PRAGMA integrity_check;" 2>/dev/null | head -1)
+              if [ "$_restored_integrity" = "ok" ]; then
+                add_step "db_strategy" "pass" "restored DB from backup (verified)"
+                _restore_ok=true
+              else
+                add_step "db_strategy" "fail" "restored DB but integrity check failed: $_restored_integrity"
+                add_error "DB restore failed: restored DB integrity check: $_restored_integrity"
+                exit_code=1
+              fi
+            else
+              add_step "db_strategy" "pass" "restored DB from backup (sqlite3 unavailable for verification)"
+              _restore_ok=true
+            fi
+          else
+            add_step "db_strategy" "fail" "failed to copy backup DB to data dir"
+            add_error "DB restore failed: cannot copy $BACKUP_DIR/gowa.db to $DATA_DIR/gowa.db"
+            exit_code=1
+          fi
+        else
+          add_step "db_strategy" "fail" "backup DB file not found: $BACKUP_DIR/gowa.db"
+          add_error "DB restore failed: backup DB file not found at $BACKUP_DIR/gowa.db"
+          exit_code=1
+        fi
+      else
+        add_step "db_strategy" "fail" "backup verify failed (exit $_verify_exit)"
+        add_error "DB restore failed: backup verification failed with exit code $_verify_exit"
+        exit_code=1
+      fi
+    else
+      add_step "db_strategy" "fail" "backup.sh not found at $_backup_script"
+      add_error "DB restore failed: backup.sh not found"
+      exit_code=1
+    fi
+  fi
+fi
+
+# Step 7: Verify Bun binary checksum before starting.
 if [ "$exit_code" -eq 0 ]; then
   if [ -f "$BUN_BINARY" ]; then
     _actual_sha=$(compute_sha "$BUN_BINARY")
@@ -414,7 +504,7 @@ if [ "$exit_code" -eq 0 ]; then
   fi
 fi
 
-# Step 7: Start the pinned Bun command.
+# Step 8: Start the pinned Bun command.
 if [ "$exit_code" -eq 0 ]; then
   if [ -x "$BUN_BINARY" ]; then
     # Start Bun in the background.  In a real deployment the operator would
@@ -430,7 +520,7 @@ if [ "$exit_code" -eq 0 ]; then
   fi
 fi
 
-# Step 8: Run Bun smoke tests (call smoke.sh against the Bun URL).
+# Step 9: Run Bun smoke tests (call smoke.sh against the Bun URL).
 if [ "$exit_code" -eq 0 ]; then
   _script_dir=$(dirname "$0" 2>/dev/null)
   _smoke_script="$_script_dir/smoke.sh"
@@ -473,6 +563,8 @@ cat <<EOF
   "backup_dir": $(jstr "$BACKUP_DIR"),
   "bun_url": $(jstr "$BUN_URL"),
   "override_ambiguous_state": $(jbool "$OVERRIDE_AMBIGUOUS"),
+  "go_pid_verified": $(jbool "$GO_PID_VERIFIED"),
+  "db_strategy": $(jstr "$DB_STRATEGY"),
   "steps": [$STEPS],
   "errors": [$ERRORS],
   "warnings": [$WARNINGS],

@@ -206,6 +206,52 @@ do_post() {
   fi
 }
 
+# http_get_multi <name> <path> <use_auth> <expect1> [expect2 ...]
+# Accepts multiple acceptable status codes (used for proxy endpoints that
+# may return 200, 502, or 503 depending on whether the upstream is running).
+do_get_multi() {
+  _name=$1
+  _path=$2
+  _use_auth=$3
+  shift 3
+  _expects="$*"
+  _full="$BASE_URL$_path"
+  if [ "$_use_auth" = "1" ]; then
+    _resp=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' -u "$AUTH" "$_full" 2>/dev/null)
+  else
+    _resp=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "$_full" 2>/dev/null)
+  fi
+  HTTP_STATUS=${_resp:-0}
+  _matched=0
+  for _expect in $_expects; do
+    if [ "$HTTP_STATUS" = "$_expect" ]; then
+      _matched=1
+      break
+    fi
+  done
+  if [ "$_matched" = "1" ]; then
+    add_check "$_name" "pass" "$HTTP_STATUS" "GET $_path -> $HTTP_STATUS"
+    PASS_COUNT=$((PASS_COUNT + 1))
+  else
+    add_check "$_name" "fail" "$HTTP_STATUS" "GET $_path expected one of $_expects got $HTTP_STATUS"
+    add_error "$_name: GET $_path expected one of $_expects got $HTTP_STATUS"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  fi
+}
+
+# Fetch the response body (for JSON parsing).  Does not record a check.
+# fetch_body <path> <use_auth>
+fetch_body() {
+  _fb_path=$1
+  _fb_auth=$2
+  _fb_full="$BASE_URL$_fb_path"
+  if [ "$_fb_auth" = "1" ]; then
+    curl -s --max-time 3 -u "$AUTH" "$_fb_full" 2>/dev/null
+  else
+    curl -s --max-time 3 "$_fb_full" 2>/dev/null
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Check: curl availability
 # ---------------------------------------------------------------------------
@@ -247,6 +293,44 @@ do_post "auth_login" "/api/auth/login" 1 200
 # GET /api/instances — with Basic Auth, expect 200.
 do_get "instances" "/api/instances" 1 200
 
+# Parse the instances list to get the first instance's id and key for
+# the detail/status/proxy checks below.
+FIRST_ID=""
+FIRST_KEY=""
+_instances_body=$(fetch_body "/api/instances" 1)
+if command -v jq >/dev/null 2>&1; then
+  _inst_count=$(printf '%s' "$_instances_body" | jq 'length' 2>/dev/null)
+  if [ -n "$_inst_count" ] && [ "$_inst_count" -gt 0 ] 2>/dev/null; then
+    FIRST_ID=$(printf '%s' "$_instances_body" | jq -r '.[0].id // empty' 2>/dev/null)
+    FIRST_KEY=$(printf '%s' "$_instances_body" | jq -r '.[0].key // empty' 2>/dev/null)
+  fi
+else
+  # Fallback: grep/sed to extract the first id and key.
+  _inst_count=$(printf '%s' "$_instances_body" | grep -o '"id"' 2>/dev/null | wc -l | tr -d ' ')
+  if [ -n "$_inst_count" ] && [ "$_inst_count" -gt 0 ] 2>/dev/null; then
+    FIRST_ID=$(printf '%s' "$_instances_body" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+    FIRST_KEY=$(printf '%s' "$_instances_body" | sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  fi
+fi
+
+if [ -n "$FIRST_ID" ] && [ -n "$FIRST_KEY" ]; then
+  # GET /api/instances/{id} — instance detail, with Basic Auth, expect 200.
+  do_get "instance_detail" "/api/instances/$FIRST_ID" 1 200
+  # GET /api/instances/{id}/status — instance status, with Basic Auth, expect 200.
+  do_get "instance_status" "/api/instances/$FIRST_ID/status" 1 200
+  # GET /app/{key}/status — proxy status, no auth.  Accept 200, 502, 503
+  # (proxy responds even if the upstream instance is down).
+  do_get_multi "proxy_status" "/app/$FIRST_KEY/status" 0 200 502 503
+  # GET /app/{key}/health — proxy health, no auth.  Same multi-accept.
+  do_get_multi "proxy_health" "/app/$FIRST_KEY/health" 0 200 502 503
+else
+  # No instances available — skip these checks with warnings (not failures).
+  add_check "instance_detail" "skip" 0 "no instances available — skipped"
+  add_check "instance_status" "skip" 0 "no instances available — skipped"
+  add_check "proxy_status" "skip" 0 "no instances available — skipped"
+  add_check "proxy_health" "skip" 0 "no instances available — skipped"
+fi
+
 # GET /api/system/status — with Basic Auth, expect 200.
 do_get "system_status" "/api/system/status" 1 200
 
@@ -265,23 +349,105 @@ fi
 # Destructive checks (only when --destructive and --test-key supplied)
 # ---------------------------------------------------------------------------
 if [ "$DESTRUCTIVE" = true ]; then
-  # In destructive mode we may start/stop/create/delete the test instance.
-  # We issue a GET on the test instance status to confirm it is reachable.
-  # Full lifecycle (create/start/stop/delete) is intentionally minimal here
-  # to avoid side effects on a production system; the operator is expected
-  # to supply a throwaway --test-key.
-  _tk_path="/api/instances"
-  _resp=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' -X POST -u "$AUTH" \
+  # Full lifecycle: create → start → status → stop → delete.
+  # Each step is recorded.  If any step fails, we continue to the next
+  # (best-effort cleanup).  The delete step is always attempted.
+
+  # 1. Create: POST /api/instances with the test key.
+  _create_path="/api/instances"
+  _create_body="{\"name\":\"smoke-test-$TEST_KEY\",\"gowa_version\":\"v1.0.0\"}"
+  _create_resp=$(curl -s --max-time 5 -w '\n%{http_code}' -X POST -u "$AUTH" \
     -H 'Content-Type: application/json' \
-    -d "{\"name\":\"smoke-test-$(jstr "$TEST_KEY")\",\"gowa_version\":\"v1.0.0\"}" \
-    "$BASE_URL$_tk_path" 2>/dev/null)
-  if [ "$_resp" = "200" ] || [ "$_resp" = "201" ]; then
-    add_check "destructive_create" "pass" "$_resp" "POST $_tk_path -> $_resp"
+    -d "$_create_body" \
+    "$BASE_URL$_create_path" 2>/dev/null)
+  _create_status=$(printf '%s' "$_create_resp" | tail -1)
+  _create_body_resp=$(printf '%s' "$_create_resp" | sed '$d')
+  if [ "$_create_status" = "200" ] || [ "$_create_status" = "201" ]; then
+    add_check "destructive_create" "pass" "$_create_status" "POST $_create_path -> $_create_status"
     PASS_COUNT=$((PASS_COUNT + 1))
   else
-    add_check "destructive_create" "fail" "$_resp" "POST $_tk_path expected 200/201 got $_resp"
-    add_error "destructive_create: POST $_tk_path expected 200/201 got $_resp"
+    add_check "destructive_create" "fail" "${_create_status:-0}" "POST $_create_path expected 200/201 got ${_create_status:-0}"
+    add_error "destructive_create: POST $_create_path expected 200/201 got ${_create_status:-0}"
     FAIL_COUNT=$((FAIL_COUNT + 1))
+  fi
+
+  # Parse the instance ID from the create response.
+  _destructive_id=""
+  if command -v jq >/dev/null 2>&1; then
+    _destructive_id=$(printf '%s' "$_create_body_resp" | jq -r '.id // empty' 2>/dev/null)
+  else
+    _destructive_id=$(printf '%s' "$_create_body_resp" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+  fi
+
+  # If we don't have an ID from the create response, try listing instances
+  # and finding one with the smoke-test name.
+  if [ -z "$_destructive_id" ]; then
+    _list_body=$(fetch_body "/api/instances" 1)
+    if command -v jq >/dev/null 2>&1; then
+      _destructive_id=$(printf '%s' "$_list_body" | jq -r --arg name "smoke-test-$TEST_KEY" '.[] | select(.name == $name) | .id' 2>/dev/null | head -1)
+    else
+      _destructive_id=$(printf '%s' "$_list_body" | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | tail -1 | sed 's/.*:[[:space:]]*//')
+    fi
+  fi
+
+  # 2. Start: POST /api/instances/{id}/start
+  if [ -n "$_destructive_id" ]; then
+    _start_resp=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -X POST -u "$AUTH" \
+      "$BASE_URL/api/instances/$_destructive_id/start" 2>/dev/null)
+    if [ "$_start_resp" = "200" ] || [ "$_start_resp" = "201" ]; then
+      add_check "destructive_start" "pass" "$_start_resp" "POST /api/instances/$_destructive_id/start -> $_start_resp"
+      PASS_COUNT=$((PASS_COUNT + 1))
+    else
+      add_check "destructive_start" "fail" "${_start_resp:-0}" "POST /api/instances/$_destructive_id/start expected 200 got ${_start_resp:-0}"
+      add_error "destructive_start: failed with status ${_start_resp:-0}"
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    # 3. Wait briefly, then check status: GET /api/instances/{id}/status
+    sleep 1
+    _dst_status_resp=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' -u "$AUTH" \
+      "$BASE_URL/api/instances/$_destructive_id/status" 2>/dev/null)
+    if [ "$_dst_status_resp" = "200" ]; then
+      add_check "destructive_status" "pass" "$_dst_status_resp" "GET /api/instances/$_destructive_id/status -> $_dst_status_resp"
+      PASS_COUNT=$((PASS_COUNT + 1))
+    else
+      add_check "destructive_status" "fail" "${_dst_status_resp:-0}" "GET /api/instances/$_destructive_id/status expected 200 got ${_dst_status_resp:-0}"
+      add_error "destructive_status: failed with status ${_dst_status_resp:-0}"
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    # 4. Stop: POST /api/instances/{id}/stop
+    _stop_resp=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -X POST -u "$AUTH" \
+      "$BASE_URL/api/instances/$_destructive_id/stop" 2>/dev/null)
+    if [ "$_stop_resp" = "200" ] || [ "$_stop_resp" = "201" ]; then
+      add_check "destructive_stop" "pass" "$_stop_resp" "POST /api/instances/$_destructive_id/stop -> $_stop_resp"
+      PASS_COUNT=$((PASS_COUNT + 1))
+    else
+      add_check "destructive_stop" "fail" "${_stop_resp:-0}" "POST /api/instances/$_destructive_id/stop expected 200 got ${_stop_resp:-0}"
+      add_error "destructive_stop: failed with status ${_stop_resp:-0}"
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+  else
+    add_check "destructive_start" "skip" 0 "no instance ID — skipped"
+    add_check "destructive_status" "skip" 0 "no instance ID — skipped"
+    add_check "destructive_stop" "skip" 0 "no instance ID — skipped"
+  fi
+
+  # 5. Delete: DELETE /api/instances/{id} — always attempted even if
+  #    earlier steps failed (best-effort cleanup).
+  if [ -n "$_destructive_id" ]; then
+    _delete_resp=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -X DELETE -u "$AUTH" \
+      "$BASE_URL/api/instances/$_destructive_id" 2>/dev/null)
+    if [ "$_delete_resp" = "200" ] || [ "$_delete_resp" = "204" ]; then
+      add_check "destructive_delete" "pass" "$_delete_resp" "DELETE /api/instances/$_destructive_id -> $_delete_resp"
+      PASS_COUNT=$((PASS_COUNT + 1))
+    else
+      add_check "destructive_delete" "fail" "${_delete_resp:-0}" "DELETE /api/instances/$_destructive_id expected 200/204 got ${_delete_resp:-0}"
+      add_error "destructive_delete: failed with status ${_delete_resp:-0}"
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+  else
+    add_check "destructive_delete" "skip" 0 "no instance ID — skipped"
   fi
 fi
 

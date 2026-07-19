@@ -147,6 +147,7 @@ if ($Execute) {
 # ---------------------------------------------------------------------------
 if (-not $Execute) {
   Add-Step 'dry_run' 'pass' 'dry-run mode - no changes made'
+  Add-Step 'plan_verify_go_process' 'skip' "would verify Go PID $GoPid is running and record version $GoVersion"
   Add-Step 'plan_stop_go' 'skip' "would stop Go PID $GoPid"
   Add-Step 'plan_quiesce' 'skip' 'would wait for lifecycle operations to quiesce'
   Add-Step 'plan_record_children' 'skip' "would record child process state from $DataDir"
@@ -188,14 +189,16 @@ if (-not $Execute) {
   [Console]::Error.WriteLine("Bun URL:      $BunUrl")
   [Console]::Error.WriteLine('')
   [Console]::Error.WriteLine('Plan:')
+  [Console]::Error.WriteLine("  0. Verify Go process (PID $goPidStr, version $goVerStr)")
   [Console]::Error.WriteLine("  1. Stop Go traffic (PID $goPidStr)")
   [Console]::Error.WriteLine('  2. Wait for lifecycle operations to quiesce')
   [Console]::Error.WriteLine("  3. Record child process state from $DataDir")
   [Console]::Error.WriteLine('  4. Capture logs and current DB')
   [Console]::Error.WriteLine('  5. Run SQLite integrity and schema checks')
   [Console]::Error.WriteLine('  6. Choose DB strategy (use current or restore backup)')
-  [Console]::Error.WriteLine('  7. Start pinned Bun binary')
-  [Console]::Error.WriteLine("  8. Run Bun smoke tests against $BunUrl")
+  [Console]::Error.WriteLine('  7. Verify Bun binary checksum')
+  [Console]::Error.WriteLine('  8. Start pinned Bun binary')
+  [Console]::Error.WriteLine("  9. Run Bun smoke tests against $BunUrl")
   [Console]::Error.WriteLine('')
   [Console]::Error.WriteLine('Result: DRY-RUN - no changes made. Use --execute to perform rollback.')
   exit 0
@@ -205,27 +208,51 @@ if (-not $Execute) {
 # EXECUTE mode
 # ---------------------------------------------------------------------------
 $exitCode = 0
+$dbStrategy = 'none'
+$goPidVerified = $false
 
-# Step 1: Stop Go traffic (stop the Go process by PID).
-$goProcess = $null
-try { $goProcess = Get-Process -Id ([int]$GoPid) -ErrorAction Stop } catch {}
-if ($goProcess) {
-  try {
-    Stop-Process -Id ([int]$GoPid) -ErrorAction Stop
-    Add-Step 'stop_go' 'pass' "sent stop to PID $GoPid"
-  } catch {
-    Add-Step 'stop_go' 'fail' "failed to stop PID $GoPid"
-    Add-Error "cannot stop Go process: Stop-Process $GoPid failed"
-    $exitCode = 1
-  }
+# Step 0: Verify Go process is running and record version info.
+# The -GoVersion is recorded as the expected version.  Runtime version
+# verification is not possible without querying the process directly.
+$goProc = $null
+try { $goProc = Get-Process -Id ([int]$GoPid) -ErrorAction Stop } catch {}
+if ($goProc) {
+  Add-Step 'verify_go_process' 'pass' "Go PID $GoPid is running; expected version $GoVersion (runtime version verification not possible without querying process directly)"
+  $goPidVerified = $true
 } else {
   if ($OverrideAmbiguousState) {
-    Add-Step 'stop_go' 'pass' "Go PID $GoPid not running (override-ambiguous-state)"
-    Add-Warning "Go PID $GoPid was not running; proceeded due to --override-ambiguous-state"
+    Add-Step 'verify_go_process' 'pass' "Go PID $GoPid not running (override); expected version $GoVersion"
+    Add-Warning "Go PID $GoPid not running; proceeded due to --override-ambiguous-state"
+    $goPidVerified = $true
   } else {
-    Add-Step 'stop_go' 'fail' "Go PID $GoPid not running and --override-ambiguous-state not set"
-    Add-Error "Go PID $GoPid is not running; use --override-ambiguous-state to proceed"
+    Add-Step 'verify_go_process' 'fail' "Go PID $GoPid is not running; expected version $GoVersion"
+    Add-Error "Go PID $GoPid is not running; cannot verify Go process"
     $exitCode = 1
+  }
+}
+
+# Step 1: Stop Go traffic (stop the Go process by PID).
+if ($exitCode -eq 0) {
+  $goProcess = $null
+  try { $goProcess = Get-Process -Id ([int]$GoPid) -ErrorAction Stop } catch {}
+  if ($goProcess) {
+    try {
+      Stop-Process -Id ([int]$GoPid) -ErrorAction Stop
+      Add-Step 'stop_go' 'pass' "sent stop to PID $GoPid"
+    } catch {
+      Add-Step 'stop_go' 'fail' "failed to stop PID $GoPid"
+      Add-Error "cannot stop Go process: Stop-Process $GoPid failed"
+      $exitCode = 1
+    }
+  } else {
+    if ($OverrideAmbiguousState) {
+      Add-Step 'stop_go' 'pass' "Go PID $GoPid not running (override-ambiguous-state)"
+      Add-Warning "Go PID $GoPid was not running; proceeded due to --override-ambiguous-state"
+    } else {
+      Add-Step 'stop_go' 'fail' "Go PID $GoPid not running and --override-ambiguous-state not set"
+      Add-Error "Go PID $GoPid is not running; use --override-ambiguous-state to proceed"
+      $exitCode = 1
+    }
   }
 }
 
@@ -278,14 +305,17 @@ if ($exitCode -eq 0) {
 }
 
 # Step 4: Capture logs and current DB (call backup.ps1).
+# The capture goes to a subdirectory so the original pre-cutover backup
+# in $BackupDir is preserved for the db_strategy restore step.
 if ($exitCode -eq 0) {
   $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
   $backupScript = Join-Path $scriptDir 'backup.ps1'
+  $captureDir = Join-Path $BackupDir 'rollback-capture'
   if (Test-Path $backupScript -PathType Leaf) {
-    $backupOut = & pwsh -NoProfile -NonInteractive -File $backupScript -DataDir $DataDir -BackupDir $BackupDir 2>$null
+    $backupOut = & pwsh -NoProfile -NonInteractive -File $backupScript -DataDir $DataDir -BackupDir $captureDir 2>$null
     $backupExit = $LASTEXITCODE
     if ($backupExit -eq 0) {
-      Add-Step 'capture_logs_db' 'pass' "backup.ps1 completed to $BackupDir"
+      Add-Step 'capture_logs_db' 'pass' "backup.ps1 completed to $captureDir"
     } else {
       if ($OverrideAmbiguousState) {
         Add-Step 'capture_logs_db' 'pass' "backup.ps1 failed (override)"
@@ -303,6 +333,9 @@ if ($exitCode -eq 0) {
 }
 
 # Step 5: Run SQLite integrity check and schema check.
+# Sets $dbCompatible for the db_strategy step.  Does NOT abort on failure
+# — the db_strategy step handles recovery by restoring from backup.
+$dbCompatible = $false
 if ($exitCode -eq 0) {
   $dbPath = Join-Path $DataDir 'gowa.db'
   $sqliteOk = $false
@@ -312,27 +345,32 @@ if ($exitCode -eq 0) {
     if ($integrity -eq 'ok') {
       Add-Step 'integrity_check' 'pass' 'SQLite integrity check: ok'
     } else {
-      if ($OverrideAmbiguousState) {
-        Add-Step 'integrity_check' 'pass' "integrity check: $integrity (override)"
-        Add-Warning "SQLite integrity check returned: $integrity; proceeded due to override"
-      } else {
-        Add-Step 'integrity_check' 'fail' "integrity check: $integrity"
-        Add-Error "SQLite integrity check failed: $integrity"
-        $exitCode = 1
-      }
+      Add-Step 'integrity_check' 'fail' "integrity check: $integrity"
     }
     $schema = (& $SqliteBin $dbPath "SELECT name FROM sqlite_master WHERE type='table' AND name='instances';" 2>$null | Select-Object -First 1)
     if ($schema -eq 'instances') {
-      Add-Step 'schema_check' 'pass' 'instances table present'
-    } else {
-      if ($OverrideAmbiguousState) {
-        Add-Step 'schema_check' 'pass' 'instances table missing (override)'
-        Add-Warning 'instances table not found; proceeded due to override'
-      } else {
-        Add-Step 'schema_check' 'fail' 'instances table missing'
-        Add-Error 'schema check failed: instances table not found'
-        $exitCode = 1
+      # Column check: verify required columns (same as preflight).
+      $requiredCols = @('id','key','name','port','status','config','gowa_version','created_at','updated_at','error_message')
+      $colsMissing = 0
+      $tableInfo = & $SqliteBin $dbPath "PRAGMA table_info(instances);" 2>$null
+      foreach ($col in $requiredCols) {
+        $found = $false
+        foreach ($row in $tableInfo) {
+          if ($row -match "\|$col\|") { $found = $true; break }
+        }
+        if (-not $found) { $colsMissing++ }
       }
+      if ($colsMissing -eq 0) {
+        Add-Step 'schema_check' 'pass' 'instances table present with all required columns'
+      } else {
+        Add-Step 'schema_check' 'fail' "instances table missing $colsMissing required column(s)"
+      }
+    } else {
+      Add-Step 'schema_check' 'fail' 'instances table missing'
+    }
+    # Determine overall compatibility.
+    if ($integrity -eq 'ok' -and $schema -eq 'instances' -and $colsMissing -eq 0) {
+      $dbCompatible = $true
     }
   } else {
     Add-Step 'integrity_check' 'skip' 'DB or sqlite3 unavailable'
@@ -340,7 +378,64 @@ if ($exitCode -eq 0) {
   }
 }
 
-# Step 6: Verify Bun binary checksum before starting.
+# Step 6: DB strategy — use current DB if compatible, or restore from backup.
+if ($exitCode -eq 0) {
+  if ($dbCompatible) {
+    Add-Step 'db_strategy' 'pass' 'using current DB (compatible)'
+    $dbStrategy = 'use_current'
+  } else {
+    $dbStrategy = 'restore_backup'
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $backupScript = Join-Path $scriptDir 'backup.ps1'
+    if (Test-Path $backupScript -PathType Leaf) {
+      # Verify the backup manifest.
+      $verifyOut = & pwsh -NoProfile -NonInteractive -File $backupScript -Verify -DataDir $DataDir -BackupDir $BackupDir 2>$null
+      $verifyExit = $LASTEXITCODE
+      if ($verifyExit -eq 0) {
+        # Copy the backup DB file to the data dir.
+        $backupDb = Join-Path $BackupDir 'gowa.db'
+        if (Test-Path $backupDb -PathType Leaf) {
+          try {
+            Copy-Item $backupDb (Join-Path $DataDir 'gowa.db') -Force -ErrorAction Stop
+            # Verify the restored DB passes integrity check.
+            $sqliteOk2 = $false
+            try { & $SqliteBin --version 2>$null | Out-Null; $sqliteOk2 = $true } catch {}
+            if ($sqliteOk2) {
+              $restoredIntegrity = (& $SqliteBin (Join-Path $DataDir 'gowa.db') 'PRAGMA integrity_check;' 2>$null | Select-Object -First 1)
+              if ($restoredIntegrity -eq 'ok') {
+                Add-Step 'db_strategy' 'pass' 'restored DB from backup (verified)'
+              } else {
+                Add-Step 'db_strategy' 'fail' "restored DB but integrity check failed: $restoredIntegrity"
+                Add-Error "DB restore failed: restored DB integrity check: $restoredIntegrity"
+                $exitCode = 1
+              }
+            } else {
+              Add-Step 'db_strategy' 'pass' 'restored DB from backup (sqlite3 unavailable for verification)'
+            }
+          } catch {
+            Add-Step 'db_strategy' 'fail' "failed to copy backup DB to data dir"
+            Add-Error "DB restore failed: cannot copy $backupDb to $DataDir"
+            $exitCode = 1
+          }
+        } else {
+          Add-Step 'db_strategy' 'fail' "backup DB file not found: $backupDb"
+          Add-Error "DB restore failed: backup DB file not found at $backupDb"
+          $exitCode = 1
+        }
+      } else {
+        Add-Step 'db_strategy' 'fail' "backup verify failed (exit $verifyExit)"
+        Add-Error "DB restore failed: backup verification failed with exit code $verifyExit"
+        $exitCode = 1
+      }
+    } else {
+      Add-Step 'db_strategy' 'fail' "backup.ps1 not found at $backupScript"
+      Add-Error 'DB restore failed: backup.ps1 not found'
+      $exitCode = 1
+    }
+  }
+}
+
+# Step 7: Verify Bun binary checksum before starting.
 if ($exitCode -eq 0) {
   if (Test-Path $BunBinary -PathType Leaf) {
     $actualSha = Get-Sha256 $BunBinary
@@ -358,7 +453,7 @@ if ($exitCode -eq 0) {
   }
 }
 
-# Step 7: Start the pinned Bun command.
+# Step 8: Start the pinned Bun command.
 if ($exitCode -eq 0) {
   try {
     $bunProc = Start-Process -FilePath $BunBinary -PassThru -ErrorAction Stop
@@ -370,7 +465,7 @@ if ($exitCode -eq 0) {
   }
 }
 
-# Step 8: Run Bun smoke tests (call smoke.ps1 against the Bun URL).
+# Step 9: Run Bun smoke tests (call smoke.ps1 against the Bun URL).
 if ($exitCode -eq 0) {
   $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
   $smokeScript = Join-Path $scriptDir 'smoke.ps1'
@@ -411,6 +506,8 @@ $result = [ordered]@{
   backup_dir              = $BackupDir
   bun_url                 = $BunUrl
   override_ambiguous_state = $OverrideAmbiguousState.IsPresent
+  go_pid_verified         = $goPidVerified
+  db_strategy             = $dbStrategy
   steps                   = $steps
   errors                  = $errors
   warnings                = $warnings
