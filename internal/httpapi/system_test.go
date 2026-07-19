@@ -65,10 +65,21 @@ func TestSystemRoutes(t *testing.T) {
 	})
 
 	t.Run("auto update status uses injected placeholder adapter", func(t *testing.T) {
-		auto := &fakeAutoUpdateService{status: map[string]any{"enabled": true, "checking": false}}
+		lastCheck := "2026-07-19T10:00:00Z"
+		latestVersion := "v1.2.3"
+		auto := &fakeAutoUpdateService{status: AutoUpdateStatus{LastCheck: &lastCheck, LatestVersion: &latestVersion, IsChecking: true}}
 		rec := serveSystemRequest(&fakeSystemService{}, nil, nil, http.MethodGet, "/api/system/auto-update/status", nil, withAutoUpdate(auto))
 		assertStatus(t, rec, http.StatusOK)
-		assertBodyFields(t, rec, map[string]any{"enabled": true, "checking": false})
+		assertJSON(t, rec, map[string]any{"lastCheck": lastCheck, "lastUpdate": nil, "latestVersion": latestVersion, "isChecking": true, "nextCheck": nil})
+		assertBodyExcludes(t, rec, "current_version", "available_version", "update_available")
+	})
+
+	t.Run("auto update check returns legacy placeholder fields", func(t *testing.T) {
+		auto := &fakeAutoUpdateService{check: AutoUpdateCheckResult{Success: true}}
+		rec := serveSystemRequest(&fakeSystemService{}, nil, nil, http.MethodPost, "/api/system/auto-update/check", nil, withAutoUpdate(auto))
+		assertStatus(t, rec, http.StatusOK)
+		assertJSON(t, rec, map[string]any{"success": true, "updated": false, "version": nil, "restartedInstances": float64(0)})
+		assertBodyExcludes(t, rec, "current_version", "available_version", "update_available")
 	})
 
 	t.Run("auto update check errors map to 500", func(t *testing.T) {
@@ -79,10 +90,11 @@ func TestSystemRoutes(t *testing.T) {
 	})
 
 	t.Run("auto update instances returns injected payload", func(t *testing.T) {
-		auto := &fakeAutoUpdateService{instances: []AutoUpdateInstance{{ID: 1, Name: "alpha", CurrentVersion: "v1.0.0", AvailableVersion: "v1.1.0", UpdateAvailable: true}}}
+		auto := &fakeAutoUpdateService{instances: []AutoUpdateInstance{{ID: 1, Name: "alpha", Status: "running"}}}
 		rec := serveSystemRequest(&fakeSystemService{}, nil, nil, http.MethodGet, "/api/system/auto-update/instances", nil, withAutoUpdate(auto))
 		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, []map[string]any{{"id": float64(1), "name": "alpha", "current_version": "v1.0.0", "available_version": "v1.1.0", "update_available": true}})
+		assertJSON(t, rec, []map[string]any{{"id": float64(1), "name": "alpha", "status": "running"}})
+		assertBodyExcludes(t, rec, "current_version", "available_version", "update_available")
 	})
 }
 
@@ -133,16 +145,28 @@ func (c *fakePortChecker) IsPortAvailable(port int) bool {
 }
 
 type fakeAutoUpdateService struct {
-	status    map[string]any
-	check     map[string]any
+	status    AutoUpdateStatus
+	check     AutoUpdateCheckResult
 	instances []AutoUpdateInstance
 	err       error
 }
 
-func (s *fakeAutoUpdateService) Status(context.Context) (map[string]any, error) {
+func (s *fakeAutoUpdateService) Status(context.Context) (AutoUpdateStatus, error) {
 	return s.status, s.err
 }
-func (s *fakeAutoUpdateService) Check(context.Context) (map[string]any, error) { return s.check, s.err }
+func (s *fakeAutoUpdateService) Check(context.Context) (AutoUpdateCheckResult, error) {
+	return s.check, s.err
+}
 func (s *fakeAutoUpdateService) Instances(context.Context) ([]AutoUpdateInstance, error) {
 	return s.instances, s.err
+}
+
+func assertBodyExcludes(t *testing.T, rec *httptest.ResponseRecorder, fields ...string) {
+	t.Helper()
+	body := rec.Body.String()
+	for _, field := range fields {
+		if strings.Contains(body, field) {
+			t.Fatalf("body contains excluded field %q: %s", field, body)
+		}
+	}
 }

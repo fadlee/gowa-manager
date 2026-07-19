@@ -24,8 +24,8 @@ type PortChecker interface {
 }
 
 type AutoUpdateService interface {
-	Status(context.Context) (map[string]any, error)
-	Check(context.Context) (map[string]any, error)
+	Status(context.Context) (AutoUpdateStatus, error)
+	Check(context.Context) (AutoUpdateCheckResult, error)
 	Instances(context.Context) ([]AutoUpdateInstance, error)
 }
 
@@ -59,12 +59,25 @@ type PortRange struct {
 	Max int `json:"max"`
 }
 
+type AutoUpdateStatus struct {
+	LastCheck     *string `json:"lastCheck"`
+	LastUpdate    *string `json:"lastUpdate"`
+	LatestVersion *string `json:"latestVersion"`
+	IsChecking    bool    `json:"isChecking"`
+	NextCheck     *string `json:"nextCheck"`
+}
+
+type AutoUpdateCheckResult struct {
+	Success            bool    `json:"success"`
+	Updated            bool    `json:"updated"`
+	Version            *string `json:"version"`
+	RestartedInstances int     `json:"restartedInstances"`
+}
+
 type AutoUpdateInstance struct {
-	ID               int64  `json:"id"`
-	Name             string `json:"name"`
-	CurrentVersion   string `json:"current_version"`
-	AvailableVersion string `json:"available_version"`
-	UpdateAvailable  bool   `json:"update_available"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 type defaultPortChecker struct{}
@@ -73,12 +86,12 @@ func (defaultPortChecker) IsPortAvailable(port int) bool { return system.IsPortA
 
 type noopAutoUpdateService struct{}
 
-func (noopAutoUpdateService) Status(context.Context) (map[string]any, error) {
-	return map[string]any{"enabled": false, "checking": false}, nil
+func (noopAutoUpdateService) Status(context.Context) (AutoUpdateStatus, error) {
+	return AutoUpdateStatus{}, nil
 }
 
-func (noopAutoUpdateService) Check(context.Context) (map[string]any, error) {
-	return map[string]any{"success": true, "message": "Auto-update scheduler not configured"}, nil
+func (noopAutoUpdateService) Check(context.Context) (AutoUpdateCheckResult, error) {
+	return AutoUpdateCheckResult{Success: true}, nil
 }
 
 func (noopAutoUpdateService) Instances(context.Context) ([]AutoUpdateInstance, error) {
