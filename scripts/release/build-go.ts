@@ -18,7 +18,7 @@
  *   - dist-go/gowa-manager-linux-amd64
  *   - dist-go/gowa-manager-linux-arm64
  *   - dist-go/gowa-manager-windows-amd64.exe
- *   - dist-go/checksums.txt   (SHA-256 manifest)
+ *   - dist-go/checksums-go.txt (SHA-256 manifest)
  */
 
 import { mkdir, rm, cp, writeFile, readdir, readFile } from 'node:fs/promises'
@@ -103,9 +103,9 @@ async function writeChecksums(files: string[]) {
     lines.push(`${hash}  ${name}`)
   }
   const manifest = lines.join('\n') + '\n'
-  const manifestPath = join(DIST_DIR, 'checksums.txt')
+  const manifestPath = join(DIST_DIR, 'checksums-go.txt')
   await writeFile(manifestPath, manifest)
-  console.log('✔ checksums.txt')
+  console.log('✔ checksums-go.txt')
   console.log(manifest)
 }
 

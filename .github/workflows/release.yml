@@ -101,7 +101,7 @@ jobs:
           dist-go/gowa-manager-linux-amd64
           dist-go/gowa-manager-linux-arm64
           dist-go/gowa-manager-windows-amd64.exe
-          dist-go/checksums.txt
+          dist-go/checksums-go.txt
           dist-go/sbom.json
 
     - name: Get tag message
@@ -140,7 +140,7 @@ jobs:
           dist-go/gowa-manager-linux-amd64
           dist-go/gowa-manager-linux-arm64
           dist-go/gowa-manager-windows-amd64.exe
-          dist-go/checksums.txt
+          dist-go/checksums-go.txt
           dist-go/sbom.json
         draft: false
         prerelease: ${{ steps.prerelease.outputs.is_prerelease }}

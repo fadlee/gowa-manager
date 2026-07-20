@@ -6,7 +6,7 @@
  *   - Runs `--version` and checks the output contains "GOWA Manager".
  *   - Runs `--help` and checks the output contains usage text.
  *   - Checks for an embedded SPA marker (a known string from the frontend).
- *   - Verifies the SHA-256 checksum against dist-go/checksums.txt.
+ *   - Verifies the SHA-256 checksum against dist-go/checksums-go.txt.
  *
  * Native smoke test:
  *   - Only for the binary matching the current host platform.
@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 
 const DIST_DIR = 'dist-go'
-const CHECKSUMS_FILE = join(DIST_DIR, 'checksums.txt')
+const CHECKSUMS_FILE = join(DIST_DIR, 'checksums-go.txt')
 
 // A stable string present in the embedded SPA index.html. The built frontend
 // always contains the root mount point and the Gowa Manager title.
