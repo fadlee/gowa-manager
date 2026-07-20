@@ -17,4 +17,15 @@ describe('CI workflow triggers', () => {
     expect(onBlock).not.toContain('push:')
     expect(onBlock).not.toContain('pull_request:')
   })
+
+  test('linux race job leaves contract and ops packages to explicit non-race steps', async () => {
+    const workflow = await readFile('.github/workflows/go-test.yml', 'utf8')
+
+    expect(workflow).toContain('go test -race ./cmd/... ./internal/...')
+    expect(workflow).toContain('go test ./test/contract/...')
+    expect(workflow).toContain('go test ./test/ops/...')
+    expect(workflow).not.toContain('go test -race ./...')
+    expect(workflow).not.toContain('go test -race ./test/contract/...')
+    expect(workflow).not.toContain('go test -race ./test/ops/...')
+  })
 })
