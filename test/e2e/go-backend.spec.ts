@@ -317,19 +317,13 @@ test.describe('Go backend E2E', () => {
     await client.startInstance(instance.id);
     await waitForInstanceStatus(client, instance.id, 'running', 20_000);
 
-    // Navigate to the proxy path directly (without autologin — the
-    // proxy injects instance-level Basic Auth).
-    const proxyUrl = `${baseURL}/app/${instance.key}/`;
-    await page.goto(proxyUrl);
-    await page.waitForLoadState('networkidle');
-
-    // The fake GOWA root handler returns 404 for "/" (only /api/health
-    // and /health are registered). That's fine — we just verify the
-    // proxy didn't return a 502/503 page error.
-    // Navigate to a known endpoint through the proxy. A "running" status
-    // can precede the instance's port accepting proxied connections, so
-    // poll the forwarded health endpoint until it responds ok rather than
-    // asserting once and flaking on the readiness gap.
+    // A "running" status can precede the instance's port accepting
+    // proxied connections. Poll the forwarded health endpoint until it
+    // responds ok BEFORE navigating the page — an early navigation would
+    // otherwise surface a transient 502 in the browser console that the
+    // health tracker rightly flags. page.request shares the browser
+    // context but does not drive page navigation, so it warms the
+    // upstream connection without recording console errors.
     const healthUrl = `${baseURL}/app/${instance.key}/api/health`;
     await expect(async () => {
       const resp = await page.request.get(healthUrl);
@@ -337,6 +331,15 @@ test.describe('Go backend E2E', () => {
       const body = await resp.json();
       expect(body.status).toBe('ok');
     }).toPass({ timeout: 15_000 });
+
+    // Now navigate to the proxy root (without autologin — the proxy
+    // injects instance-level Basic Auth). The fake GOWA serves its
+    // routes under the /app/{key} base path and returns 404 for the bare
+    // root; the health tracker suppresses proxied 404s. We just verify
+    // the proxy didn't return a 502/503 page error.
+    const proxyUrl = `${baseURL}/app/${instance.key}/`;
+    await page.goto(proxyUrl);
+    await page.waitForLoadState('networkidle');
 
     // Cleanup.
     await client.stopInstance(instance.id);

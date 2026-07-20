@@ -70,14 +70,28 @@ func main() {
 		os.Exit(2)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+	// Real GOWA is launched with --base-path=/app/{key} and serves every
+	// route under that prefix; the manager's reverse proxy forwards the
+	// full /app/{key}/... path unchanged. Mirror that here by registering
+	// the health routes both at the root and under the configured base
+	// path so the fake behaves like the real binary behind the proxy.
+	basePath := parseBasePath(os.Args[1:])
+
+	healthJSON := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	}
+	healthText := func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
-	})
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/health", healthJSON)
+	mux.HandleFunc("/health", healthText)
+	if basePath != "" {
+		mux.HandleFunc(basePath+"/api/health", healthJSON)
+		mux.HandleFunc(basePath+"/health", healthText)
+	}
 
 	server := &http.Server{Handler: mux}
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
@@ -113,6 +127,30 @@ func parsePort(args []string) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("missing --port or -p")
+}
+
+// parseBasePath extracts the --base-path value (real GOWA's route
+// prefix) from the process args. It accepts both "--base-path=/x" and
+// "--base-path /x" forms and normalises the result to have a leading
+// slash and no trailing slash. It returns "" when no base path is set.
+func parseBasePath(args []string) string {
+	var raw string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--base-path=") {
+			raw = strings.TrimPrefix(arg, "--base-path=")
+			break
+		}
+		if arg == "--base-path" && i+1 < len(args) {
+			raw = args[i+1]
+			break
+		}
+	}
+	raw = strings.Trim(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		return ""
+	}
+	return "/" + raw
 }
 
 func spawnChild(args ...string) (*exec.Cmd, error) {
