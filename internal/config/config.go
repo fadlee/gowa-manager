@@ -10,11 +10,12 @@ import (
 )
 
 type Config struct {
-	Port          int
-	Host          string
-	AdminUsername string
-	AdminPassword string
-	DataDir       string
+	Port               int
+	Host               string
+	AdminUsername      string
+	AdminPassword      string
+	DataDir            string
+	SkipStartupInstall bool
 	// MetricsEnabled controls the opt-in /metrics observability endpoint.
 	// Disabled by default for safety; enable via GOWA_METRICS_ENABLED=1.
 	MetricsEnabled bool
@@ -30,12 +31,13 @@ const (
 
 func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 	cfg := Config{
-		Port:           envPort(getenv("PORT")),
-		Host:           envDefault(getenv("HOST"), "127.0.0.1"),
-		AdminUsername:  envDefault(getenv("ADMIN_USERNAME"), "admin"),
-		AdminPassword:  envDefault(getenv("ADMIN_PASSWORD"), "password"),
-		DataDir:        envDefault(getenv("DATA_DIR"), "./data"),
-		MetricsEnabled: envBool(getenv("GOWA_METRICS_ENABLED")),
+		Port:               envPort(getenv("PORT")),
+		Host:               envDefault(getenv("HOST"), "127.0.0.1"),
+		AdminUsername:      envDefault(getenv("ADMIN_USERNAME"), "admin"),
+		AdminPassword:      envDefault(getenv("ADMIN_PASSWORD"), "password"),
+		DataDir:            envDefault(getenv("DATA_DIR"), "./data"),
+		SkipStartupInstall: envBool(getenv("GOWA_SKIP_STARTUP_INSTALL")),
+		MetricsEnabled:     envBool(getenv("GOWA_METRICS_ENABLED")),
 	}
 	args = stripDuplicatedExecutable(args)
 	if len(args) > 0 && args[0] == "--" {
@@ -133,6 +135,7 @@ ENVIRONMENT VARIABLES:
   ADMIN_PASSWORD    Admin password
   DATA_DIR          Data directory
   GOWA_METRICS_ENABLED  Enable loopback-only /metrics endpoint (0/1)
+  GOWA_SKIP_STARTUP_INSTALL  Skip automatic latest GOWA install on startup (0/1)
 
 Note: Command line arguments take precedence over environment variables.
 

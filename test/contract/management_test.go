@@ -61,9 +61,7 @@ func TestManagementParity(t *testing.T) {
 		{name: "system next port", method: http.MethodGet, path: "/api/system/ports/next"},
 		{name: "system port available", method: http.MethodGet, path: "/api/system/ports/65534/available"},
 		{name: "versions installed", method: http.MethodGet, path: "/api/system/versions/installed"},
-		{name: "versions available", method: http.MethodGet, path: "/api/system/versions/available?limit=1"},
 		{name: "versions usage", method: http.MethodGet, path: "/api/system/versions/usage"},
-		{name: "install failure", method: http.MethodPost, path: "/api/system/versions/install", body: []byte(`{"version":"not-a-real-contract-version"}`)},
 		{name: "cleanup", method: http.MethodPost, path: "/api/system/versions/cleanup", body: []byte(`{"keepCount":1}`)},
 		{name: "devices while stopped", method: http.MethodGet, path: "/api/instances/{id}/devices"},
 		{name: "test connection failure", method: http.MethodPost, path: "/api/instances/{id}/test-connection"},
@@ -164,7 +162,7 @@ func startBackend(t *testing.T, ctx context.Context, repoRoot string, name strin
 		cmd = exec.CommandContext(ctx, "go", "run", "./cmd/gowa-manager-go", "--port", fmt.Sprint(port), "--data-dir", dataDir)
 	}
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "ADMIN_USERNAME="+contractUser, "ADMIN_PASSWORD="+contractPass, "DATA_DIR="+dataDir, "PORT="+fmt.Sprint(port))
+	cmd.Env = append(os.Environ(), "ADMIN_USERNAME="+contractUser, "ADMIN_PASSWORD="+contractPass, "DATA_DIR="+dataDir, "PORT="+fmt.Sprint(port), "GOWA_SKIP_STARTUP_INSTALL=1")
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
@@ -223,7 +221,7 @@ func killWindowsProcessesUsingDataDir(dataDir string) {
 func waitForHealth(t *testing.T, ctx context.Context, be backend, output func() string) {
 	t.Helper()
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():

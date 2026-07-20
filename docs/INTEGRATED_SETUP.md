@@ -95,8 +95,8 @@ This setup provides a seamless development experience with automatic rebuilds wh
 In addition to the Bun/Elysia backend described above, a **Go backend** rewrite
 is available as a production alternative. The Go backend is CLI- and
 env-compatible with Bun for operational flags (`--port`, `--admin-username`,
-`--admin-password`, `--data-dir`) and adds `--host` and
-`GOWA_METRICS_ENABLED` for production deployments.
+`--admin-password`, `--data-dir`) and adds `--host`,
+`GOWA_METRICS_ENABLED`, and `GOWA_SKIP_STARTUP_INSTALL` for production deployments.
 
 > **Warning:** Bun and Go must **never** run against the same `DATA_DIR` at
 > the same time. Cutover from Bun to Go follows a controlled canary sequence.

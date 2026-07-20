@@ -45,6 +45,7 @@ operational flags below. Bun-only flags (e.g. `--watch`, dev-mode flags) are
 | `ADMIN_PASSWORD` | ✅ | ✅ | Admin password |
 | `DATA_DIR` | ✅ | ✅ | Data directory |
 | `GOWA_METRICS_ENABLED` | ✅ | ❌ | Enable `/metrics` endpoint (`0`/`1`, default: `0`) |
+| `GOWA_SKIP_STARTUP_INSTALL` | ✅ | ❌ | Skip automatic latest GOWA install on startup (`0`/`1`, default: `0`; mainly for isolated tests/offline canaries with preinstalled binaries) |
 | `CORS_ALLOWED_ORIGINS` | ❌ | ✅ | Bun-only CORS config |
 | `PROXY_WS_INJECT_INSTANCE_AUTH` | ❌ | ✅ | Bun-only WebSocket auth injection |
 

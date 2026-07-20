@@ -24,15 +24,16 @@ func TestParseDefaults(t *testing.T) {
 
 func TestParseEnvironmentValues(t *testing.T) {
 	cfg, _, err := Parse(nil, env(map[string]string{
-		"PORT":           "4010",
-		"ADMIN_USERNAME": "envuser",
-		"ADMIN_PASSWORD": "envpass",
-		"DATA_DIR":       "/env/data",
+		"PORT":                      "4010",
+		"ADMIN_USERNAME":            "envuser",
+		"ADMIN_PASSWORD":            "envpass",
+		"DATA_DIR":                  "/env/data",
+		"GOWA_SKIP_STARTUP_INSTALL": "1",
 	}))
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
-	if cfg.Port != 4010 || cfg.AdminUsername != "envuser" || cfg.AdminPassword != "envpass" || cfg.DataDir != "/env/data" {
+	if cfg.Port != 4010 || cfg.AdminUsername != "envuser" || cfg.AdminPassword != "envpass" || cfg.DataDir != "/env/data" || !cfg.SkipStartupInstall {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }

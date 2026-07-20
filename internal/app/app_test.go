@@ -195,6 +195,50 @@ func TestRunInstallsLatestVersionBeforeListening(t *testing.T) {
 	}
 }
 
+func TestRunSkipsStartupVersionInstallWhenConfigured(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	installer := &fakeStartupVersionInstaller{}
+	started := make(chan struct{})
+	opts := Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir(), SkipStartupInstall: true},
+		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		AcquireLock: func(string) (Releaser, error) {
+			return &fakeLock{events: &[]string{}}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			return &fakeDB{events: &[]string{}}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			return httpapi.Dependencies{VersionInstaller: installer}, nil
+		},
+		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
+			return &fakeSchedulers{events: &[]string{}}, nil
+		},
+		Listen: func(network, address string) (net.Listener, error) {
+			ln, err := net.Listen(network, "127.0.0.1:0")
+			if err == nil {
+				close(started)
+			}
+			return ln, err
+		},
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Run(ctx, opts) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not start")
+	}
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if installer.calls != 0 {
+		t.Fatalf("Install calls = %d, want zero", installer.calls)
+	}
+}
+
 func TestRunShutdownSetsNotReadyBeforeDrain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	started := make(chan struct{})

@@ -712,7 +712,7 @@ func restartBackend(t *testing.T, ctx context.Context, repoRoot, dataDir string)
 	port := freePort(t)
 	cmd := exec.CommandContext(ctx, "go", "run", "./cmd/gowa-manager-go", "--port", fmt.Sprint(port), "--data-dir", dataDir)
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "ADMIN_USERNAME="+contractUser, "ADMIN_PASSWORD="+contractPass, "DATA_DIR="+dataDir, "PORT="+fmt.Sprint(port))
+	cmd.Env = append(os.Environ(), "ADMIN_USERNAME="+contractUser, "ADMIN_PASSWORD="+contractPass, "DATA_DIR="+dataDir, "PORT="+fmt.Sprint(port), "GOWA_SKIP_STARTUP_INSTALL=1")
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
@@ -760,24 +760,37 @@ func forceKillProcess(pid int) {
 	_ = exec.Command("kill", "-9", strconv.Itoa(pid)).Run()
 }
 
-// countFakeGOWAProcesses returns the number of running fakegowa processes.
-// On Windows it uses a PowerShell CIM query; on Unix it counts pgrep matches.
-func countFakeGOWAProcesses(binaryPath string) int {
-	binaryName := filepath.Base(binaryPath)
+// countFakeGOWAProcesses returns the number of running fakegowa processes for
+// the given data directory. It scopes by the installed version directory so
+// manager processes such as gowa-manager-go are not counted as child GOWA
+// processes.
+func countFakeGOWAProcesses(dataDir string) int {
+	needle := filepath.Join(dataDir, "bin", "versions")
 	if runtime.GOOS == "windows" {
-		// Strip the .exe suffix for the image name filter.
-		imageName := strings.TrimSuffix(binaryName, ".exe")
-		out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq "+imageName+".exe", "/FO", "CSV", "/NH").Output()
+		escaped := strings.ReplaceAll(needle, "'", "''")
+		script := "$needle = '" + escaped + "'; " +
+			"(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \"*$needle*\" } | Measure-Object).Count"
+		out, err := exec.Command("powershell", "-NoProfile", "-Command", script).Output()
 		if err != nil {
 			return 0
 		}
-		return strings.Count(string(out), imageName)
+		count, err := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil {
+			return 0
+		}
+		return count
 	}
-	out, err := exec.Command("pgrep", "-f", binaryName).Output()
+	out, err := exec.Command("ps", "-eo", "args=").Output()
 	if err != nil {
 		return 0
 	}
-	return len(strings.Fields(strings.TrimSpace(string(out))))
+	count := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, needle) {
+			count++
+		}
+	}
+	return count
 }
 
 // readAll reads all bytes from r, returning the content. It is a thin wrapper

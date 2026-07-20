@@ -63,7 +63,7 @@ func TestRuntimeFaults_KillDuringStart(t *testing.T) {
 	restarted := restartBackend(t, ctx, repoRoot, be.dataDir)
 	waitForRuntimeStatus(t, client, restarted, inst.ID, "running", 20*time.Second)
 	// Exactly one fakegowa process should be running (reconciled).
-	assertFakeGOWAChildCount(t, 1)
+	assertFakeGOWAChildCount(t, be.dataDir, 1)
 	assertDBIntegrity(t, be.dataDir)
 }
 
@@ -121,7 +121,7 @@ func TestRuntimeFaults_KillDuringRestart(t *testing.T) {
 	startInstance(t, client, restarted, inst.ID)
 	waitForRuntimeStatus(t, client, restarted, inst.ID, "running", 20*time.Second)
 	// Exactly one fakegowa process should be running (the one we started).
-	assertFakeGOWAChildCount(t, 1)
+	assertFakeGOWAChildCount(t, be.dataDir, 1)
 	assertDBIntegrity(t, be.dataDir)
 }
 
@@ -182,7 +182,7 @@ func TestRuntimeFaults_KillDuringDBWrite(t *testing.T) {
 	// Verify the manager is functional by starting the instance cleanly.
 	startInstance(t, client, restarted, inst.ID)
 	waitForRuntimeStatus(t, client, restarted, inst.ID, "running", 20*time.Second)
-	assertFakeGOWAChildCount(t, 1)
+	assertFakeGOWAChildCount(t, be.dataDir, 1)
 	assertDBIntegrity(t, be.dataDir)
 }
 
@@ -288,33 +288,33 @@ func TestRuntimeFaults_KillDuringScheduler(t *testing.T) {
 
 	restarted := restartBackend(t, ctx, repoRoot, be.dataDir)
 	waitForRuntimeStatus(t, client, restarted, inst.ID, "running", 20*time.Second)
-	assertFakeGOWAChildCount(t, 1)
+	assertFakeGOWAChildCount(t, be.dataDir, 1)
 	assertDBIntegrity(t, be.dataDir)
 }
 
-// assertNoFakeGOWAChildren verifies that no more than maxExpected fakegowa
-// processes are running using the given data directory. It checks via the
-// shared fakegowa binary path (if built) and via the data-dir process scan.
+// assertNoFakeGOWAChildren verifies that no fakegowa processes are running
+// for the given data directory.
 func assertNoFakeGOWAChildren(t *testing.T, dataDir string) {
 	t.Helper()
-	assertFakeGOWAChildCount(t, 0)
+	assertFakeGOWAChildCount(t, dataDir, 0)
 }
 
 // assertFakeGOWAChildCount verifies that exactly want fakegowa processes are
-// running, retrying briefly to let the OS reap zombies.
-func assertFakeGOWAChildCount(t *testing.T, want int) {
+// running for the given data directory, retrying briefly to let the OS reap
+// zombies.
+func assertFakeGOWAChildCount(t *testing.T, dataDir string, want int) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	var n int
 	for time.Now().Before(deadline) {
-		n = countFakeGOWAProcesses(fakeGOWABinaryPath)
+		n = countFakeGOWAProcesses(dataDir)
 		if n == want {
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	if n != want {
-		t.Fatalf("expected %d fakegowa processes, found %d", want, n)
+		t.Fatalf("expected %d fakegowa processes for %s, found %d", want, dataDir, n)
 	}
 }
 

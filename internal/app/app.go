@@ -152,8 +152,10 @@ func Run(ctx context.Context, opts Options) error {
 	} else {
 		return errors.New("database handle does not expose sqlite connection")
 	}
-	if err := installStartupVersion(ctx, deps, logger); err != nil {
-		return err
+	if !opts.Config.SkipStartupInstall {
+		if err := installStartupVersion(ctx, deps, logger); err != nil {
+			return err
+		}
 	}
 
 	ln, err := listenFirstAvailable(listen, opts.Config.Host, opts.Config.Port)
