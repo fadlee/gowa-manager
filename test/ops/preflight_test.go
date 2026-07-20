@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/gofrs/flock"
@@ -120,9 +122,10 @@ func runScript(t *testing.T, scriptName string, args []string) scriptResult {
 func runPowerShell(t *testing.T, script string, args []string) scriptResult {
 	t.Helper()
 	// Build -File argument list: script path followed by named params.
-	// The callers pass already-formatted args like ["-Binary", path, ...].
+	// Callers may pass flags in either style; normalize to PowerShell
+	// param names (e.g. --go-pid -> -GoPid) so the .ps1 scripts bind them.
 	cmdArgs := []string{"-NoProfile", "-NonInteractive", "-File", script}
-	cmdArgs = append(cmdArgs, args...)
+	cmdArgs = append(cmdArgs, normalizeFlagsPowerShell(args)...)
 	cmd := exec.Command("pwsh", cmdArgs...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -141,7 +144,10 @@ func runPowerShell(t *testing.T, script string, args []string) scriptResult {
 
 func runSh(t *testing.T, script string, args []string) scriptResult {
 	t.Helper()
-	cmd := exec.Command("sh", append([]string{script}, args...)...)
+	// Callers may pass flags in either style; normalize to the Unix long
+	// flags the .sh scripts expect (e.g. -DataDir -> --data-dir).
+	shArgs := append([]string{script}, normalizeFlagsUnix(args)...)
+	cmd := exec.Command("sh", shArgs...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -155,6 +161,71 @@ func runSh(t *testing.T, script string, args []string) scriptResult {
 		}
 	}
 	return parseScriptResult(t, stdout.String(), exitCode)
+}
+
+// Flag-style regexes: PowerShell params look like -PascalCase, the Unix
+// scripts use --kebab-case long flags. Values never start with a dash, so
+// only tokens matching these are rewritten.
+var (
+	psFlagRe   = regexp.MustCompile(`^-([A-Z][A-Za-z0-9]*)$`)
+	unixFlagRe = regexp.MustCompile(`^--([a-z][a-z0-9-]*)$`)
+)
+
+// normalizeFlagsUnix rewrites PowerShell-style flags to the Unix long flags
+// the .sh scripts expect (-DataDir -> --data-dir). Already-Unix flags and
+// values pass through unchanged.
+func normalizeFlagsUnix(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		if m := psFlagRe.FindStringSubmatch(a); m != nil {
+			out[i] = "--" + pascalToKebab(m[1])
+		} else {
+			out[i] = a
+		}
+	}
+	return out
+}
+
+// normalizeFlagsPowerShell rewrites Unix long flags to the PowerShell param
+// names the .ps1 scripts expect (--go-pid -> -GoPid).
+func normalizeFlagsPowerShell(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		if m := unixFlagRe.FindStringSubmatch(a); m != nil {
+			out[i] = "-" + kebabToPascal(m[1])
+		} else {
+			out[i] = a
+		}
+	}
+	return out
+}
+
+// pascalToKebab converts e.g. "BackupDir" -> "backup-dir".
+func pascalToKebab(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if unicode.IsUpper(r) {
+			if i > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(unicode.ToLower(r))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// kebabToPascal converts e.g. "backup-dir" -> "BackupDir".
+func kebabToPascal(s string) string {
+	var b strings.Builder
+	for _, part := range strings.Split(s, "-") {
+		if part == "" {
+			continue
+		}
+		b.WriteString(strings.ToUpper(part[:1]) + part[1:])
+	}
+	return b.String()
 }
 
 func parseScriptResult(t *testing.T, stdout string, exitCode int) scriptResult {

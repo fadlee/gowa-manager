@@ -70,7 +70,11 @@ FAIL_COUNT=0
 
 add_check() {
   # $1=name  $2=status(pass/fail)  $3=http_status  $4=detail
-  _entry="{\"name\":$(jstr "$1"),\"status\":$(jstr "$2"),\"http_status\":$3,\"detail\":$(jstr "$4")}"
+  # Normalize the HTTP status to a bare decimal so the JSON stays valid:
+  # curl reports "000" on connection failure, and a leading-zero literal
+  # like 000 is not valid JSON.
+  _hs=$(( 10#${3:-0} ))
+  _entry="{\"name\":$(jstr "$1"),\"status\":$(jstr "$2"),\"http_status\":$_hs,\"detail\":$(jstr "$4")}"
   if [ -z "$CHECKS" ]; then
     CHECKS="$_entry"
   else

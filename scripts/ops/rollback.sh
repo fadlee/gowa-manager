@@ -509,8 +509,10 @@ if [ "$exit_code" -eq 0 ]; then
   if [ -x "$BUN_BINARY" ]; then
     # Start Bun in the background.  In a real deployment the operator would
     # use a process manager; here we just launch it and record the step.
-    # We do NOT wait for it to exit.
-    "$BUN_BINARY" &
+    # We do NOT wait for it to exit.  Detach stdio from the caller's pipes
+    # so a caller capturing our stdout (e.g. the ops test harness) is not
+    # blocked waiting for EOF while this long-lived process holds it open.
+    "$BUN_BINARY" >/dev/null 2>&1 </dev/null &
     _bun_pid=$!
     add_step "start_bun" "pass" "started Bun binary (PID $_bun_pid)"
   else

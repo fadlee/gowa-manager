@@ -42,11 +42,21 @@ func spawnSleeperProcess(t *testing.T) (int, func()) {
 		t.Fatalf("start sleeper: %v", err)
 	}
 	pid := proc.Process.Pid
+	// Reap the child as soon as it exits. rollback.sh sends SIGTERM to this
+	// PID and polls `kill -0` to confirm it quiesced. Without an in-flight
+	// Wait, the killed process lingers as a zombie whose PID still answers
+	// `kill -0`, so the script's quiesce loop blocks the full 10s and the
+	// whole package eventually hits the test timeout.
+	reaped := make(chan struct{})
+	go func() {
+		_ = proc.Wait()
+		close(reaped)
+	}()
 	cleanup := func() {
 		if proc.Process != nil {
 			_ = proc.Process.Kill()
-			_, _ = proc.Process.Wait()
 		}
+		<-reaped
 	}
 	return pid, cleanup
 }
