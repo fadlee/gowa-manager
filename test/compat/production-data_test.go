@@ -57,21 +57,21 @@ const manifestFile = "testdata/manifest.json"
 
 // compatManifest is the decoded manifest. It is loaded once in TestProductionData.
 type compatManifest struct {
-	SchemaVersion     int                 `json:"schemaVersion"`
-	Note              string              `json:"note"`
-	InstancesTable    compatTableSpec     `json:"instancesTable"`
-	ExpectedStatuses  []string            `json:"expectedStatuses"`
-	ConfigFeatureFlags compatFeatureFlags `json:"configFeatureFlags"`
-	VersionLayouts    compatVersionLayouts `json:"versionLayouts"`
-	FilesystemCategories compatFS         `json:"filesystemCategories"`
-	RowCountRanges    compatRowCount      `json:"rowCountRanges"`
-	Samples           []compatSampleSpec  `json:"samples"`
+	SchemaVersion        int                  `json:"schemaVersion"`
+	Note                 string               `json:"note"`
+	InstancesTable       compatTableSpec      `json:"instancesTable"`
+	ExpectedStatuses     []string             `json:"expectedStatuses"`
+	ConfigFeatureFlags   compatFeatureFlags   `json:"configFeatureFlags"`
+	VersionLayouts       compatVersionLayouts `json:"versionLayouts"`
+	FilesystemCategories compatFS             `json:"filesystemCategories"`
+	RowCountRanges       compatRowCount       `json:"rowCountRanges"`
+	Samples              []compatSampleSpec   `json:"samples"`
 }
 
 type compatTableSpec struct {
-	Name             string   `json:"name"`
-	Columns          []string `json:"columns"`
-	AdditiveColumns  []string `json:"additiveColumns"`
+	Name            string   `json:"name"`
+	Columns         []string `json:"columns"`
+	AdditiveColumns []string `json:"additiveColumns"`
 }
 
 type compatFeatureFlags struct {
@@ -96,11 +96,11 @@ type compatRowCount struct {
 }
 
 type compatSampleSpec struct {
-	Name            string          `json:"name"`
-	Description     string          `json:"description"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description"`
 	ExpectedRowCount compatRowCount `json:"expectedRowCount"`
-	StatusesPresent []string        `json:"statusesPresent"`
-	VersionsPresent []string        `json:"versionsPresent"`
+	StatusesPresent  []string       `json:"statusesPresent"`
+	VersionsPresent  []string       `json:"versionsPresent"`
 }
 
 // TestProductionData validates the Go backend against sanitized production

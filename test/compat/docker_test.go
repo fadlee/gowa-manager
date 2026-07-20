@@ -90,8 +90,8 @@ func removeImage(t *testing.T) {
 
 // containerInfo holds the details needed to interact with a running container.
 type containerInfo struct {
-	id     string
-	port   string // host-side mapped port
+	id      string
+	port    string // host-side mapped port
 	cleanup func()
 }
 

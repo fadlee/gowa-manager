@@ -30,15 +30,15 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	leakGoroutineMaxDelta = 20
+	leakGoroutineMaxDelta   = 20
 	leakRssMaxPercentGrowth = 10.0
-	leakFdMaxDelta = 20
+	leakFdMaxDelta          = 20
 
-	leakHTTPRequests    = 1000
-	leakWSCycles        = 500
-	leakProcessCycles   = 100
+	leakHTTPRequests  = 1000
+	leakWSCycles      = 500
+	leakProcessCycles = 100
 
-	leakSettleSeconds = 10
+	leakSettleSeconds   = 10
 	leakFakeGOWAVersion = "v0.0.1-leak"
 )
 

@@ -97,8 +97,8 @@ func skipIfNoSqlite3(t *testing.T) {
 
 // scriptResult holds the parsed JSON and exit code from a script invocation.
 type scriptResult struct {
-	JSON     map[string]any
-	ExitCode int
+	JSON      map[string]any
+	ExitCode  int
 	RawStdout string
 }
 

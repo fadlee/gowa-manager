@@ -46,7 +46,7 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	schemaFile     = "baseline.schema.json"
+	schemaFile      = "baseline.schema.json"
 	bunBaselineFile = "bun-baseline.json"
 )
 

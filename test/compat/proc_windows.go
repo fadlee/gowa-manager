@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	kernel32                       = syscall.NewLazyDLL("kernel32.dll")
-	procGenerateConsoleCtrlEvent   = kernel32.NewProc("GenerateConsoleCtrlEvent")
+	kernel32                     = syscall.NewLazyDLL("kernel32.dll")
+	procGenerateConsoleCtrlEvent = kernel32.NewProc("GenerateConsoleCtrlEvent")
 )
 
 // setNewProcessGroup configures the command to create the child process in a
