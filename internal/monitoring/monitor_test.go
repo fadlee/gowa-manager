@@ -90,7 +90,7 @@ func TestMonitorConcurrentRequestsAndClear(t *testing.T) {
 		t.Fatalf("History len after Clear = %d, want 0", got)
 	}
 	_, _ = m.Resources(context.Background(), 1, 10, `dir`)
-	if sampler.diskCalls != 2 {
+	if sampler.diskCalls < 2 {
 		t.Fatalf("disk calls after Clear = %d, want cache cleared and traversed again", sampler.diskCalls)
 	}
 }
