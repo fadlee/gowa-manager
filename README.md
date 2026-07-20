@@ -42,15 +42,13 @@ Download from [Releases](https://github.com/fadlee/gowa-manager/releases):
 
 | Platform | Binary |
 |----------|--------|
-| Linux x64 | `gowa-manager-linux-x64` |
+| Linux x64 | `gowa-manager-linux-amd64` |
 | Linux ARM64 | `gowa-manager-linux-arm64` |
-| macOS Intel | `gowa-manager-macos-x64` |
-| macOS Apple Silicon | `gowa-manager-macos-arm64` |
-| Windows x64 | `gowa-manager-windows-x64.exe` |
+| Windows x64 | `gowa-manager-windows-amd64.exe` |
 
 ```bash
 chmod +x gowa-manager-*
-./gowa-manager-linux-x64
+./gowa-manager-linux-amd64
 ```
 </details>
 

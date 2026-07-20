@@ -98,9 +98,9 @@ jobs:
       with:
         name: gowa-manager-go-binaries
         path: |
-          dist-go/gowa-manager-go-linux-amd64
-          dist-go/gowa-manager-go-linux-arm64
-          dist-go/gowa-manager-go-windows-amd64.exe
+          dist-go/gowa-manager-linux-amd64
+          dist-go/gowa-manager-linux-arm64
+          dist-go/gowa-manager-windows-amd64.exe
           dist-go/checksums-go.txt
           dist-go/sbom.json
 
@@ -131,15 +131,9 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/gowa-manager-linux-x64
-          dist/gowa-manager-linux-arm64
-          dist/gowa-manager-macos-x64
-          dist/gowa-manager-macos-arm64
-          dist/gowa-manager-windows-x64.exe
-          dist/checksums.txt
-          dist-go/gowa-manager-go-linux-amd64
-          dist-go/gowa-manager-go-linux-arm64
-          dist-go/gowa-manager-go-windows-amd64.exe
+          dist-go/gowa-manager-linux-amd64
+          dist-go/gowa-manager-linux-arm64
+          dist-go/gowa-manager-windows-amd64.exe
           dist-go/checksums-go.txt
           dist-go/sbom.json
         draft: false
@@ -162,11 +156,9 @@ jobs:
 
           | Platform | Binary |
           |----------|--------|
-          | Linux x64 | `gowa-manager-linux-x64` |
+          | Linux x64 | `gowa-manager-linux-amd64` |
           | Linux ARM64 | `gowa-manager-linux-arm64` |
-          | macOS Intel | `gowa-manager-macos-x64` |
-          | macOS Apple Silicon | `gowa-manager-macos-arm64` |
-          | Windows x64 | `gowa-manager-windows-x64.exe` |
+          | Windows x64 | `gowa-manager-windows-amd64.exe` |
 
           </details>
       env:
@@ -182,16 +174,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download binaries
+      - name: Download Go binaries
         uses: actions/download-artifact@v4
         with:
-          name: gowa-manager-binaries
+          name: gowa-manager-go-binaries
           path: ./binaries
 
       - name: Prepare binaries for Docker buildx
         run: |
-          # buildx sets TARGETARCH=amd64|arm64; rename x64 -> amd64 to match
-          mv binaries/gowa-manager-linux-x64 binaries/gowa-manager-linux-amd64
           ls -la binaries/
 
       - name: Set up QEMU

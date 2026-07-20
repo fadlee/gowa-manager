@@ -18,13 +18,10 @@ const getBinaryName = () => {
   const arch = process.arch;
 
   if (platform === 'linux') {
-    if (arch === 'x64') return 'gowa-manager-linux-x64';
+    if (arch === 'x64') return 'gowa-manager-linux-amd64';
     if (arch === 'arm64') return 'gowa-manager-linux-arm64';
-  } else if (platform === 'darwin') {
-    if (arch === 'x64') return 'gowa-manager-macos-x64';
-    if (arch === 'arm64') return 'gowa-manager-macos-arm64';
   } else if (platform === 'win32') {
-    if (arch === 'x64') return 'gowa-manager-windows-x64.exe';
+    if (arch === 'x64') return 'gowa-manager-windows-amd64.exe';
   }
   
   throw new Error(`Unsupported platform: ${platform} ${arch}`);

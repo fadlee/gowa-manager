@@ -36,9 +36,9 @@ interface ExpectedTarget {
 }
 
 const TARGETS: ExpectedTarget[] = [
-  { pattern: /^gowa-manager-go-linux-amd64$/, goos: 'linux', goarch: 'amd64', outfile: 'gowa-manager-go-linux-amd64' },
-  { pattern: /^gowa-manager-go-linux-arm64$/, goos: 'linux', goarch: 'arm64', outfile: 'gowa-manager-go-linux-arm64' },
-  { pattern: /^gowa-manager-go-windows-amd64\.exe$/, goos: 'windows', goarch: 'amd64', outfile: 'gowa-manager-go-windows-amd64.exe' },
+  { pattern: /^gowa-manager-linux-amd64$/, goos: 'linux', goarch: 'amd64', outfile: 'gowa-manager-linux-amd64' },
+  { pattern: /^gowa-manager-linux-arm64$/, goos: 'linux', goarch: 'arm64', outfile: 'gowa-manager-linux-arm64' },
+  { pattern: /^gowa-manager-windows-amd64\.exe$/, goos: 'windows', goarch: 'amd64', outfile: 'gowa-manager-windows-amd64.exe' },
 ]
 
 interface CheckResult {
