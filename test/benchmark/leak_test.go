@@ -338,6 +338,11 @@ func installFakeGOWA(t *testing.T, dataDir, version string) {
 	if _, err := io.Copy(out, in); err != nil {
 		t.Fatalf("copy fakegowa: %v", err)
 	}
+	out.Close()
+	// Ensure the copied binary is executable (required on Linux).
+	if err := os.Chmod(dst, 0o755); err != nil {
+		t.Fatalf("chmod fakegowa dst: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

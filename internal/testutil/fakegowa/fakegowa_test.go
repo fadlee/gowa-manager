@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -158,8 +159,8 @@ func TestIgnoreTermSurvivesInterruptAndCanBeKilled(t *testing.T) {
 		t.Fatalf("send interrupt: %v", err)
 	}
 	time.Sleep(200 * time.Millisecond)
-	if err := cmd.Process.Signal(os.Signal(nil)); err != nil {
-		t.Fatalf("process exited after interrupt, want still running: %v", err)
+	if !processExists(cmd.Process.Pid) {
+		t.Fatalf("process exited after interrupt, want still running")
 	}
 
 	if err := cmd.Process.Kill(); err != nil {
@@ -354,7 +355,10 @@ func processExists(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return proc.Signal(os.Signal(nil)) == nil
+	// Signal 0 checks process existence without actually sending a signal.
+	// On Linux, os.Process.Signal(nil) returns "unsupported signal type",
+	// so we use syscall.Signal(0) instead.
+	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 func killPID(pid int) {
