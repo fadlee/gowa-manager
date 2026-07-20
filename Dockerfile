@@ -68,7 +68,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ---------------------------------------------------------------------------
 # Stage 3: runtime
 # ---------------------------------------------------------------------------
-FROM alpine:latest AS runtime
+# GOWA binaries from GitHub releases are compiled with CGO (mattn/go-sqlite3)
+# and dynamically linked against glibc. Alpine uses musl libc, so a plain
+# alpine:latest image cannot exec GOWA binaries — the kernel reports
+# "no such file or directory" because the glibc dynamic linker is missing.
+# frolvlad/alpine-glibc provides glibc on top of Alpine.
+FROM frolvlad/alpine-glibc:latest AS runtime
 
 # ffmpeg: required by GOWA child processes for media processing.
 # ca-certificates: TLS for GOWA binary downloads and webhook calls.

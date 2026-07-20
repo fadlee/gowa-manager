@@ -6,15 +6,22 @@
 # workflow (scripts/release/build-go.ts). Intended for CI use with Docker
 # buildx multi-platform builds where binaries are provided via ./binaries/.
 #
-# The Go binary is statically linked (CGO_ENABLED=0) and uses modernc.org/sqlite
-# (pure Go), so no C library is required at runtime. ffmpeg is installed
-# because GOWA child processes rely on it for media processing. Bun is NOT
-# included in this image.
+# The Go manager binary is statically linked (CGO_ENABLED=0) and uses
+# modernc.org/sqlite (pure Go), so no C library is required for the manager
+# itself. However, GOWA child binaries downloaded from GitHub releases are
+# compiled with CGO and linked against glibc, so the runtime image must
+# provide glibc (hence frolvlad/alpine-glibc). ffmpeg is installed because
+# GOWA child processes rely on it for media processing.
 #
 # This image supports Go candidate tags during stabilization. The `latest` tag
 # is NOT repointed here -- that is a canary promotion decision.
 
-FROM alpine:latest
+# GOWA binaries from GitHub releases are compiled with CGO (mattn/go-sqlite3)
+# and dynamically linked against glibc. Alpine uses musl libc, so a plain
+# alpine:latest image cannot exec GOWA binaries — the kernel reports
+# "no such file or directory" because the glibc dynamic linker is missing.
+# frolvlad/alpine-glibc provides glibc on top of Alpine.
+FROM frolvlad/alpine-glibc:latest
 
 ARG TARGETARCH
 
