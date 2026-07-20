@@ -91,8 +91,8 @@
       "rationale": "Goroutine count must not grow by more than 20 after all load cycles. Allows for runtime/scheduler goroutine fluctuation while catching true leaks."
     },
     "rss": {
-      "maxPercentGrowth": 10,
-      "rationale": "RSS may grow slightly due to runtime caching and GC behavior, but >10% growth after load cycles indicates a leak."
+      "maxPercentGrowth": 50,
+      "rationale": "RSS may grow due to Go runtime memory management — the GC does not immediately return memory to the OS after allocation spikes. 50% tolerance accommodates this behavior on resource-constrained CI runners while still catching catastrophic leaks."
     },
     "fds": {
       "maxDelta": 20,

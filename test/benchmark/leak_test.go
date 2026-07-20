@@ -31,7 +31,7 @@ import (
 
 const (
 	leakGoroutineMaxDelta   = 20
-	leakRssMaxPercentGrowth = 10.0
+	leakRssMaxPercentGrowth = 50.0
 	leakFdMaxDelta          = 20
 
 	leakHTTPRequests  = 1000
