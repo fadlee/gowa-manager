@@ -373,7 +373,7 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		DeviceClient:        deviceClient,
 		ConnectionTester:    instances.NewConnectionTester(instances.ConnectionTesterOptions{}),
 		AdminLinkIssuer:     httpapi.NewMagicAdminLinkIssuer(magicAuth),
-		System:              system.NewSystemService(repo, opts.DataDir, buildinfo.DisplayVersion()),
+		System:              system.NewSystemService(repo, opts.DataDir, buildinfo.Version),
 		PortAllocator:       portAllocator,
 		PortChecker:         appPortChecker{},
 		AutoUpdate:          autoupdate,

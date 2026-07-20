@@ -25,7 +25,7 @@ func TestGetSystemStatusCountsInstancesAndReportsMetadata(t *testing.T) {
 		{Status: "running", Port: &port8000},
 		{Status: "stopped"},
 		{Status: "running", Port: &port8002},
-	}}, "./data", "v1.2.3")
+	}}, "./data", "1.2.3")
 	service.started = time.Now().Add(-1500 * time.Millisecond)
 
 	status, err := service.GetSystemStatus(context.Background())
@@ -51,8 +51,8 @@ func TestGetSystemStatusCountsInstancesAndReportsMetadata(t *testing.T) {
 	if status.Uptime < 1000 || status.Uptime > 5000 {
 		t.Fatalf("Uptime = %d, want milliseconds near 1500", status.Uptime)
 	}
-	if status.ManagerVersion != "v1.2.3" {
-		t.Fatalf("ManagerVersion = %q, want v1.2.3", status.ManagerVersion)
+	if status.ManagerVersion != "1.2.3" {
+		t.Fatalf("ManagerVersion = %q, want 1.2.3", status.ManagerVersion)
 	}
 }
 

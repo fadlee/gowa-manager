@@ -15,10 +15,10 @@ import (
 
 func TestSystemRoutes(t *testing.T) {
 	t.Run("status returns legacy nested system status", func(t *testing.T) {
-		service := &fakeSystemService{status: system.SystemStatus{TotalInstances: 3, RunningInstances: 1, StoppedInstances: 2, AllocatedPorts: 2, NextAvailablePort: 8002, Uptime: 1234, ManagerVersion: "v0.1.0"}}
+		service := &fakeSystemService{status: system.SystemStatus{TotalInstances: 3, RunningInstances: 1, StoppedInstances: 2, AllocatedPorts: 2, NextAvailablePort: 8002, Uptime: 1234, ManagerVersion: "0.1.0"}}
 		rec := serveSystemRequest(service, nil, nil, http.MethodGet, "/api/system/status", nil)
 		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, map[string]any{"status": "running", "uptime": float64(1234), "managerVersion": "v0.1.0", "instances": map[string]any{"total": float64(3), "running": float64(1), "stopped": float64(2)}, "ports": map[string]any{"allocated": float64(2), "next_available": float64(8002)}})
+		assertJSON(t, rec, map[string]any{"status": "running", "uptime": float64(1234), "managerVersion": "0.1.0", "instances": map[string]any{"total": float64(3), "running": float64(1), "stopped": float64(2)}, "ports": map[string]any{"allocated": float64(2), "next_available": float64(8002)}})
 	})
 
 	t.Run("status service error maps to 500", func(t *testing.T) {
