@@ -43,8 +43,8 @@ Before beginning the cutover, verify all of the following:
 
 ```bash
 # Verify Go binary checksum
-sha256sum gowa-manager-linux-amd64
-# Compare against the line in checksums.txt from the release
+sha256sum gowa-manager-go-linux-amd64
+# Compare against the line in checksums-go.txt from the release
 
 # Record versions
 ./gowa-manager-go --version
@@ -222,7 +222,7 @@ sh scripts/ops/preflight.sh \
 ```powershell
 # Windows
 powershell -File scripts\ops\preflight.ps1 `
-  -Binary C:\opt\gowa-manager\gowa-manager-windows-amd64.exe `
+  -Binary C:\opt\gowa-manager\gowa-manager-go-windows-amd64.exe `
   -DataDir C:\ProgramData\gowa-manager\data `
   -Port 3000 `
   -BackupDir C:\backups\gowa-manager
@@ -255,7 +255,7 @@ credentials as Bun.
 
 ```powershell
 # Windows
-C:\opt\gowa-manager\gowa-manager-windows-amd64.exe `
+C:\opt\gowa-manager\gowa-manager-go-windows-amd64.exe `
   --data-dir C:\ProgramData\gowa-manager\data `
   --port 3000 `
   --host 127.0.0.1 `

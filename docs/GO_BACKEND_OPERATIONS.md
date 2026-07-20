@@ -251,7 +251,7 @@ docker exec gowa-manager wget -qO- http://localhost:3000/api/ready
 
 ## 5. Windows: Service / Scheduled Task Guidance
 
-The Go binary is a plain console executable (`gowa-manager-windows-amd64.exe`).
+The Go binary is a plain console executable (`gowa-manager-go-windows-amd64.exe`).
 It does not register itself as a Windows Service natively. Use a service
 wrapper.
 
@@ -259,7 +259,7 @@ wrapper.
 
 ```powershell
 # Download nssm from https://nssm.cc/
-nssm install GOWAManager "C:\Program Files\gowa-manager\gowa-manager-windows-amd64.exe"
+nssm install GOWAManager "C:\Program Files\gowa-manager\gowa-manager-go-windows-amd64.exe"
 nssm set GOWAManager AppParameters "--data-dir C:\ProgramData\gowa-manager\data --port 3000 --admin-username admin --admin-password change-me"
 nssm set GOWAManager AppDirectory "C:\Program Files\gowa-manager"
 nssm set GOWAManager AppStdout "C:\ProgramData\gowa-manager\logs\stdout.log"
@@ -273,13 +273,13 @@ nssm start GOWAManager
 
 If using `sc.exe` directly, you need a wrapper (like `winsw`) because the Go
 binary does not implement the Windows Service Control interface. Follow the
-wrapper's documentation to wrap `gowa-manager-windows-amd64.exe`.
+wrapper's documentation to wrap `gowa-manager-go-windows-amd64.exe`.
 
 ### Option C: Scheduled Task (for non-service deployments)
 
 ```powershell
 $action = New-ScheduledTaskAction `
-  -Execute "C:\Program Files\gowa-manager\gowa-manager-windows-amd64.exe" `
+  -Execute "C:\Program Files\gowa-manager\gowa-manager-go-windows-amd64.exe" `
   -Argument "--data-dir C:\ProgramData\gowa-manager\data --port 3000"
 
 $trigger = New-ScheduledTaskTrigger -AtStartup

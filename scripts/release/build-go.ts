@@ -3,9 +3,9 @@
  *
  * Builds the production React SPA once from locked dependencies, embeds it
  * into the Go static FS, then cross-compiles three release binaries:
- *   - gowa-manager-linux-amd64
- *   - gowa-manager-linux-arm64
- *   - gowa-manager-windows-amd64.exe
+ *   - gowa-manager-go-linux-amd64
+ *   - gowa-manager-go-linux-arm64
+ *   - gowa-manager-go-windows-amd64.exe
  *
  * Reproducibility:
  *   - The frontend is built once and shared across all targets.
@@ -15,9 +15,9 @@
  *   - Symbols are NOT stripped; the owner has not approved that trade-off.
  *
  * Outputs:
- *   - dist-go/gowa-manager-linux-amd64
- *   - dist-go/gowa-manager-linux-arm64
- *   - dist-go/gowa-manager-windows-amd64.exe
+ *   - dist-go/gowa-manager-go-linux-amd64
+ *   - dist-go/gowa-manager-go-linux-arm64
+ *   - dist-go/gowa-manager-go-windows-amd64.exe
  *   - dist-go/checksums-go.txt (SHA-256 manifest)
  */
 
@@ -37,9 +37,9 @@ interface Target {
 }
 
 const TARGETS: Target[] = [
-  { goos: 'linux', goarch: 'amd64', outfile: 'gowa-manager-linux-amd64' },
-  { goos: 'linux', goarch: 'arm64', outfile: 'gowa-manager-linux-arm64' },
-  { goos: 'windows', goarch: 'amd64', outfile: 'gowa-manager-windows-amd64.exe' },
+  { goos: 'linux', goarch: 'amd64', outfile: 'gowa-manager-go-linux-amd64' },
+  { goos: 'linux', goarch: 'arm64', outfile: 'gowa-manager-go-linux-arm64' },
+  { goos: 'windows', goarch: 'amd64', outfile: 'gowa-manager-go-windows-amd64.exe' },
 ]
 
 async function run(command: string[], env?: Record<string, string>, cwd = process.cwd()) {

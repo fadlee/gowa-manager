@@ -98,9 +98,9 @@ jobs:
       with:
         name: gowa-manager-go-binaries
         path: |
-          dist-go/gowa-manager-linux-amd64
-          dist-go/gowa-manager-linux-arm64
-          dist-go/gowa-manager-windows-amd64.exe
+          dist-go/gowa-manager-go-linux-amd64
+          dist-go/gowa-manager-go-linux-arm64
+          dist-go/gowa-manager-go-windows-amd64.exe
           dist-go/checksums-go.txt
           dist-go/sbom.json
 
@@ -137,9 +137,9 @@ jobs:
           dist/gowa-manager-macos-arm64
           dist/gowa-manager-windows-x64.exe
           dist/checksums.txt
-          dist-go/gowa-manager-linux-amd64
-          dist-go/gowa-manager-linux-arm64
-          dist-go/gowa-manager-windows-amd64.exe
+          dist-go/gowa-manager-go-linux-amd64
+          dist-go/gowa-manager-go-linux-arm64
+          dist-go/gowa-manager-go-windows-amd64.exe
           dist-go/checksums-go.txt
           dist-go/sbom.json
         draft: false
