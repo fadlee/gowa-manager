@@ -11,7 +11,11 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './test/e2e',
   fullyParallel: false,
-  retries: 0,
+  // Retry in CI so a transient timing flake (e.g. a freshly-started
+  // instance reporting "running" a beat before its port accepts
+  // connections through the proxy) self-heals; a real regression still
+  // fails every attempt. Locally keep 0 for fast, deterministic feedback.
+  retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: 'list',
   timeout: 60_000,

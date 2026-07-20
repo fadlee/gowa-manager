@@ -70,10 +70,15 @@ FAIL_COUNT=0
 
 add_check() {
   # $1=name  $2=status(pass/fail)  $3=http_status  $4=detail
-  # Normalize the HTTP status to a bare decimal so the JSON stays valid:
-  # curl reports "000" on connection failure, and a leading-zero literal
-  # like 000 is not valid JSON.
-  _hs=$(( 10#${3:-0} ))
+  # Normalize the HTTP status to a bare JSON number. curl reports "000" on
+  # connection failure, and a leading-zero literal like 000 is not valid
+  # JSON. HTTP status codes are always three digits with no leading zero,
+  # so empty/non-numeric/leading-zero values all collapse to 0. Uses a
+  # POSIX case (no bashisms / arithmetic) so it is dash-safe under /bin/sh.
+  _hs=$3
+  case "$_hs" in
+    ''|*[!0-9]*|0*) _hs=0 ;;
+  esac
   _entry="{\"name\":$(jstr "$1"),\"status\":$(jstr "$2"),\"http_status\":$_hs,\"detail\":$(jstr "$4")}"
   if [ -z "$CHECKS" ]; then
     CHECKS="$_entry"
