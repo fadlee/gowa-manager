@@ -247,6 +247,12 @@ func newContractUpstream(t *testing.T) *httptest.Server {
 		c.Close(websocket.StatusCode(code), reason)
 	})
 
+	// The proxy forwards the full /app/{key}/ prefix to the upstream
+	// (GOWA instances are configured with that base path). Register the
+	// same handlers under /app/k/ so the test upstream mirrors real GOWA
+	// behaviour. The test instance key is always "k".
+	mux.Handle("/app/k/", http.StripPrefix("/app/k", mux))
+
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -956,6 +962,7 @@ func TestProxyParity_WebSocket(t *testing.T) {
 			c.SetReadLimit(1 << 20)
 			contractEchoLoop(r.Context(), c)
 		})
+		mux.Handle("/app/k/", http.StripPrefix("/app/k", mux))
 		upstream := httptest.NewServer(mux)
 		t.Cleanup(upstream.Close)
 		port := contractUpstreamPort(t, upstream)
@@ -987,6 +994,7 @@ func TestProxyParity_WebSocket(t *testing.T) {
 			}
 			c.Close(websocket.StatusNormalClosure, "normal")
 		})
+		mux.Handle("/app/k/", http.StripPrefix("/app/k", mux))
 		upstream := httptest.NewServer(mux)
 		t.Cleanup(upstream.Close)
 		port := contractUpstreamPort(t, upstream)
@@ -1024,6 +1032,7 @@ func TestProxyParity_WebSocket(t *testing.T) {
 			}
 			c.Close(websocket.StatusGoingAway, "restarting")
 		})
+		mux.Handle("/app/k/", http.StripPrefix("/app/k", mux))
 		upstream := httptest.NewServer(mux)
 		t.Cleanup(upstream.Close)
 		port := contractUpstreamPort(t, upstream)

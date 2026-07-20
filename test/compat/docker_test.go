@@ -107,7 +107,7 @@ func startContainer(t *testing.T, volumeName string) *containerInfo {
 		"docker", "run", "-d",
 		"--name", volumeName,
 		"-p", "3000",
-		"-v", volumeName+":/data",
+		"-v", volumeName+":/app/data",
 		testImage,
 	)
 	out, err := cmd.CombinedOutput()
@@ -343,15 +343,15 @@ func testDockerVolumePersistence(t *testing.T) {
 	// First container: write a marker file into /data.
 	ci1 := startContainer(t, vol)
 	marker := "docker-test-" + fmt.Sprint(time.Now().UnixNano())
-	dockerExec(t, ci1.id, "sh", "-c", "echo "+marker+" > /data/persistence-marker.txt")
+	dockerExec(t, ci1.id, "sh", "-c", "echo "+marker+" > /app/data/persistence-marker.txt")
 	ci1.cleanup()
 
 	// Second container with the same volume: verify the file is present.
 	ci2 := startContainer(t, vol)
 	defer ci2.cleanup()
-	out := dockerExec(t, ci2.id, "cat", "/data/persistence-marker.txt")
+	out := dockerExec(t, ci2.id, "cat", "/app/data/persistence-marker.txt")
 	if !strings.Contains(out, marker) {
-		t.Fatalf("/data did not persist across restart: got %q, want marker %q", out, marker)
+		t.Fatalf("/app/data did not persist across restart: got %q, want marker %q", out, marker)
 	}
 }
 
@@ -405,7 +405,7 @@ func testDockerSIGTERMShutdown(t *testing.T) {
 		"docker", "run", "-d",
 		"--name", vol,
 		"-p", "3000",
-		"-v", vol+":/data",
+		"-v", vol+":/app/data",
 		testImage,
 	)
 	out, err := cmd.CombinedOutput()
@@ -472,7 +472,7 @@ func testDockerRollbackImageSameVolume(t *testing.T) {
 	// First container writes a marker.
 	ci1 := startContainer(t, vol)
 	marker := "rollback-test-" + fmt.Sprint(time.Now().UnixNano())
-	dockerExec(t, ci1.id, "sh", "-c", "echo "+marker+" > /data/rollback-marker.txt")
+	dockerExec(t, ci1.id, "sh", "-c", "echo "+marker+" > /app/data/rollback-marker.txt")
 	ci1.cleanup()
 
 	// Build a "rollback" image (same Dockerfile, different tag) to simulate
@@ -495,7 +495,7 @@ func testDockerRollbackImageSameVolume(t *testing.T) {
 		"docker", "run", "-d",
 		"--name", rollbackName,
 		"-p", "3000",
-		"-v", vol+":/data",
+		"-v", vol+":/app/data",
 		rollbackImage,
 	).CombinedOutput()
 	if err != nil {
@@ -506,7 +506,7 @@ func testDockerRollbackImageSameVolume(t *testing.T) {
 
 	// Verify the rollback container can read the marker file written by the
 	// first container.
-	out := dockerExec(t, rollbackID, "cat", "/data/rollback-marker.txt")
+	out := dockerExec(t, rollbackID, "cat", "/app/data/rollback-marker.txt")
 	if !strings.Contains(out, marker) {
 		t.Fatalf("rollback image could not read volume marker: got %q, want %q", out, marker)
 	}
