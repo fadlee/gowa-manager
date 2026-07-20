@@ -82,8 +82,8 @@ RUN apk add --no-cache ffmpeg ca-certificates tzdata
 
 # Create a non-root user/group and a writable data directory.
 RUN addgroup -S app && adduser -S -G app app \
-    && mkdir -p /data \
-    && chown -R app:app /data
+    && mkdir -p /app/data \
+    && chown -R app:app /app/data
 
 WORKDIR /app
 
@@ -91,9 +91,9 @@ WORKDIR /app
 COPY --from=builder /out/gowa-manager ./gowa-manager
 RUN chmod +x ./gowa-manager
 
-# /data is the volume mount point for persistent state (SQLite DB, lock file,
-# downloaded GOWA binaries). It is writable by the non-root user.
-VOLUME ["/data"]
+# /app/data is the volume mount point for persistent state (SQLite DB, lock
+# file, downloaded GOWA binaries). It is writable by the non-root user.
+VOLUME ["/app/data"]
 
 EXPOSE 3000
 
@@ -101,7 +101,7 @@ ENV PORT=3000 \
     HOST=0.0.0.0 \
     ADMIN_USERNAME=admin \
     ADMIN_PASSWORD=password \
-    DATA_DIR=/data
+    DATA_DIR=/app/data
 
 USER app
 
