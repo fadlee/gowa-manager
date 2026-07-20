@@ -134,7 +134,7 @@ func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus
 		return LifecycleStatus{}, s.persistFailed(ctx, id, err)
 	}
 	config := ParseConfig(instance.Config)
-	snapshot, err := s.supervisor.Start(ctx, supervisor.StartConfig{InstanceID: id, Path: path, Args: ProcessArgs(config, port), Env: ParseEnvironmentVars(config, port, map[string]string{"GOWA_DATA_DIR": dir}), StartedAt: s.now()})
+	snapshot, err := s.supervisor.Start(ctx, supervisor.StartConfig{InstanceID: id, Path: path, Args: ProcessArgs(config, port), Env: ParseEnvironmentVars(config, port, map[string]string{"GOWA_DATA_DIR": dir}), Dir: dir, StartedAt: s.now()})
 	if err != nil {
 		return LifecycleStatus{}, s.persistFailed(ctx, id, err)
 	}

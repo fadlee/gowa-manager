@@ -21,6 +21,7 @@ type platformProcessConfig struct {
 	Path string
 	Args []string
 	Env  map[string]string
+	Dir  string
 }
 
 type linuxProcess struct {
@@ -47,6 +48,9 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*l
 
 	cmd := exec.Command(config.Path, config.Args...)
 	cmd.Env = mergedEnvironment(config.Env)
+	if config.Dir != "" {
+		cmd.Dir = config.Dir
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start process: %w", err)

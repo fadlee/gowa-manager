@@ -21,6 +21,7 @@ type platformProcessConfig struct {
 	Path string
 	Args []string
 	Env  map[string]string
+	Dir  string
 }
 
 type windowsProcess struct {
@@ -87,7 +88,14 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*w
 	var processInfo windows.ProcessInformation
 	startup.Cb = uint32(unsafe.Sizeof(startup))
 	creationFlags := uint32(createSuspended | windows.CREATE_UNICODE_ENVIRONMENT | windows.CREATE_NEW_PROCESS_GROUP)
-	if err := windows.CreateProcess(app, cmdline, nil, nil, false, creationFlags, &envBlock[0], nil, &startup, &processInfo); err != nil {
+	var dirPtr *uint16
+	if config.Dir != "" {
+		dirPtr, err = windows.UTF16PtrFromString(config.Dir)
+		if err != nil {
+			return nil, fmt.Errorf("start process: working directory: %w", err)
+		}
+	}
+	if err := windows.CreateProcess(app, cmdline, nil, nil, false, creationFlags, &envBlock[0], dirPtr, &startup, &processInfo); err != nil {
 		return nil, fmt.Errorf("start process: %w", err)
 	}
 	proc := &windowsProcess{

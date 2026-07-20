@@ -29,6 +29,7 @@ type StartConfig struct {
 	Path         string
 	Args         []string
 	Env          map[string]string
+	Dir          string
 	ReadyTimeout time.Duration
 	StopTimeout  time.Duration
 	StartedAt    time.Time
@@ -39,6 +40,7 @@ type ProcessConfig struct {
 	Path       string
 	Args       []string
 	Env        map[string]string
+	Dir        string
 }
 
 type Platform interface {
@@ -121,7 +123,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 	if startedAt.IsZero() {
 		startedAt = s.now()
 	}
-	proc, err := s.platform.Start(ctx, ProcessConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env})
+	proc, err := s.platform.Start(ctx, ProcessConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env, Dir: config.Dir})
 	if err != nil {
 		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrStartFailed, err)
 	}
