@@ -248,7 +248,8 @@ export function apiClient(opts: ApiClientOptions) {
   async function request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    attempt = 0
   ): Promise<T> {
     const resp = await fetch(`${opts.baseURL}${path}`, {
       method,
@@ -260,6 +261,20 @@ export function apiClient(opts: ApiClientOptions) {
     });
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
+      // The supervisor serializes lifecycle operations per instance and
+      // rejects an overlapping one with a 500 while the previous op is
+      // still settling (e.g. a UI-triggered restart not yet finished when
+      // the test issues stop). Tests drive these faster than a real user
+      // would, so briefly retry this specific transient condition rather
+      // than failing. A genuine error still surfaces after the budget.
+      if (
+        resp.status === 500 &&
+        text.includes('operation already in progress') &&
+        attempt < 10
+      ) {
+        await new Promise((r) => setTimeout(r, 300));
+        return request<T>(method, path, body, attempt + 1);
+      }
       throw new Error(`${method} ${path} -> ${resp.status}: ${text}`);
     }
     if (resp.status === 204) return undefined as T;
