@@ -326,12 +326,17 @@ test.describe('Go backend E2E', () => {
     // The fake GOWA root handler returns 404 for "/" (only /api/health
     // and /health are registered). That's fine — we just verify the
     // proxy didn't return a 502/503 page error.
-    // Navigate to a known endpoint through the proxy.
+    // Navigate to a known endpoint through the proxy. A "running" status
+    // can precede the instance's port accepting proxied connections, so
+    // poll the forwarded health endpoint until it responds ok rather than
+    // asserting once and flaking on the readiness gap.
     const healthUrl = `${baseURL}/app/${instance.key}/api/health`;
-    const resp = await page.request.get(healthUrl);
-    expect(resp.ok()).toBeTruthy();
-    const body = await resp.json();
-    expect(body.status).toBe('ok');
+    await expect(async () => {
+      const resp = await page.request.get(healthUrl);
+      expect(resp.ok()).toBeTruthy();
+      const body = await resp.json();
+      expect(body.status).toBe('ok');
+    }).toPass({ timeout: 15_000 });
 
     // Cleanup.
     await client.stopInstance(instance.id);
