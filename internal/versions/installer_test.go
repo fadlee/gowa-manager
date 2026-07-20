@@ -81,6 +81,47 @@ func TestInstallerIsIdempotentWhenVersionBinaryExists(t *testing.T) {
 	}
 }
 
+func TestInstallerResolvesLatestAliasToActualTag(t *testing.T) {
+	dataDir := t.TempDir()
+	zipBody := makeZip(t, map[string][]byte{binaryName(): []byte("latest-binary")})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(zipBody)
+	}))
+	t.Cleanup(server.Close)
+
+	// The release list returns v9.0.0 as the latest. Installing "latest"
+	// should resolve to v9.0.0 and place the binary under that tag's directory.
+	installer := NewInstaller(dataDir, &fakeReleaseLister{releases: []GitHubRelease{
+		{TagName: "v9.0.0", Assets: []GitHubAsset{{Name: assetNameForRuntimeInstaller(), BrowserDownloadURL: server.URL}}},
+		{TagName: "v8.11.0", Assets: []GitHubAsset{{Name: assetNameForRuntimeInstaller(), BrowserDownloadURL: server.URL}}},
+	}}, server.Client())
+
+	result, err := installer.Install(context.Background(), "latest")
+	if err != nil {
+		t.Fatalf("Install(latest) error = %v", err)
+	}
+	if result.Version != "v9.0.0" {
+		t.Fatalf("result.Version = %q, want v9.0.0", result.Version)
+	}
+	wantPath := filepath.Join(dataDir, "bin", "versions", "v9.0.0", binaryName())
+	if result.Path != wantPath {
+		t.Fatalf("result.Path = %q, want %q", result.Path, wantPath)
+	}
+	contents, err := os.ReadFile(result.Path)
+	if err != nil || string(contents) != "latest-binary" {
+		t.Fatalf("installed contents = %q, err = %v; want latest-binary", contents, err)
+	}
+}
+
+func TestInstallerLatestAliasFailsWhenNoReleases(t *testing.T) {
+	dataDir := t.TempDir()
+	installer := NewInstaller(dataDir, &fakeReleaseLister{releases: nil}, nil)
+
+	if _, err := installer.Install(context.Background(), "latest"); err == nil {
+		t.Fatalf("Install(latest) with no releases error = nil, want error")
+	}
+}
+
 func TestInstallerRejectsZipSlipAndCleansStaging(t *testing.T) {
 	dataDir := t.TempDir()
 	outside := filepath.Join(dataDir, "pwned")

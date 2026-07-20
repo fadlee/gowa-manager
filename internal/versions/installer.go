@@ -52,6 +52,23 @@ func NewInstaller(dataDir string, releases ReleaseLister, client *http.Client) *
 }
 
 func (i *VersionInstaller) Install(ctx context.Context, version string) (InstallResult, error) {
+	// Resolve the "latest" alias to the actual latest release tag from GitHub,
+	// matching the Bun backend behaviour where "latest" fetches /releases/latest
+	// and installs whatever tag is returned.
+	if version == "latest" {
+		releases, err := i.releases.ListReleases(ctx, 1)
+		if err != nil {
+			return InstallResult{}, fmt.Errorf("failed to resolve latest version: %w", err)
+		}
+		if len(releases) == 0 {
+			return InstallResult{}, errors.New("no releases found to resolve latest version")
+		}
+		version = latestReleaseTag(releases)
+		if version == "" {
+			return InstallResult{}, errors.New("could not determine latest version tag")
+		}
+	}
+
 	finalPath, err := i.versionBinaryPath(version)
 	if err != nil {
 		return InstallResult{}, err
