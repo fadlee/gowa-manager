@@ -274,6 +274,8 @@ func TestDockerSuite(t *testing.T) {
 	t.Run("Ready", testDockerReady)
 	t.Run("EmbeddedSPA", testDockerEmbeddedSPA)
 	t.Run("NonRootUser", testDockerNonRootUser)
+	t.Run("DataDirOwnership", testDockerDataDirOwnership)
+	t.Run("LegacyRootVolumeRepair", testDockerLegacyRootVolumeRepair)
 	t.Run("VolumePersistence", testDockerVolumePersistence)
 	t.Run("RestartRecovery", testDockerRestartRecovery)
 	t.Run("SIGTERMShutdown", testDockerSIGTERMShutdown)
@@ -327,20 +329,117 @@ func testDockerEmbeddedSPA(t *testing.T) {
 	}
 }
 
-// testDockerNonRootUser verifies the container process runs as a non-root
-// user.
+// testDockerNonRootUser verifies the manager process runs as a non-root user.
+//
+// The image starts as root so its entrypoint can repair /app/data ownership,
+// then drops privileges via `su-exec app` before exec'ing the manager, which
+// becomes PID 1. We therefore inspect the owner of PID 1 rather than running
+// `id -u` through `docker exec`: an exec'd process uses the container's default
+// user (root, since the image no longer sets a static USER), which would report
+// root and hide whether the actual long-running process dropped privileges.
 func testDockerNonRootUser(t *testing.T) {
 	vol := uniqueName(t)
 	t.Cleanup(func() { removeVolume(t, vol) })
 	ci := startContainer(t, vol)
 	defer ci.cleanup()
 
-	out := dockerExec(t, ci.id, "id", "-u")
-	uid := strings.TrimSpace(out)
-	if uid == "0" {
-		t.Fatalf("container runs as root (uid 0); expected non-root user")
+	owner := strings.TrimSpace(dockerExec(t, ci.id, "stat", "-c", "%U", "/proc/1"))
+	if owner == "root" {
+		t.Fatalf("manager (PID 1) runs as root; expected non-root user")
 	}
-	t.Logf("container uid=%s", uid)
+	if owner != "app" {
+		t.Fatalf("manager (PID 1) runs as %q; expected app", owner)
+	}
+	t.Logf("manager (PID 1) runs as %s", owner)
+}
+
+// testDockerDataDirOwnership verifies that on a fresh volume the /app/data
+// mount point ends up owned by the non-root "app" user and that the manager —
+// which runs as that user — actually wrote its SQLite database into it. This
+// is the positive-path counterpart to the non-root process check: it asserts
+// the folder is writable by the unprivileged runtime user, not just that the
+// process is unprivileged.
+func testDockerDataDirOwnership(t *testing.T) {
+	vol := uniqueName(t)
+	t.Cleanup(func() { removeVolume(t, vol) })
+	ci := startContainer(t, vol)
+	defer ci.cleanup()
+
+	owner := strings.TrimSpace(dockerExec(t, ci.id, "stat", "-c", "%U", "/app/data"))
+	if owner != "app" {
+		t.Fatalf("/app/data owner = %q, want app", owner)
+	}
+
+	// The app-run manager must have created its DB in the volume, proving the
+	// unprivileged user can write there.
+	files := dockerExec(t, ci.id, "sh", "-c", "ls -1 /app/data")
+	if !strings.Contains(files, "gowa.db") {
+		t.Fatalf("expected gowa.db in /app/data (written by app user); got:\n%s", files)
+	}
+}
+
+// testDockerLegacyRootVolumeRepair reproduces the pre-fix scenario that broke
+// upgrades: an existing /app/data volume owned by root (as an older image that
+// ran the manager as root would have left it). The root entrypoint must repair
+// the ownership to the app user and drop privileges so the non-root process can
+// still write its database. Regression test for the Docker data-volume
+// ownership fix — without the entrypoint's `chown -R app:app`, the container
+// would never become ready on such a volume.
+func testDockerLegacyRootVolumeRepair(t *testing.T) {
+	vol := uniqueName(t)
+	t.Cleanup(func() { removeVolume(t, vol) })
+
+	// Seed the volume with root-owned content, bypassing the image entrypoint
+	// (which would otherwise repair ownership immediately). Overriding the
+	// entrypoint to sh and running as uid 0 leaves /app/data owned by root.
+	seed := exec.Command("docker", "run", "--rm",
+		"-u", "0:0",
+		"--entrypoint", "sh",
+		"-v", vol+":/app/data",
+		testImage,
+		"-c", "mkdir -p /app/data && echo legacy > /app/data/legacy-root.txt && chown -R 0:0 /app/data",
+	)
+	if out, err := seed.CombinedOutput(); err != nil {
+		t.Fatalf("seed root-owned volume failed: %v\n%s", err, out)
+	}
+
+	// Sanity-check the setup: the seeded directory is root-owned before startup.
+	pre := exec.Command("docker", "run", "--rm",
+		"-u", "0:0",
+		"--entrypoint", "sh",
+		"-v", vol+":/app/data",
+		testImage,
+		"-c", "stat -c %U /app/data",
+	)
+	preOut, err := pre.CombinedOutput()
+	if err != nil {
+		t.Fatalf("stat seeded volume failed: %v\n%s", err, preOut)
+	}
+	if got := strings.TrimSpace(string(preOut)); got != "root" {
+		t.Fatalf("seeded /app/data owner = %q, want root (invalid test setup)", got)
+	}
+
+	// Start the container normally against the root-owned volume. If the
+	// entrypoint repairs ownership, the manager becomes ready; otherwise the
+	// unprivileged process cannot write its DB and startContainer fails.
+	ci := startContainer(t, vol)
+	defer ci.cleanup()
+
+	owner := strings.TrimSpace(dockerExec(t, ci.id, "stat", "-c", "%U", "/app/data"))
+	if owner != "app" {
+		t.Fatalf("/app/data owner after repair = %q, want app", owner)
+	}
+
+	// The pre-existing root-owned file must have been re-owned too (chown -R),
+	// and the manager must have written its DB alongside it.
+	fileOwner := strings.TrimSpace(dockerExec(t, ci.id, "stat", "-c", "%U", "/app/data/legacy-root.txt"))
+	if fileOwner != "app" {
+		t.Fatalf("/app/data/legacy-root.txt owner after repair = %q, want app", fileOwner)
+	}
+	files := dockerExec(t, ci.id, "sh", "-c", "ls -1 /app/data")
+	if !strings.Contains(files, "gowa.db") {
+		t.Fatalf("expected gowa.db written to repaired volume; got:\n%s", files)
+	}
 }
 
 // testDockerVolumePersistence verifies that data written to /data survives a
