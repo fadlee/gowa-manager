@@ -78,7 +78,8 @@ FROM frolvlad/alpine-glibc:latest AS runtime
 # ffmpeg: required by GOWA child processes for media processing.
 # ca-certificates: TLS for GOWA binary downloads and webhook calls.
 # tzdata: timezone data for scheduling/log timestamps.
-RUN apk add --no-cache ffmpeg ca-certificates tzdata
+# su-exec: drop from root to the app user after repairing legacy volume ownership.
+RUN apk add --no-cache ffmpeg ca-certificates tzdata su-exec
 
 # Create a non-root user/group and a writable data directory.
 RUN addgroup -S app && adduser -S -G app app \
@@ -90,6 +91,8 @@ WORKDIR /app
 # Copy the statically-linked Go binary and make it executable.
 COPY --from=builder /out/gowa-manager ./gowa-manager
 RUN chmod +x ./gowa-manager
+COPY scripts/docker-entrypoint.sh /usr/local/bin/gowa-manager-entrypoint
+RUN chmod +x /usr/local/bin/gowa-manager-entrypoint
 
 # /app/data is the volume mount point for persistent state (SQLite DB, lock
 # file, downloaded GOWA binaries). It is writable by the non-root user.
@@ -103,7 +106,8 @@ ENV PORT=3000 \
     ADMIN_PASSWORD=password \
     DATA_DIR=/app/data
 
-USER app
 
-# Exec form so the Go binary receives signals directly (graceful SIGTERM).
-ENTRYPOINT ["./gowa-manager"]
+# Start as root so the entrypoint can repair old root-owned /app/data volumes,
+# then exec the manager as the non-root app user.
+ENTRYPOINT ["gowa-manager-entrypoint"]
+CMD ["./gowa-manager"]
