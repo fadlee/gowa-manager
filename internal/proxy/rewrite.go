@@ -207,8 +207,11 @@ func RewriteRedirectLocation(location, instanceKey, requestHost string) string {
 
 	prefix := "/" + ProxyPrefix + "/" + instanceKey
 
-	// Absolute localhost URL: strip scheme + host, keep path + query.
-	if strings.HasPrefix(location, "http://localhost:") {
+	// Absolute loopback URL: strip scheme + host, keep path + query. The
+	// proxy dials the upstream as 127.0.0.1, so that is the host GOWA
+	// echoes into Host-derived redirects; "localhost" is still matched for
+	// upstreams that emit it regardless of the dialed host.
+	if strings.HasPrefix(location, "http://127.0.0.1:") || strings.HasPrefix(location, "http://localhost:") {
 		u, err := url.Parse(location)
 		if err != nil {
 			return location

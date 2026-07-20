@@ -438,6 +438,15 @@ func TestRewriteRedirectLocation_LocalhostWithQuery(t *testing.T) {
 	}
 }
 
+// The proxy dials the upstream as 127.0.0.1, so GOWA can echo that host
+// into Host-derived redirects; those must be rewritten too.
+func TestRewriteRedirectLocation_LoopbackIPStripped(t *testing.T) {
+	got := RewriteRedirectLocation("http://127.0.0.1:8080/admin?q=1", "mykey", "manager.example.com")
+	if got != "/app/mykey/admin?q=1" {
+		t.Fatalf("got %q, want /app/mykey/admin?q=1", got)
+	}
+}
+
 func TestRewriteRedirectLocation_BarePathPrefixed(t *testing.T) {
 	got := RewriteRedirectLocation("/admin", "mykey", "manager.example.com")
 	if got != "/app/mykey/admin" {

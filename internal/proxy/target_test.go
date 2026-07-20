@@ -121,7 +121,7 @@ func TestResolveTarget_RepoError(t *testing.T) {
 	}
 }
 
-// ---- ResolveTarget: localhost target only ----
+// ---- ResolveTarget: 127.0.0.1 target only ----
 
 func TestResolveTarget_LocalhostOnly(t *testing.T) {
 	inst := instances.Instance{Key: "k", Status: "running", Port: intPtr(8080)}
@@ -133,8 +133,8 @@ func TestResolveTarget_LocalhostOnly(t *testing.T) {
 	if tgt.URL.Scheme != "http" {
 		t.Fatalf("scheme = %q, want http", tgt.URL.Scheme)
 	}
-	if tgt.URL.Hostname() != "localhost" {
-		t.Fatalf("hostname = %q, want localhost", tgt.URL.Hostname())
+	if tgt.URL.Hostname() != "127.0.0.1" {
+		t.Fatalf("hostname = %q, want 127.0.0.1", tgt.URL.Hostname())
 	}
 	if tgt.URL.Port() != "8080" {
 		t.Fatalf("port = %q, want 8080", tgt.URL.Port())
@@ -192,7 +192,7 @@ func TestResolveTarget_QueryPreserved(t *testing.T) {
 func TestResolveTarget_ProxyPrefixStripped(t *testing.T) {
 	// The caller is expected to pass the path AFTER /app/{key}. The
 	// resolver must not double-prefix; it appends the path verbatim to
-	// the localhost target.
+	// the 127.0.0.1 target.
 	inst := instances.Instance{Key: "mykey", Status: "running", Port: intPtr(7000)}
 	r := NewTargetResolver(newFakeRepo(inst))
 	tgt, err := r.ResolveTarget(context.Background(), "mykey", "/admin/settings")
@@ -209,7 +209,7 @@ func TestResolveTarget_ProxyPrefixStripped(t *testing.T) {
 func TestSSRF_RequestPathCannotSelectScheme(t *testing.T) {
 	inst := instances.Instance{Key: "k", Status: "running", Port: intPtr(8080)}
 	r := NewTargetResolver(newFakeRepo(inst))
-	// A path that tries to override the scheme must still target localhost.
+	// A path that tries to override the scheme must still target 127.0.0.1.
 	tgt, err := r.ResolveTarget(context.Background(), "k", "https://evil.com/admin")
 	if err != nil {
 		t.Fatalf("ResolveTarget error = %v", err)
@@ -217,8 +217,8 @@ func TestSSRF_RequestPathCannotSelectScheme(t *testing.T) {
 	if tgt.URL.Scheme != "http" {
 		t.Fatalf("scheme = %q, want http (request must not override)", tgt.URL.Scheme)
 	}
-	if tgt.URL.Hostname() != "localhost" {
-		t.Fatalf("hostname = %q, want localhost", tgt.URL.Hostname())
+	if tgt.URL.Hostname() != "127.0.0.1" {
+		t.Fatalf("hostname = %q, want 127.0.0.1", tgt.URL.Hostname())
 	}
 	if tgt.URL.Port() != "8080" {
 		t.Fatalf("port = %q, want 8080", tgt.URL.Port())
@@ -232,8 +232,8 @@ func TestSSRF_RequestPathCannotSelectHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveTarget error = %v", err)
 	}
-	if tgt.URL.Hostname() != "localhost" {
-		t.Fatalf("hostname = %q, want localhost", tgt.URL.Hostname())
+	if tgt.URL.Hostname() != "127.0.0.1" {
+		t.Fatalf("hostname = %q, want 127.0.0.1", tgt.URL.Hostname())
 	}
 	if tgt.URL.Port() != "8080" {
 		t.Fatalf("port = %q, want 8080 (request must not override)", tgt.URL.Port())
@@ -301,7 +301,7 @@ func TestResolveTarget_URLUsable(t *testing.T) {
 	if tgt.URL == nil {
 		t.Fatal("Target.URL is nil")
 	}
-	if got := tgt.URL.String(); got != "http://localhost:8080/foo?bar=baz" {
-		t.Fatalf("URL.String() = %q, want http://localhost:8080/foo?bar=baz", got)
+	if got := tgt.URL.String(); got != "http://127.0.0.1:8080/foo?bar=baz" {
+		t.Fatalf("URL.String() = %q, want http://127.0.0.1:8080/foo?bar=baz", got)
 	}
 }

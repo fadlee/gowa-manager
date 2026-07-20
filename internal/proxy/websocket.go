@@ -1,7 +1,7 @@
 // Package proxy — WebSocket bridge. websocket.go upgrades incoming
 // WebSocket requests mounted under /app/{instanceKey}/... and bridges
 // them to the corresponding GOWA instance's upstream WebSocket
-// endpoint (ws://localhost:{port}{path}).
+// endpoint (ws://127.0.0.1:{port}{path}).
 //
 // The bridge builds on the pure target resolution in target.go and the
 // header/auth utilities in rewrite.go. It uses github.com/coder/websocket

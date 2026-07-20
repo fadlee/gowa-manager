@@ -43,7 +43,7 @@ func NewTargetResolver(repo instances.Repository) *TargetResolver {
 }
 
 // ResolveTarget looks up the instance by key and constructs the upstream
-// target URL as http://localhost:{port}{requestPath}. It returns an
+// target URL as http://127.0.0.1:{port}{requestPath}. It returns an
 // error when the instance is not found, is not running, has no port, or
 // has an invalid port. The request path is treated purely as a path:
 // any scheme or host it may carry is discarded so that no request input
@@ -71,9 +71,16 @@ func (r *TargetResolver) ResolveTarget(ctx context.Context, instanceKey, request
 	// path is parsed as a reference and only its path/query/fragment
 	// components are copied — never its scheme or host — so a
 	// malicious path cannot redirect the upstream connection.
+	//
+	// Dial the IPv4 loopback literal rather than "localhost": GOWA
+	// instances listen on 127.0.0.1, but "localhost" can resolve to the
+	// IPv6 loopback (::1) first on dual-stack hosts, so a "localhost"
+	// dial fails to reach the IPv4-only instance (observed as 502s on
+	// CI). 127.0.0.1 is unambiguous and is accepted by both 127.0.0.1
+	// and 0.0.0.0 binds.
 	target := &url.URL{
 		Scheme: "http",
-		Host:   fmt.Sprintf("localhost:%d", port),
+		Host:   fmt.Sprintf("127.0.0.1:%d", port),
 	}
 	if requestPath != "" {
 		ref, err := url.Parse(requestPath)

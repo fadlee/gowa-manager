@@ -1,7 +1,7 @@
 // Package proxy — HTTP reverse proxy. http.go implements the streaming
 // reverse proxy that forwards browser requests mounted under
 // /app/{instanceKey}/... to the corresponding GOWA instance backend
-// (http://localhost:{port}{path}).
+// (http://127.0.0.1:{port}{path}).
 //
 // The proxy builds on the pure utilities in target.go (target resolution)
 // and rewrite.go (header preparation, response rewriting). It uses the
