@@ -77,6 +77,9 @@ func SelectAssetForPlatform(assets []GitHubAsset, goos, goarch string) (GitHubAs
 	if goos == "linux" && (goarch == "amd64" || goarch == "arm64") {
 		return selectAsset(assets, "linux", goarch)
 	}
+	if goos == "darwin" && (goarch == "amd64" || goarch == "arm64") {
+		return selectAsset(assets, "darwin", goarch)
+	}
 	return GitHubAsset{}, false
 }
 

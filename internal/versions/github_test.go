@@ -57,6 +57,8 @@ func TestSelectAssetForPlatform(t *testing.T) {
 		{Name: "gowa-linux-arm64.tar.gz", BrowserDownloadURL: "tarball"},
 		{Name: "gowa-linux-arm64.zip", BrowserDownloadURL: "arm64"},
 		{Name: "gowa-windows-amd64.zip", BrowserDownloadURL: "win"},
+		{Name: "whatsapp_8.11.0_darwin_amd64.zip", BrowserDownloadURL: "darwin-amd64"},
+		{Name: "whatsapp_8.11.0_darwin_arm64.zip", BrowserDownloadURL: "darwin-arm64"},
 		{Name: "gowa-linux-amd64-checksums.zip", BrowserDownloadURL: "bad-checksum"},
 		{Name: "gowa-linux-amd64.zip", BrowserDownloadURL: "linux"},
 	}
@@ -71,8 +73,9 @@ func TestSelectAssetForPlatform(t *testing.T) {
 		{name: "linux amd64", goos: "linux", arch: "amd64", want: "linux", ok: true},
 		{name: "linux arm64", goos: "linux", arch: "arm64", want: "arm64", ok: true},
 		{name: "windows amd64", goos: "windows", arch: "amd64", want: "win", ok: true},
+		{name: "darwin amd64", goos: "darwin", arch: "amd64", want: "darwin-amd64", ok: true},
+		{name: "darwin arm64", goos: "darwin", arch: "arm64", want: "darwin-arm64", ok: true},
 		{name: "windows arm64 unsupported", goos: "windows", arch: "arm64"},
-		{name: "darwin amd64 unsupported", goos: "darwin", arch: "amd64"},
 		{name: "linux arm unsupported", goos: "linux", arch: "arm"},
 	}
 
