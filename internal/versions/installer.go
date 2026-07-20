@@ -109,16 +109,26 @@ func (i *VersionInstaller) Install(ctx context.Context, version string) (Install
 		return InstallResult{}, err
 	}
 
-	binaryPath := filepath.Join(stageDir, binaryNameForRuntime())
-	if info, err := os.Stat(binaryPath); err != nil || info.IsDir() {
-		return InstallResult{}, fmt.Errorf("archive missing expected binary %s", binaryNameForRuntime())
+	// The GOWA release archives name the binary after the platform (e.g.
+	// "windows-amd64.exe", "linux-amd64") rather than "gowa"/"gowa.exe".
+	// Find the actual binary and rename it to the canonical name.
+	srcBinary, err := findBinaryInDir(stageDir)
+	if err != nil {
+		return InstallResult{}, fmt.Errorf("archive missing expected binary: %w", err)
 	}
-	if runtime.GOOS == "linux" {
-		if err := os.Chmod(binaryPath, 0o755); err != nil {
+	canonicalName := binaryNameForRuntime()
+	canonicalPath := filepath.Join(stageDir, canonicalName)
+	if filepath.Base(srcBinary) != canonicalName {
+		if err := os.Rename(srcBinary, canonicalPath); err != nil {
+			return InstallResult{}, fmt.Errorf("rename extracted binary: %w", err)
+		}
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(canonicalPath, 0o755); err != nil {
 			return InstallResult{}, err
 		}
 	}
-	binaryInfo, err := os.Stat(binaryPath)
+	binaryInfo, err := os.Stat(canonicalPath)
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -321,4 +331,70 @@ func (i *VersionInstaller) versionBinaryPath(version string) (string, error) {
 func (i *VersionInstaller) versionDir(version string) (string, error) {
 	service := NewService(i.dataDir, i.releases)
 	return service.versionDir(version)
+}
+
+// findBinaryInDir locates the GOWA executable inside an extracted release
+// archive. The archives name the binary after the platform (e.g.
+// "windows-amd64.exe", "linux-amd64") rather than "gowa"/"gowa.exe", so we
+// cannot rely on a fixed name. The selection mirrors the Bun backend:
+//  1. A file with no dot in its name (excluding readme/license/checksums).
+//  2. A file containing "whatsapp", "main", "app", or ending in ".exe".
+//  3. The largest file (excluding readme/license/checksums).
+func findBinaryInDir(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	isNonBinary := func(name string) bool {
+		lower := strings.ToLower(name)
+		return lower == "readme.md" || lower == "license" ||
+			strings.Contains(lower, "checksum") || strings.Contains(lower, "sha256")
+	}
+	// 1. File without a dot (e.g. "linux-amd64").
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if isNonBinary(name) {
+			continue
+		}
+		if !strings.Contains(name, ".") {
+			return filepath.Join(dir, name), nil
+		}
+	}
+	// 2. File matching known binary name patterns.
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if isNonBinary(name) {
+			continue
+		}
+		lower := strings.ToLower(name)
+		if strings.Contains(lower, "whatsapp") || strings.Contains(lower, "main") || strings.Contains(lower, "app") || strings.HasSuffix(lower, ".exe") {
+			return filepath.Join(dir, name), nil
+		}
+	}
+	// 3. Largest file.
+	var best string
+	var bestSize int64
+	for _, e := range entries {
+		if e.IsDir() || isNonBinary(e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.Size() > bestSize {
+			bestSize = info.Size()
+			best = filepath.Join(dir, e.Name())
+		}
+	}
+	if best != "" {
+		return best, nil
+	}
+	return "", errors.New("no binary file found in archive")
 }

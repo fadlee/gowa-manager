@@ -169,17 +169,66 @@ func TestInstallerRejectsSpecialZipEntriesAndCleansStaging(t *testing.T) {
 	assertNoInstallerTemps(t, dataDir)
 }
 
-func TestInstallerRejectsMissingExpectedBinaryNameAndCleansStaging(t *testing.T) {
+func TestInstallerRejectsArchiveWithNoBinaryAndCleansStaging(t *testing.T) {
 	dataDir := t.TempDir()
-	installer := installerWithZip(t, dataDir, makeZip(t, map[string][]byte{"not-gowa": []byte("nope")}))
+	// Archive contains only non-binary files (readme.md and a checksum file).
+	// The installer should reject it because findBinaryInDir skips readme.md
+	// and files with "checksum" in the name, leaving no candidate.
+	installer := installerWithZip(t, dataDir, makeZip(t, map[string][]byte{
+		"readme.md":     []byte("documentation"),
+		"checksums.txt": []byte("sha256 hashes"),
+	}))
 
 	if _, err := installer.Install(context.Background(), "v1.2.3"); err == nil {
-		t.Fatalf("Install(missing binary) error = nil, want error")
+		t.Fatalf("Install(no binary) error = nil, want error")
 	}
 	if _, err := os.Stat(filepath.Join(dataDir, "bin", "versions", "v1.2.3", binaryName())); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("final binary stat err = %v, want not exist", err)
 	}
 	assertNoInstallerTemps(t, dataDir)
+}
+
+func TestInstallerRenamesPlatformBinaryToCanonicalName(t *testing.T) {
+	dataDir := t.TempDir()
+	// The actual GOWA release archives name the binary after the platform
+	// (e.g. "windows-amd64.exe", "linux-amd64") rather than "gowa".
+	// The installer should find and rename it to the canonical name.
+	platformName := "linux-amd64"
+	if runtime.GOOS == "windows" {
+		platformName = "windows-amd64.exe"
+	}
+	zipBody := makeZip(t, map[string][]byte{
+		"readme.md":  []byte("docs"),
+		platformName: []byte("platform-binary"),
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(zipBody)
+	}))
+	t.Cleanup(server.Close)
+
+	installer := NewInstaller(dataDir, &fakeReleaseLister{releases: []GitHubRelease{{TagName: "v1.2.3", Assets: []GitHubAsset{
+		{Name: assetNameForRuntimeInstaller(), BrowserDownloadURL: server.URL},
+	}}}}, server.Client())
+
+	result, err := installer.Install(context.Background(), "v1.2.3")
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	wantPath := filepath.Join(dataDir, "bin", "versions", "v1.2.3", binaryName())
+	if result.Path != wantPath {
+		t.Fatalf("result.Path = %q, want %q", result.Path, wantPath)
+	}
+	contents, err := os.ReadFile(result.Path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(contents) != "platform-binary" {
+		t.Fatalf("installed contents = %q, want platform-binary", contents)
+	}
+	// The original platform-named file should not exist in the final directory.
+	if _, err := os.Stat(filepath.Join(filepath.Dir(result.Path), platformName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("platform-named file should not exist in final dir, err = %v", err)
+	}
 }
 
 func TestInstallerCleansInterruptedDownloadAndDoesNotExposeToken(t *testing.T) {
