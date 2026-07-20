@@ -353,5 +353,5 @@ func (s *Supervisor) handleExit(instanceID, generation int64, snapshot ProcessSn
 type defaultPlatform struct{}
 
 func (defaultPlatform) Start(ctx context.Context, config ProcessConfig) (Process, error) {
-	return startPlatformProcess(ctx, platformProcessConfig{Path: config.Path, Args: config.Args, Env: config.Env})
+	return startPlatformProcess(ctx, platformProcessConfig{Path: config.Path, Args: config.Args, Env: config.Env, Dir: config.Dir})
 }

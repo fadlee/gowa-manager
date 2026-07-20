@@ -51,6 +51,8 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*l
 	if config.Dir != "" {
 		cmd.Dir = config.Dir
 	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start process: %w", err)
