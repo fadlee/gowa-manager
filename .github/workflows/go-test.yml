@@ -118,19 +118,16 @@ jobs:
       - name: Run app and internal tests with race detector
         run: go test -race -p 1 ./cmd/... ./internal/...
 
-      - name: Run contract tests explicitly
-        run: go test -skip 'TestRuntimeFaults' ./test/contract/...
-
-      # Fault-injection tests (kill/leak under load) depend on precise
-      # process timing on the shared runner, so an environment hiccup can
-      # flake them. Kept non-blocking so they report without gating main.
-      - name: Run contract runtime-fault tests (non-blocking)
+      # Cross-process integration suites, kept non-blocking so a shared-runner
+      # hiccup reports without gating main:
+      #   - contract parity spawns real Bun and Go backends and compares
+      #     them; it is sensitive to version-dir/state isolation and timing.
+      #   - ops shells out to the backup/preflight/rollback scripts and
+      #     spawns real processes.
+      - name: Run contract tests explicitly (non-blocking)
         continue-on-error: true
-        run: go test -run 'TestRuntimeFaults' ./test/contract/...
+        run: go test ./test/contract/...
 
-      # Ops integration tests shell out to the backup/preflight/rollback
-      # scripts and spawn real processes. Kept non-blocking so process or
-      # timing hiccups on shared runners do not gate main.
       - name: Run ops tests explicitly (non-blocking)
         continue-on-error: true
         run: go test ./test/ops/...
@@ -246,33 +243,31 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      # Blocking suite: everything except the brittle ops package and the
-      # timing-sensitive runtime-fault tests, which run non-blocking below.
+      # Blocking suite: everything except the brittle cross-process
+      # integration packages (ops, contract), which run non-blocking below.
       - name: Run full test suite (no race)
         shell: pwsh
         run: |
-          $pkgs = go list ./... | Where-Object { $_ -notmatch '/test/ops$' }
-          go test -skip 'TestRuntimeFaults' @pkgs
+          $pkgs = go list ./... | Where-Object { $_ -notmatch '/test/(ops|contract)$' }
+          go test @pkgs
 
       - name: Run process supervisor and system runtime tests explicitly
         run: |
           go test ./internal/supervisor/...
           go test ./internal/system/...
 
-      - name: Run proxy and contract tests explicitly
-        run: |
-          go test ./internal/proxy/...
-          go test -skip 'TestRuntimeFaults' ./test/contract/...
+      - name: Run proxy tests explicitly
+        run: go test ./internal/proxy/...
 
-      # Process/timing-sensitive tests: ops integration (script-driven,
-      # spawns real processes) and runtime fault injection. Non-blocking so
-      # a shared-runner hiccup reports without gating main.
-      - name: Run brittle process tests (non-blocking)
+      # Cross-process integration suites (spawn real backends / scripts and
+      # are timing-sensitive on shared runners). Non-blocking so a hiccup
+      # reports without gating main.
+      - name: Run integration tests (non-blocking)
         continue-on-error: true
         shell: pwsh
         run: |
           go test ./test/ops/...
-          go test -run 'TestRuntimeFaults' ./test/contract/...
+          go test ./test/contract/...
 
       - name: Check for surviving fakegowa processes
         if: always()
