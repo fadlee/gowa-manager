@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +60,14 @@ func adminCreds() (string, string) {
 // is responsive.
 func dockerAvailable(t *testing.T) {
 	t.Helper()
+	// The image is Linux-only (FROM oven/bun:1-alpine, gcr.io/distroless).
+	// GitHub's Windows runners expose a Docker daemon in Windows-containers
+	// mode, so `docker info` succeeds but the Linux base image has "no
+	// matching manifest for windows/amd64" and the build fails. Skip rather
+	// than fail on any platform that cannot run Linux containers.
+	if runtime.GOOS == "windows" {
+		t.Skip("docker compat suite requires Linux containers; skipping on Windows")
+	}
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker CLI not installed")
 	}
