@@ -100,6 +100,8 @@ jobs:
         path: |
           dist-go/gowa-manager-linux-amd64
           dist-go/gowa-manager-linux-arm64
+          dist-go/gowa-manager-macos-amd64
+          dist-go/gowa-manager-macos-arm64
           dist-go/gowa-manager-windows-amd64.exe
           dist-go/checksums-go.txt
           dist-go/sbom.json
@@ -135,6 +137,8 @@ jobs:
         files: |
           dist-go/gowa-manager-linux-amd64
           dist-go/gowa-manager-linux-arm64
+          dist-go/gowa-manager-macos-amd64
+          dist-go/gowa-manager-macos-arm64
           dist-go/gowa-manager-windows-amd64.exe
           dist-go/checksums-go.txt
           dist-go/sbom.json
@@ -160,6 +164,8 @@ jobs:
           |----------|--------|
           | Linux x64 | `gowa-manager-linux-amd64` |
           | Linux ARM64 | `gowa-manager-linux-arm64` |
+          | macOS Intel | `gowa-manager-macos-amd64` |
+          | macOS Apple Silicon | `gowa-manager-macos-arm64` |
           | Windows x64 | `gowa-manager-windows-amd64.exe` |
 
           </details>

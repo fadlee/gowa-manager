@@ -1,12 +1,10 @@
 name: Go Test
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  # Allow the Test workflow to trigger this workflow reusing it.
+  # Reused by the primary Test workflow; keep push/PR triggers there to avoid
+  # running the Go matrix twice for the same ref.
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read

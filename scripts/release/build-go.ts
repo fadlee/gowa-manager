@@ -2,9 +2,11 @@
  * Release build orchestrator for the Go backend.
  *
  * Builds the production React SPA once from locked dependencies, embeds it
- * into the Go static FS, then cross-compiles three release binaries:
+ * into the Go static FS, then cross-compiles five release binaries:
  *   - gowa-manager-linux-amd64
  *   - gowa-manager-linux-arm64
+ *   - gowa-manager-macos-amd64
+ *   - gowa-manager-macos-arm64
  *   - gowa-manager-windows-amd64.exe
  *
  * Reproducibility:
@@ -17,6 +19,8 @@
  * Outputs:
  *   - dist-go/gowa-manager-linux-amd64
  *   - dist-go/gowa-manager-linux-arm64
+ *   - dist-go/gowa-manager-macos-amd64
+ *   - dist-go/gowa-manager-macos-arm64
  *   - dist-go/gowa-manager-windows-amd64.exe
  *   - dist-go/checksums-go.txt (SHA-256 manifest)
  */
@@ -39,6 +43,8 @@ interface Target {
 const TARGETS: Target[] = [
   { goos: 'linux', goarch: 'amd64', outfile: 'gowa-manager-linux-amd64' },
   { goos: 'linux', goarch: 'arm64', outfile: 'gowa-manager-linux-arm64' },
+  { goos: 'darwin', goarch: 'amd64', outfile: 'gowa-manager-macos-amd64' },
+  { goos: 'darwin', goarch: 'arm64', outfile: 'gowa-manager-macos-arm64' },
   { goos: 'windows', goarch: 'amd64', outfile: 'gowa-manager-windows-amd64.exe' },
 ]
 

@@ -38,6 +38,8 @@ interface ExpectedTarget {
 const TARGETS: ExpectedTarget[] = [
   { pattern: /^gowa-manager-linux-amd64$/, goos: 'linux', goarch: 'amd64', outfile: 'gowa-manager-linux-amd64' },
   { pattern: /^gowa-manager-linux-arm64$/, goos: 'linux', goarch: 'arm64', outfile: 'gowa-manager-linux-arm64' },
+  { pattern: /^gowa-manager-macos-amd64$/, goos: 'darwin', goarch: 'amd64', outfile: 'gowa-manager-macos-amd64' },
+  { pattern: /^gowa-manager-macos-arm64$/, goos: 'darwin', goarch: 'arm64', outfile: 'gowa-manager-macos-arm64' },
   { pattern: /^gowa-manager-windows-amd64\.exe$/, goos: 'windows', goarch: 'amd64', outfile: 'gowa-manager-windows-amd64.exe' },
 ]
 
