@@ -30,3 +30,11 @@ src/version.ts
 test-results/
 playwright-report/
 .playwright/
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+
+# Stray test artifacts
+/dy
