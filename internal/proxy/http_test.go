@@ -247,6 +247,12 @@ func newUpstreamServer(t *testing.T) *httptest.Server {
 		w.WriteHeader(code)
 	})
 
+	// The proxy forwards the full /app/{key}/ prefix to the upstream
+	// (GOWA instances are configured with that base path). Register the
+	// same handlers under /app/k/ so the test upstream mirrors real GOWA
+	// behaviour. The test instance key is always "k".
+	mux.Handle("/app/k/", http.StripPrefix("/app/k", mux))
+
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

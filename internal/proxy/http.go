@@ -81,16 +81,22 @@ func defaultProxyTransport() *http.Transport {
 // (/app/{key}/...), prepares forward headers, and streams the upstream
 // response back to the client. Instance-not-found yields 404; a stopped
 // or portless instance yields 503; upstream connection failures yield 502.
+//
+// The full original request path (including the /app/{key}/ prefix) is
+// forwarded to the upstream GOWA instance. GOWA is configured with a base
+// path of /app/{key}/ and expects requests at that path, not at the root.
 func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	instanceKey, subPath := splitProxyPath(r.URL.Path)
+	instanceKey, _ := splitProxyPath(r.URL.Path)
 	if instanceKey == "" {
 		writeProxyError(w, http.StatusNotFound, "Instance not found")
 		return
 	}
 
-	// Carry the query string through to target resolution so the upstream
-	// URL includes it.
-	requestPath := subPath
+	// Carry the full original path and query string through to target
+	// resolution. GOWA instances are configured with a base path of
+	// /app/{key}/ and serve their routes under that prefix, so the proxy
+	// must forward the complete path rather than stripping the prefix.
+	requestPath := r.URL.Path
 	if r.URL.RawQuery != "" {
 		requestPath += "?" + r.URL.RawQuery
 	}

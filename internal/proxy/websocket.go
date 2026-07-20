@@ -112,14 +112,16 @@ func (b *WSBridge) CloseAll() {
 // yields a 503. Upstream dial failures result in a close with
 // StatusInternalError after the upgrade.
 func (b *WSBridge) ServeWS(w http.ResponseWriter, r *http.Request) {
-	instanceKey, subPath := splitProxyPath(r.URL.Path)
+	instanceKey, _ := splitProxyPath(r.URL.Path)
 	if instanceKey == "" {
 		writeProxyError(w, http.StatusNotFound, "Instance not found")
 		return
 	}
 
-	// Carry the query string through to target resolution.
-	requestPath := subPath
+	// Carry the full original path and query string through to target
+	// resolution. GOWA instances are configured with a base path of
+	// /app/{key}/ and expect WebSocket requests at that path.
+	requestPath := r.URL.Path
 	if r.URL.RawQuery != "" {
 		requestPath += "?" + r.URL.RawQuery
 	}
