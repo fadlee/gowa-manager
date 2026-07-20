@@ -24,6 +24,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/instances"
 	"github.com/fadlee/gowa-manager/internal/proxy"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
+	"github.com/fadlee/gowa-manager/internal/versions"
 )
 
 type fakeLock struct {
@@ -144,6 +145,53 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 	mu.Unlock()
 	if !equal(got, want) {
 		t.Fatalf("events = %#v\nwant = %#v", got, want)
+	}
+}
+
+func TestRunInstallsLatestVersionBeforeListening(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	installer := &fakeStartupVersionInstaller{}
+	started := make(chan struct{})
+	opts := Options{
+		Config: config.Config{Port: 0, DataDir: t.TempDir()},
+		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		AcquireLock: func(string) (Releaser, error) {
+			return &fakeLock{events: &[]string{}}, nil
+		},
+		OpenDB: func(context.Context, string) (Closer, error) {
+			return &fakeDB{events: &[]string{}}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			return httpapi.Dependencies{VersionInstaller: installer}, nil
+		},
+		BuildSchedulers: func(context.Context, httpapi.Dependencies) (Schedulers, error) {
+			return &fakeSchedulers{events: &[]string{}}, nil
+		},
+		Listen: func(network, address string) (net.Listener, error) {
+			if installer.version != "latest" {
+				t.Fatalf("Listen called before installing latest; installer version = %q", installer.version)
+			}
+			ln, err := net.Listen(network, "127.0.0.1:0")
+			if err == nil {
+				close(started)
+			}
+			return ln, err
+		},
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Run(ctx, opts) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not start")
+	}
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if installer.calls != 1 || installer.version != "latest" {
+		t.Fatalf("Install calls = %d version = %q, want one latest install", installer.calls, installer.version)
 	}
 }
 
@@ -895,6 +943,17 @@ func waitForReady(t *testing.T, r *httpapi.AtomicReadiness, timeout time.Duratio
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("readiness did not become ready within %v", timeout)
+}
+
+type fakeStartupVersionInstaller struct {
+	calls   int
+	version string
+}
+
+func (f *fakeStartupVersionInstaller) Install(_ context.Context, version string) (versions.InstallResult, error) {
+	f.calls++
+	f.version = version
+	return versions.InstallResult{Version: version}, nil
 }
 
 // fakeSchedulers records start/stop events for lifecycle-order tests.

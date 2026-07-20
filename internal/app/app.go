@@ -152,6 +152,9 @@ func Run(ctx context.Context, opts Options) error {
 	} else {
 		return errors.New("database handle does not expose sqlite connection")
 	}
+	if err := installStartupVersion(ctx, deps, logger); err != nil {
+		return err
+	}
 
 	ln, err := listenFirstAvailable(listen, opts.Config.Host, opts.Config.Port)
 	if err != nil {
@@ -388,6 +391,18 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		MagicAuth:           magicAuth,
 		InstanceLookup:      repo,
 	}, nil
+}
+
+func installStartupVersion(ctx context.Context, deps httpapi.Dependencies, logger *slog.Logger) error {
+	if deps.VersionInstaller == nil {
+		return nil
+	}
+	result, err := deps.VersionInstaller.Install(ctx, "latest")
+	if err != nil {
+		return fmt.Errorf("install latest GOWA version: %w", err)
+	}
+	logger.Info("latest GOWA version installed", "version", result.Version, "alreadyInstalled", result.AlreadyInstalled)
+	return nil
 }
 
 func dbFromCloser(closer Closer) (*database.DB, bool) {
