@@ -55,6 +55,22 @@ if (!response.ok) {
 const devices = await response.json();`
   const activeSnippetContent = activeSnippet === 'curl' ? curlSnippet : jsSnippet
 
+  const buildDocsUrl = (adminUrl: string) => {
+    const url = new URL(adminUrl, window.location.origin)
+    url.pathname = `/app/${instance.key}/docs`
+    return `${url.pathname}${url.search}${url.hash}`
+  }
+
+  const handleOpenSwagger = async () => {
+    try {
+      const { url } = await apiClient.createAdminLink(instance.id)
+      window.open(buildDocsUrl(url), '_blank')
+    } catch (error) {
+      console.error('Failed to create Swagger admin link:', error)
+      window.open(docsUrl, '_blank')
+    }
+  }
+
   const endpoints = [
     {
       method: 'GET',
@@ -111,11 +127,9 @@ const devices = await response.json();`
           <p className="text-sm text-gray-500 dark:text-gray-400">Quick references for integrating with this proxied GOWA instance.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button asChild variant="outline" size="sm">
-            <a href={docsUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="mr-2 h-4 w-4" />
-              Open Swagger
-            </a>
+          <Button variant="outline" size="sm" onClick={handleOpenSwagger}>
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Open Swagger
           </Button>
           <Button asChild variant="outline" size="sm">
             <a href={upstreamDocsUrl} target="_blank" rel="noopener noreferrer">
