@@ -449,4 +449,4 @@ jobs:
         run: bun run build:client
 
       - name: Run baseline Bun tests
-        run: bun test
+        run: bun run scripts/check-coverage.ts --lines 0.9 --funcs 0.9
