@@ -52,13 +52,14 @@ type LifecycleOptions struct {
 }
 
 type LifecycleStatus struct {
-	ID        int64                 `json:"id"`
-	Name      string                `json:"name"`
-	Status    string                `json:"status"`
-	Port      *int                  `json:"port"`
-	PID       *int                  `json:"pid"`
-	Uptime    int64                 `json:"uptime,omitempty"`
-	Resources *monitoring.Resources `json:"resources,omitempty"`
+	ID           int64                 `json:"id"`
+	Name         string                `json:"name"`
+	Status       string                `json:"status"`
+	Port         *int                  `json:"port"`
+	PID          *int                  `json:"pid"`
+	Uptime       int64                 `json:"uptime,omitempty"`
+	ErrorMessage *string               `json:"error_message,omitempty"`
+	Resources    *monitoring.Resources `json:"resources,omitempty"`
 }
 
 type LifecycleService struct {
@@ -322,7 +323,7 @@ func (s *LifecycleService) releaseStartLock(instanceID int64, startMu *startLock
 }
 
 func (s *LifecycleService) statusFrom(ctx context.Context, instance Instance, snapshot supervisor.ProcessSnapshot, managed bool) LifecycleStatus {
-	status := LifecycleStatus{ID: instance.ID, Name: instance.Name, Status: instance.Status, Port: instance.Port}
+	status := LifecycleStatus{ID: instance.ID, Name: instance.Name, Status: instance.Status, Port: instance.Port, ErrorMessage: instance.ErrorMessage}
 	if !managed {
 		return status
 	}

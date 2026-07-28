@@ -119,12 +119,19 @@ func TestInstanceRoutes(t *testing.T) {
 		})
 	}
 
-	t.Run("status returns injected lifecycle status", func(t *testing.T) {
+	t.Run("status returns injected lifecycle status with device summary", func(t *testing.T) {
 		pid := 4321
+		fetchedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		life := &fakeLifecycleRoutes{status: InstanceStatus{ID: 1, Name: "test-instance", Status: "running", Port: &port, PID: &pid, Uptime: 10}}
-		rec := serveInstanceRequest(newFakeInstanceService(instance), life, nil, http.MethodGet, "/api/instances/1/status", nil)
+		device := &fakeDeviceClient{response: instances.DevicesResponse{Count: 2, Connected: true, Stale: false, Devices: []map[string]any{{"id": "device-1"}, {"id": "device-2"}}, Source: "live", FetchedAt: fetchedAt}}
+		rec := serveInstanceRequest(newFakeInstanceService(instance), life, device, http.MethodGet, "/api/instances/1/status", nil)
 		assertStatus(t, rec, http.StatusOK)
 		assertBodyFields(t, rec, map[string]any{"status": "running"})
+		body := decodeBody(t, rec)
+		devices, ok := body["devices"].(map[string]any)
+		if !ok || devices["count"] != float64(2) || devices["connected"] != true || devices["source"] != nil {
+			t.Fatalf("status devices = %#v, want count/connected summary without source", body["devices"])
+		}
 	})
 
 	t.Run("lifecycle generic error maps to sanitized 500", func(t *testing.T) {

@@ -777,6 +777,9 @@ func TestBuildHTTPDepsWiresRealLifecycleStatusRoute(t *testing.T) {
 	if status.ID != created.ID || status.Name != "runtime" || status.Status != "stopped" || status.PID != nil {
 		t.Fatalf("status body = %#v, want stopped lifecycle status", status)
 	}
+	if status.Devices == nil || status.Devices.Count != 0 || status.Devices.Connected {
+		t.Fatalf("status devices = %#v, want not-running zero-device summary", status.Devices)
+	}
 }
 
 func TestAppLifecycleCallbacksPersistSupervisorExit(t *testing.T) {

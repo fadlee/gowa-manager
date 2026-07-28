@@ -470,7 +470,7 @@ func (a appServiceLifecycle) Status(ctx context.Context, id int64) (instances.St
 }
 
 func toHTTPInstanceStatus(status instances.LifecycleStatus, err error) (httpapi.InstanceStatus, error) {
-	return httpapi.InstanceStatus{ID: status.ID, Name: status.Name, Status: status.Status, Port: status.Port, PID: status.PID, Uptime: status.Uptime, Resources: status.Resources}, err
+	return httpapi.InstanceStatus{ID: status.ID, Name: status.Name, Status: status.Status, Port: status.Port, PID: status.PID, Uptime: status.Uptime, ErrorMessage: status.ErrorMessage, Resources: status.Resources}, err
 }
 
 type appPortChecker struct{}

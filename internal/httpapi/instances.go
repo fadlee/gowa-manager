@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -26,13 +27,23 @@ type InstanceService interface {
 }
 
 type InstanceStatus struct {
-	ID        int64                 `json:"id"`
-	Name      string                `json:"name"`
-	Status    string                `json:"status"`
-	Port      *int                  `json:"port"`
-	PID       *int                  `json:"pid"`
-	Uptime    int64                 `json:"uptime,omitempty"`
-	Resources *monitoring.Resources `json:"resources,omitempty"`
+	ID           int64                 `json:"id"`
+	Name         string                `json:"name"`
+	Status       string                `json:"status"`
+	Port         *int                  `json:"port"`
+	PID          *int                  `json:"pid"`
+	Uptime       int64                 `json:"uptime,omitempty"`
+	ErrorMessage *string               `json:"error_message,omitempty"`
+	Resources    *monitoring.Resources `json:"resources,omitempty"`
+	Devices      *statusDeviceSummary  `json:"devices,omitempty"`
+}
+
+type statusDeviceSummary struct {
+	Count     int        `json:"count"`
+	Connected bool       `json:"connected"`
+	Stale     bool       `json:"stale"`
+	FetchedAt *time.Time `json:"fetchedAt,omitempty"`
+	Error     string     `json:"error,omitempty"`
 }
 
 type InstanceLifecycle interface {
@@ -310,7 +321,39 @@ func (h *instanceHandler) lifecycleRoute(w http.ResponseWriter, r *http.Request,
 		h.writeError(w, err, "Failed to "+action+" instance", false)
 		return
 	}
+	h.attachDeviceSummary(r.Context(), &status, id)
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (h *instanceHandler) attachDeviceSummary(ctx context.Context, status *InstanceStatus, id int64) {
+	if status == nil || isNilDeviceClient(h.devices) {
+		return
+	}
+	item, err := h.service.Get(ctx, id)
+	if err != nil {
+		return
+	}
+	resp, err := h.devices.Fetch(ctx, item)
+	if err != nil && resp.Source == "" {
+		return
+	}
+	status.Devices = toStatusDeviceSummary(resp)
+}
+
+func toStatusDeviceSummary(resp instances.DevicesResponse) *statusDeviceSummary {
+	fetchedAt := resp.FetchedAt
+	if fetchedAt.IsZero() {
+		return &statusDeviceSummary{Count: resp.Count, Connected: resp.Connected, Stale: resp.Stale, Error: resp.Error}
+	}
+	return &statusDeviceSummary{Count: resp.Count, Connected: resp.Connected, Stale: resp.Stale, FetchedAt: &fetchedAt, Error: resp.Error}
+}
+
+func isNilDeviceClient(client InstanceDeviceClient) bool {
+	if client == nil {
+		return true
+	}
+	value := reflect.ValueOf(client)
+	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
 func (h *instanceHandler) adminLink(w http.ResponseWriter, r *http.Request, id int64) {
