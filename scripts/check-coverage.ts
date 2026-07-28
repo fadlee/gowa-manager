@@ -2,8 +2,9 @@
 /**
  * Aggregate coverage gate.
  *
- * Runs `bun test --coverage`, parses the text report, and exits non-zero if
- * the "All files" aggregate does not meet the configured thresholds.
+ * Runs Bun coverage over explicit TypeScript unit-test files, parses the text
+ * report, and exits non-zero if the "All files" aggregate does not meet the
+ * configured thresholds.
  *
  * This exists because Bun's built-in `coverageThreshold` (bunfig.toml) is
  * per-file as of v1.3.x — see https://github.com/oven-sh/bun/issues/17028.
@@ -15,6 +16,8 @@
  *   bun run scripts/check-coverage.ts          # uses defaults (90% lines, 90% funcs)
  *   bun run scripts/check-coverage.ts --lines 0.95 --funcs 0.9
  */
+import { readdirSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
@@ -27,7 +30,29 @@ function getFlag(name: string, fallback: number): number {
 const MIN_LINES = getFlag('lines', 0.9)
 const MIN_FUNCS = getFlag('funcs', 0.9)
 
-const result = spawnSync('bun', ['test', '--coverage'], {
+const TEST_FILE_PATTERN = /\.(test|spec)\.tsx?$/
+
+function collectTestFiles(directory: string, files: string[] = []): string[] {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) {
+      collectTestFiles(path, files)
+      continue
+    }
+    if (TEST_FILE_PATTERN.test(entry.name)) {
+      files.push(`./${relative(process.cwd(), path).replaceAll('\\\\', '/')}`)
+    }
+  }
+  return files
+}
+
+const testFiles = collectTestFiles(join(process.cwd(), 'src')).sort()
+if (testFiles.length === 0) {
+  console.error('Could not find Bun unit test files under src/.')
+  process.exit(2)
+}
+
+const result = spawnSync('bun', ['test', ...testFiles, '--coverage'], {
   cwd: process.cwd(),
   encoding: 'utf-8',
   stdio: ['ignore', 'pipe', 'pipe'],
