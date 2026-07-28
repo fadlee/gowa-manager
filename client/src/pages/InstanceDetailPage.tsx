@@ -21,6 +21,7 @@ import { OverviewSection } from '../components/instance-detail/OverviewSection'
 import { ApiSection } from '../components/instance-detail/ApiSection'
 import { SettingsSection } from '../components/instance-detail/SettingsSection'
 import { DangerZoneSection } from '../components/instance-detail/DangerZoneSection'
+import { VersionUpdateIndicator } from '../components/VersionUpdateIndicator'
 import { toast } from '../components/ui/use-toast'
 
 type TabType = 'overview' | 'api' | 'settings' | 'danger'
@@ -191,6 +192,7 @@ export function InstanceDetailPage() {
               <Badge variant="secondary" className="hidden text-xs shrink-0 sm:inline-flex">
                 {instance.gowa_version || 'latest'}
               </Badge>
+              <VersionUpdateIndicator currentVersion={instance.gowa_version} className="hidden sm:inline-flex" />
             </div>
 
             {/* Right: Status and lifecycle actions */}

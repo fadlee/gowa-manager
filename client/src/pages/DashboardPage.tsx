@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '../components/ui/select'
 import { CreateInstanceDialog } from '../components/CreateInstanceDialog'
+import { VersionUpdateIndicator } from '../components/VersionUpdateIndicator'
 import { toast } from '../components/ui/use-toast'
 import { AlertTriangle, Clock, Copy, Cpu, ExternalLink, MemoryStick, Plus, QrCode, RefreshCw, RotateCcw, Search, Smartphone } from 'lucide-react'
 import type { Instance, InstanceStatus } from '../types'
@@ -446,6 +447,7 @@ function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardS
                 <Badge variant="secondary" className="text-xs text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
                   {instance.gowa_version || 'latest'}
                 </Badge>
+                <VersionUpdateIndicator currentVersion={instance.gowa_version} />
                 <div className="flex items-center gap-1.5">
                   <span className={cn(
                     'w-2 h-2 rounded-full transition-shadow duration-300',
