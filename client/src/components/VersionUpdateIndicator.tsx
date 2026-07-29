@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertCircle } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { cn } from '../lib/utils'
-import type { VersionInfo } from '../types'
+import { hasNewerVersion } from '../lib/version'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 interface VersionUpdateIndicatorProps {
@@ -10,33 +10,6 @@ interface VersionUpdateIndicatorProps {
   className?: string
 }
 
-function parseVersionParts(version: string): [number, number, number] | null {
-  const match = version.trim().replace(/^v/i, '').match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
-  if (!match) return null
-
-  return [
-    Number(match[1]),
-    Number(match[2] ?? 0),
-    Number(match[3] ?? 0),
-  ]
-}
-
-
-export function hasNewerRelease(currentVersion: string | null | undefined, latestVersion: string | undefined): boolean {
-  const current = currentVersion || 'latest'
-  if (!latestVersion || current === 'latest' || current === latestVersion) return false
-
-  const currentParts = parseVersionParts(current)
-  const latestParts = parseVersionParts(latestVersion)
-  if (!currentParts || !latestParts) return false
-
-  for (let index = 0; index < latestParts.length; index += 1) {
-    if (latestParts[index] > currentParts[index]) return true
-    if (latestParts[index] < currentParts[index]) return false
-  }
-
-  return false
-}
 
 export function VersionUpdateIndicator({ currentVersion, className }: VersionUpdateIndicatorProps) {
   const { data: availableVersions = [] } = useQuery({
@@ -46,7 +19,7 @@ export function VersionUpdateIndicator({ currentVersion, className }: VersionUpd
   })
 
   const latestVersion = availableVersions.find(version => version.version !== 'latest' && version.isLatest)?.version
-  if (!hasNewerRelease(currentVersion, latestVersion)) return null
+  if (!hasNewerVersion(currentVersion, latestVersion)) return null
 
   const displayedCurrent = currentVersion || 'latest'
 

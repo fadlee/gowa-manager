@@ -13,6 +13,7 @@ import type {
 } from '../types';
 
 const API_BASE = '/api';
+const MANAGER_RELEASE_URL = 'https://api.github.com/repos/fadlee/gowa-manager/releases/latest';
 
 const buildPathQuery = (path?: string) => {
   if (!path) return '';
@@ -137,6 +138,21 @@ class ApiClient {
   // System management
   async getSystemStatus(): Promise<SystemStatus> {
     return this.request<SystemStatus>('/system/status');
+  }
+
+  async getLatestManagerVersion(): Promise<string | null> {
+    try {
+      const response = await fetch(MANAGER_RELEASE_URL, {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+
+      if (!response.ok) return null;
+
+      const release = await response.json() as { tag_name?: unknown };
+      return typeof release.tag_name === 'string' ? release.tag_name : null;
+    } catch {
+      return null;
+    }
   }
 
   // Version management

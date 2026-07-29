@@ -10,12 +10,13 @@ import './index.css'
 // Set up default authorization header for all requests
 const setupAuthInterceptor = () => {
   const originalFetch = window.fetch;
-  (window as any).fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const headers = new Headers(init?.headers);
+    const requestUrl = new URL(input instanceof Request ? input.url : input.toString(), window.location.origin);
 
-    // Add stored credentials if available
+    // Add stored credentials only for manager API calls.
     const storedAuth = localStorage.getItem('gowa_auth');
-    if (storedAuth) {
+    if (storedAuth && requestUrl.origin === window.location.origin && requestUrl.pathname.startsWith('/api/')) {
       headers.set('Authorization', `Basic ${storedAuth}`);
     }
 
