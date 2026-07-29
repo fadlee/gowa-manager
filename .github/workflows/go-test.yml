@@ -149,6 +149,8 @@ jobs:
         env:
           # Use the binary built above instead of rebuilding.
           GOWA_E2E_REUSE_BINARY: 'true'
+          # Avoid unauthenticated GitHub release checks in browser health assertions.
+          VITE_DISABLE_MANAGER_VERSION_CHECK: '1'
 
       - name: Check for surviving fakegowa processes
         if: always()

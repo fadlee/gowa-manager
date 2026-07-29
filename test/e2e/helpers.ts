@@ -132,6 +132,7 @@ export async function startGoBackend(_options: {
       ADMIN_USERNAME,
       ADMIN_PASSWORD,
       DATA_DIR: dataDir,
+      GOWA_SKIP_STARTUP_INSTALL: '1',
     },
   });
 

@@ -34,7 +34,7 @@ import (
 func TestSecurityContracts(t *testing.T) {
 	t.Run("SSRF payloads", func(t *testing.T) {
 		// The TargetResolver constructs the upstream URL from a hardcoded
-		// scheme ("http") and host ("localhost:{port}"). Only the path
+		// scheme ("http") and host ("127.0.0.1:{port}"). Only the path
 		// component of the request is forwarded. These subtests verify
 		// that malicious request paths cannot redirect the upstream
 		// connection to an unintended host.
@@ -58,13 +58,13 @@ func TestSecurityContracts(t *testing.T) {
 					// Rejection is acceptable.
 					return
 				}
-				// The target host must always be localhost:{port}; the
+				// The target host must always be 127.0.0.1:{port}; the
 				// scheme must always be http.
 				if target.URL.Scheme != "http" {
 					t.Fatalf("scheme = %q, want http (SSRF via scheme)", target.URL.Scheme)
 				}
-				if target.URL.Host != fmt.Sprintf("localhost:%d", port) {
-					t.Fatalf("host = %q, want localhost:%d (SSRF via host)", target.URL.Host, port)
+				if target.URL.Host != fmt.Sprintf("127.0.0.1:%d", port) {
+					t.Fatalf("host = %q, want 127.0.0.1:%d (SSRF via host)", target.URL.Host, port)
 				}
 				// The path must NOT contain an authority component.
 				if strings.Contains(target.URL.Path, "evil.com") {

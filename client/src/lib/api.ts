@@ -14,6 +14,7 @@ import type {
 
 const API_BASE = '/api';
 const MANAGER_RELEASE_URL = 'https://api.github.com/repos/fadlee/gowa-manager/releases/latest';
+const MANAGER_VERSION_CHECK_DISABLED = import.meta.env.VITE_DISABLE_MANAGER_VERSION_CHECK === '1';
 
 const buildPathQuery = (path?: string) => {
   if (!path) return '';
@@ -141,6 +142,8 @@ class ApiClient {
   }
 
   async getLatestManagerVersion(): Promise<string | null> {
+    if (MANAGER_VERSION_CHECK_DISABLED) return null;
+
     try {
       const response = await fetch(MANAGER_RELEASE_URL, {
         headers: { Accept: 'application/vnd.github+json' },
