@@ -75,6 +75,7 @@ func TestGetSystemStatusNextAvailablePortSkipsAllocatedAndUnavailablePorts(t *te
 
 func TestGetSystemStatusDefaultsNextAvailablePortTo8000(t *testing.T) {
 	service := NewSystemService(fakeInstanceLister{}, "./data", "dev")
+	service.isInstancePortAvailable = func(int) bool { return true }
 
 	status, err := service.GetSystemStatus(context.Background())
 	if err != nil {
