@@ -4,6 +4,8 @@
 
 This project is built on top of [go-whatsapp-web-multidevice](https://github.com/aldinokemal/go-whatsapp-web-multidevice) by **Aldino Kemal**.
 
+> **Runtime status:** the Go backend is the current target runtime. The Bun/Elysia backend under `src/` is legacy and kept for compatibility/reference while remaining users migrate.
+
 ## Features
 
 - 🚀 **Multiple Instance Management** - Create, configure, and manage multiple GOWA instances
@@ -184,42 +186,41 @@ PROXY_WS_INJECT_INSTANCE_AUTH=false
 
 ## Development Commands
 
-### Integrated Development (Recommended)
+### Go Backend Development (Current)
 ```bash
-# Single-port development with auto-rebuild
+# Run the Go backend with a separate data directory
+bun run dev:go -- --data-dir .contract-tmp/go-dev --port 39000
+
+# Run Go tests
+bun run test:go
+
+# Build the Go binary with embedded frontend assets
+bun run build:go
+```
+
+### Legacy Bun/Elysia Development
+```bash
+# Legacy single-port development with auto-rebuild
 bun run dev
 ```
 
-This starts a cross-platform dev runner that:
+This legacy runner:
 - runs `vite build --watch` inside `client/`
-- runs `bun --watch run src/index.ts` for the server
+- runs `bun --watch run src/index.ts` for the legacy Elysia server
 - serves the built frontend from `http://localhost:3000`
 
 ### Separate Development
 ```bash
-# Server only (with auto-restart)
+# Legacy Bun/Elysia server only (with auto-restart)
 bun run dev:server
 
 # Client only (Vite dev server on :5173)
 bun run dev:client
 ```
 
-### Experimental Go Backend
+### Legacy Bun/Elysia Backend
 
-The Go backend rewrite is under active development and is not a production runtime yet. It must not run against the same `DATA_DIR` as the Bun backend, and Bun and Go must never manage the same GOWA processes at the same time.
-
-```bash
-# Run the experimental Go backend shell with a separate data directory
-bun run dev:go -- --data-dir .contract-tmp/go-dev --port 39000
-
-# Run Go tests
-bun run test:go
-
-# Build the experimental Go binary with embedded frontend assets
-bun run build:go
-```
-
-The existing Bun commands remain the production baseline until the Go rewrite reaches full feature parity and passes the cutover gates.
+The Bun/Elysia backend is legacy. Keep it available for compatibility checks and rollback/reference work, but new backend behavior should target the Go implementation unless explicitly requested otherwise.
 
 #### Go Backend Operator Runbooks
 
@@ -249,10 +250,11 @@ Tests use an isolated `.test-data/bun-<pid>` directory via `test/setup.ts`, so D
 
 ### Production Build
 ```bash
-# Build client and embed static files
-bun run build:production
+# Build the current Go binary with embedded frontend assets
+bun run build:go
 
-# Compile to standalone binary
+# Legacy Bun/Elysia production build and standalone binary
+bun run build:production
 bun run compile
 ```
 
@@ -288,13 +290,14 @@ PROXY_WS_INJECT_INSTANCE_AUTH=false
 
 ### CLI Options
 ```bash
-# Custom data directory
+# Current Go backend
+bun run dev:go -- --data-dir /path/to/data
+bun run dev:go -- --port 8080
+bun run dev:go -- --admin-username admin --admin-password pass
+
+# Legacy Bun/Elysia backend
 bun run src/index.ts --data-dir /path/to/data
-
-# Custom port
 bun run src/index.ts --port 8080
-
-# Authentication
 bun run src/index.ts --admin-username admin --admin-password pass
 ```
 
@@ -334,6 +337,11 @@ POST /api/instances/{id}/restart
 
 # Get instance status
 GET /api/instances/{id}/status
+
+# Read-only instance files
+GET /api/instances/{id}/files?path=logs
+GET /api/instances/{id}/files/preview?path=logs/app.log
+GET /api/instances/{id}/files/download?path=logs/app.log
 ```
 
 ### Version Management
@@ -414,11 +422,12 @@ client/src/
 
 ### Data Flow
 1. **SQLite Database** stores instance metadata and configuration
-2. **Elysia Modules** handle API operations and process management
+2. **Go HTTP API** handles runtime operations, process management, proxying, and instance file access
 3. **React Frontend** communicates via REST API with real-time updates
-4. **Version Manager** handles multiple GOWA binary versions
-5. **Proxy Module** forwards requests to running instances
-6. **Auto-restart Service** maintains instance state across server restarts
+4. **Legacy Bun/Elysia Backend** remains under `src/` for compatibility/reference
+5. **Version Manager** handles multiple GOWA binary versions
+6. **Proxy Module** forwards requests to running instances
+7. **Auto-restart Service** maintains instance state across server restarts
 
 ## Troubleshooting
 
@@ -487,8 +496,8 @@ chmod -R 755 data/
 
 1. **Fork the repository**
 2. **Create feature branch**: `git checkout -b feature/amazing-feature`
-3. **Follow existing code patterns** and use TypeScript
-4. **Test your changes**: `bun run test`
+3. **Follow existing code patterns**; target Go for backend changes and TypeScript for frontend changes
+4. **Test your changes**: `bun run test:go` for Go backend work, `bun run build:tsc` / `cd client && bun run build` for frontend work
 5. **Update documentation** if needed
 6. **Submit pull request**
 
@@ -518,5 +527,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with**: [Bun](https://bun.sh) • [Elysia](https://elysiajs.com) • [React](https://react.dev) • [TypeScript](https://typescriptlang.org) • [TailwindCSS](https://tailwindcss.com)
-```
+**Built with**: [Go](https://go.dev) • [React](https://react.dev) • [TypeScript](https://typescriptlang.org) • [Bun](https://bun.sh) tooling • [TailwindCSS](https://tailwindcss.com) • legacy [Elysia](https://elysiajs.com) backend

@@ -118,17 +118,18 @@ func registerInstanceRoutes(mux *http.ServeMux, deps Dependencies) {
 	if connection == nil {
 		connection = instances.NewConnectionTester(instances.ConnectionTesterOptions{})
 	}
-	h := &instanceHandler{service: deps.Instances, lifecycle: deps.InstanceLifecycle, devices: deps.DeviceClient, connection: connection, adminLinks: deps.AdminLinkIssuer}
+	h := &instanceHandler{service: deps.Instances, lifecycle: deps.InstanceLifecycle, devices: deps.DeviceClient, connection: connection, adminLinks: deps.AdminLinkIssuer, dirResolver: deps.InstanceDirResolver}
 	mux.HandleFunc("/api/instances", h.collection)
 	mux.HandleFunc("/api/instances/", h.routes)
 }
 
 type instanceHandler struct {
-	service    InstanceService
-	lifecycle  InstanceLifecycle
-	devices    InstanceDeviceClient
-	connection InstanceConnectionTester
-	adminLinks AdminLinkIssuer
+	service     InstanceService
+	lifecycle   InstanceLifecycle
+	devices     InstanceDeviceClient
+	connection  InstanceConnectionTester
+	adminLinks  AdminLinkIssuer
+	dirResolver InstanceDirResolver
 }
 
 func (h *instanceHandler) collection(w http.ResponseWriter, r *http.Request) {
@@ -195,13 +196,24 @@ func (h *instanceHandler) routes(w http.ResponseWriter, r *http.Request) {
 		h.detail(w, r, id)
 		return
 	}
-	if len(parts) != 2 {
+	if len(parts) != 2 && !(len(parts) == 3 && parts[1] == "files") {
 		writeJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Not found"})
 		return
 	}
 	switch parts[1] {
 	case "devices":
 		h.devicesRoute(w, r, id)
+	case "files":
+		switch {
+		case len(parts) == 2:
+			h.files(w, r, id)
+		case parts[2] == "preview":
+			h.filePreview(w, r, id)
+		case parts[2] == "download":
+			h.fileDownload(w, r, id)
+		default:
+			writeJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Not found"})
+		}
 	case "reset-data":
 		h.resetData(w, r, id)
 	case "start":

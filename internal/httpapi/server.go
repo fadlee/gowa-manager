@@ -36,9 +36,9 @@ type Dependencies struct {
 	VersionInstaller  VersionInstaller
 	Readiness         ReadinessProbe
 	// InstanceDirResolver resolves an instance ID to its on-disk directory.
-	// Optional: used by the app layer to wire the cleanup scheduler; not
-	// consulted by any HTTP route. Defined locally to avoid an import cycle
-	// with the scheduler package.
+	// Optional: required by the read-only instance file manager routes and also
+	// used by the app layer to wire the cleanup scheduler. Defined locally to
+	// avoid an import cycle with the scheduler package.
 	InstanceDirResolver InstanceDirResolver
 
 	// Proxy-related dependencies. The /app/{key}/* routes are registered

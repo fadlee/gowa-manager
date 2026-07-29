@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Braces,
+  Files,
   Play,
   Square
 } from 'lucide-react'
@@ -20,11 +21,12 @@ import { cn } from '../lib/utils'
 import { OverviewSection } from '../components/instance-detail/OverviewSection'
 import { ApiSection } from '../components/instance-detail/ApiSection'
 import { SettingsSection } from '../components/instance-detail/SettingsSection'
+import { FilesSection } from '../components/instance-detail/FilesSection'
 import { DangerZoneSection } from '../components/instance-detail/DangerZoneSection'
 import { VersionUpdateIndicator } from '../components/VersionUpdateIndicator'
 import { toast } from '../components/ui/use-toast'
 
-type TabType = 'overview' | 'api' | 'settings' | 'danger'
+type TabType = 'overview' | 'api' | 'files' | 'settings' | 'danger'
 
 export function InstanceDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -168,6 +170,7 @@ export function InstanceDetailPage() {
   const sidebarItems = [
     { id: 'overview' as const, label: 'Overview', icon: Eye },
     { id: 'api' as const, label: 'API', icon: Braces },
+    { id: 'files' as const, label: 'Files', icon: Files },
     { id: 'settings' as const, label: 'Settings', icon: Settings },
     { id: 'danger' as const, label: 'Danger Zone', icon: AlertTriangle, danger: true },
   ]
@@ -338,6 +341,11 @@ export function InstanceDetailPage() {
           )}
           {activeTab === 'api' && (
             <ApiSection
+              instance={instance}
+            />
+          )}
+          {activeTab === 'files' && (
+            <FilesSection
               instance={instance}
             />
           )}

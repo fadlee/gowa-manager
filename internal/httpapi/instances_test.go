@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -194,6 +197,105 @@ func TestInstanceRoutes(t *testing.T) {
 	})
 }
 
+func TestInstanceFileRoutes(t *testing.T) {
+	baseTime := "2026-01-01T00:00:00.000Z"
+	instance := instances.Instance{ID: 1, Key: "TESTKEY1", Name: "test-instance", Status: "stopped", Config: "{}", GOWAVersion: "latest", CreatedAt: baseTime, UpdatedAt: baseTime}
+
+	t.Run("list returns directory entries with preview metadata", func(t *testing.T) {
+		root := t.TempDir()
+		mustWriteFile(t, filepath.Join(root, "config.json"), []byte(`{"ok":true}`))
+		mustMkdir(t, filepath.Join(root, "media"))
+		mustWriteFile(t, filepath.Join(root, "media", "photo.png"), []byte{0x89, 'P', 'N', 'G'})
+
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/files", nil, withInstanceDir(root))
+		assertStatus(t, rec, http.StatusOK)
+		body := decodeBody(t, rec)
+		if body["path"] != "" {
+			t.Fatalf("path = %#v, want empty root path", body["path"])
+		}
+		entries := body["entries"].([]any)
+		if len(entries) != 2 {
+			t.Fatalf("entries length = %d, want 2: %v", len(entries), entries)
+		}
+		first := entries[0].(map[string]any)
+		second := entries[1].(map[string]any)
+		if first["name"] != "media" || first["path"] != "media" || first["type"] != "directory" || first["previewable"] != false {
+			t.Fatalf("first entry = %#v, want media directory", first)
+		}
+		if second["name"] != "config.json" || second["path"] != "config.json" || second["type"] != "file" || second["previewable"] != true || second["size"] != float64(11) {
+			t.Fatalf("second entry = %#v, want previewable config file", second)
+		}
+	})
+
+	t.Run("preview returns utf-8 text content", func(t *testing.T) {
+		root := t.TempDir()
+		mustMkdir(t, filepath.Join(root, "logs"))
+		mustWriteFile(t, filepath.Join(root, "logs", "app.log"), []byte("hello log"))
+
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/files/preview?path=logs/app.log", nil, withInstanceDir(root))
+		assertStatus(t, rec, http.StatusOK)
+		assertBodyFields(t, rec, map[string]any{"path": "logs/app.log", "name": "app.log", "type": "file", "size": float64(9), "encoding": "utf-8", "content": "hello log"})
+		if got := decodeBody(t, rec)["contentType"].(string); !strings.HasPrefix(got, "text/") {
+			t.Fatalf("contentType = %q, want text/*", got)
+		}
+	})
+
+	t.Run("preview returns base64 image content", func(t *testing.T) {
+		root := t.TempDir()
+		png := []byte{0x89, 'P', 'N', 'G'}
+		mustWriteFile(t, filepath.Join(root, "photo.png"), png)
+
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/files/preview?path=photo.png", nil, withInstanceDir(root))
+		assertStatus(t, rec, http.StatusOK)
+		assertBodyFields(t, rec, map[string]any{"path": "photo.png", "name": "photo.png", "type": "file", "size": float64(4), "contentType": "image/png", "encoding": "base64", "content": base64.StdEncoding.EncodeToString(png)})
+	})
+
+	t.Run("download streams file as attachment", func(t *testing.T) {
+		root := t.TempDir()
+		mustWriteFile(t, filepath.Join(root, "export.txt"), []byte("download me"))
+
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/files/download?path=export.txt", nil, withInstanceDir(root))
+		assertStatus(t, rec, http.StatusOK)
+		if got := rec.Body.String(); got != "download me" {
+			t.Fatalf("download body = %q, want file content", got)
+		}
+		if got := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "attachment;") || !strings.Contains(got, "export.txt") {
+			t.Fatalf("Content-Disposition = %q, want attachment filename", got)
+		}
+	})
+
+	t.Run("rejects traversal and symlink escape", func(t *testing.T) {
+		root := t.TempDir()
+		outside := t.TempDir()
+		mustWriteFile(t, filepath.Join(outside, "secret.txt"), []byte("secret"))
+		if err := os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(root, "escape.txt")); err != nil {
+			t.Fatalf("create symlink: %v", err)
+		}
+
+		traversal := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/files?path=../", nil, withInstanceDir(root))
+		assertStatus(t, traversal, http.StatusBadRequest)
+		assertBodyFields(t, traversal, map[string]any{"success": false})
+
+		symlink := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/files/preview?path=escape.txt", nil, withInstanceDir(root))
+		assertStatus(t, symlink, http.StatusBadRequest)
+		assertBodyFields(t, symlink, map[string]any{"success": false})
+	})
+
+	t.Run("missing instance returns shared 404 shape", func(t *testing.T) {
+		service := newFakeInstanceService(instance)
+		service.err = instances.ErrNotFound
+		rec := serveInstanceRequest(service, nil, nil, http.MethodGet, "/api/instances/999/files", nil, withInstanceDir(t.TempDir()))
+		assertStatus(t, rec, http.StatusNotFound)
+		assertJSON(t, rec, map[string]any{"error": "Instance not found", "success": false})
+	})
+
+	t.Run("existing instance without resolver returns 503", func(t *testing.T) {
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/files", nil)
+		assertStatus(t, rec, http.StatusServiceUnavailable)
+		assertBodyFields(t, rec, map[string]any{"success": false})
+	})
+}
+
 func TestAdminLink(t *testing.T) {
 	baseTime := "2026-01-01T00:00:00.000Z"
 	port := 19500
@@ -336,6 +438,28 @@ func withConnectionTester(tester *fakeConnectionTester) func(*Dependencies) {
 
 func withAdminLinkIssuer(issuer AdminLinkIssuer) func(*Dependencies) {
 	return func(deps *Dependencies) { deps.AdminLinkIssuer = issuer }
+}
+
+func withInstanceDir(dir string) func(*Dependencies) {
+	return func(deps *Dependencies) { deps.InstanceDirResolver = fakeInstanceDirResolver(dir) }
+}
+
+type fakeInstanceDirResolver string
+
+func (r fakeInstanceDirResolver) InstanceDir(int64) (string, error) { return string(r), nil }
+
+func mustWriteFile(t *testing.T, path string, content []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write file %s: %v", path, err)
+	}
+}
+
+func mustMkdir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", path, err)
+	}
 }
 
 type fakeInstanceService struct {

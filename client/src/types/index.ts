@@ -37,6 +37,31 @@ export interface InstanceDevicesResponse extends DeviceSummary {
   source: 'live' | 'cache' | 'not-running';
 }
 
+export interface InstanceFileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size: number;
+  modifiedAt: string;
+  previewable: boolean;
+}
+
+export interface InstanceFilesResponse {
+  path: string;
+  entries: InstanceFileEntry[];
+}
+
+export interface InstanceFilePreviewResponse {
+  path: string;
+  name: string;
+  type: 'file';
+  size: number;
+  modifiedAt: string;
+  contentType: string;
+  encoding: 'utf-8' | 'base64';
+  content: string;
+}
+
 export interface InstanceStatus {
   id: number;
   name: string;

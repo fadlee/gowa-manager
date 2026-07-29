@@ -4,6 +4,8 @@ import type {
   UpdateInstanceRequest,
   InstanceStatus,
   InstanceDevicesResponse,
+  InstanceFilesResponse,
+  InstanceFilePreviewResponse,
   ApiSuccess,
   AdminLinkResponse,
   SystemStatus,
@@ -11,6 +13,11 @@ import type {
 } from '../types';
 
 const API_BASE = '/api';
+
+const buildPathQuery = (path?: string) => {
+  if (!path) return '';
+  return `?path=${encodeURIComponent(path)}`;
+};
 
 class ApiClient {
   private async request<T>(
@@ -101,6 +108,18 @@ class ApiClient {
 
   async getInstanceDevices(id: number): Promise<InstanceDevicesResponse> {
     return this.request<InstanceDevicesResponse>(`/instances/${id}/devices`);
+  }
+
+  async getInstanceFiles(id: number, path?: string): Promise<InstanceFilesResponse> {
+    return this.request<InstanceFilesResponse>(`/instances/${id}/files${buildPathQuery(path)}`);
+  }
+
+  async previewInstanceFile(id: number, path: string): Promise<InstanceFilePreviewResponse> {
+    return this.request<InstanceFilePreviewResponse>(`/instances/${id}/files/preview${buildPathQuery(path)}`);
+  }
+
+  getInstanceFileDownloadUrl(id: number, path: string): string {
+    return `${API_BASE}/instances/${id}/files/download${buildPathQuery(path)}`;
   }
 
   async createAdminLink(id: number): Promise<AdminLinkResponse> {
