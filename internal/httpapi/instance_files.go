@@ -286,6 +286,9 @@ func previewEncoding(filename string) (contentType string, encoding string, ok b
 		return contentType, "base64", true
 	}
 	if isTextContentType(baseType) || isTextFileExtension(filename) {
+		if contentType == "application/octet-stream" {
+			contentType = "text/plain"
+		}
 		if !strings.Contains(strings.ToLower(contentType), "charset=") {
 			contentType += "; charset=utf-8"
 		}
