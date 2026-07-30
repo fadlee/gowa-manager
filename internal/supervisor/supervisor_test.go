@@ -25,6 +25,30 @@ func TestSupervisorSuccessfulStart(t *testing.T) {
 	}
 }
 
+func TestSupervisorPassesOutputWritersToPlatform(t *testing.T) {
+	proc := newFakeProcess(1015)
+	stdout := &recordingWriter{}
+	stderr := &recordingWriter{}
+	var got ProcessConfig
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	s.platform = starterPlatform(func(_ context.Context, config ProcessConfig) (Process, error) {
+		got = config
+		_, _ = config.Stdout.Write([]byte("out\n"))
+		_, _ = config.Stderr.Write([]byte("err\n"))
+		return proc, nil
+	})
+
+	if _, err := s.Start(context.Background(), StartConfig{InstanceID: 15, Path: "fakegowa", ReadyTimeout: time.Second, Stdout: stdout, Stderr: stderr}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if got.Stdout == nil || got.Stderr == nil {
+		t.Fatalf("platform output writers = stdout:%T stderr:%T, want non-nil", got.Stdout, got.Stderr)
+	}
+	if stdout.String() != "out\n" || stderr.String() != "err\n" {
+		t.Fatalf("captured stdout=%q stderr=%q, want output routed through provided writers", stdout.String(), stderr.String())
+	}
+}
+
 func TestSupervisorDuplicateStartReturnsCurrentStateWithoutDuplicateProcess(t *testing.T) {
 	proc := newFakeProcess(1001)
 	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
@@ -583,6 +607,24 @@ func TestSupervisorLifecycleDoesNotLeakGoroutines(t *testing.T) {
 	t.Fatalf("goroutines after lifecycle cycles = %d, want at most %d", runtime.NumGoroutine(), base+8)
 }
 
+type recordingWriter struct {
+	mu sync.Mutex
+	s  string
+}
+
+func (w *recordingWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.s += string(p)
+	return len(p), nil
+}
+
+func (w *recordingWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.s
+}
+
 type fakeProcess struct {
 	pid int
 
@@ -660,7 +702,7 @@ func newTestSupervisor(t *testing.T, starter Starter) *testSupervisor {
 			ts.mu.Lock()
 			ts.starts++
 			ts.mu.Unlock()
-			return starter(ctx, StartConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env})
+			return starter(ctx, StartConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env, Stdout: config.Stdout, Stderr: config.Stderr})
 		}),
 		ReadinessProbe: func(ctx context.Context, snapshot ProcessSnapshot) error { return ts.ready(ctx, snapshot) },
 		StatusCallback: func(ctx context.Context, snapshot ProcessSnapshot) error { return ts.onStatus(ctx, snapshot) },

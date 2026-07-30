@@ -118,7 +118,7 @@ func registerInstanceRoutes(mux *http.ServeMux, deps Dependencies) {
 	if connection == nil {
 		connection = instances.NewConnectionTester(instances.ConnectionTesterOptions{})
 	}
-	h := &instanceHandler{service: deps.Instances, lifecycle: deps.InstanceLifecycle, devices: deps.DeviceClient, connection: connection, adminLinks: deps.AdminLinkIssuer, dirResolver: deps.InstanceDirResolver}
+	h := &instanceHandler{service: deps.Instances, lifecycle: deps.InstanceLifecycle, devices: deps.DeviceClient, connection: connection, adminLinks: deps.AdminLinkIssuer, dirResolver: deps.InstanceDirResolver, logReader: deps.InstanceLogs}
 	mux.HandleFunc("/api/instances", h.collection)
 	mux.HandleFunc("/api/instances/", h.routes)
 }
@@ -130,6 +130,7 @@ type instanceHandler struct {
 	connection  InstanceConnectionTester
 	adminLinks  AdminLinkIssuer
 	dirResolver InstanceDirResolver
+	logReader   InstanceLogReader
 }
 
 func (h *instanceHandler) collection(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +215,8 @@ func (h *instanceHandler) routes(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Not found"})
 		}
+	case "logs":
+		h.logs(w, r, id)
 	case "reset-data":
 		h.resetData(w, r, id)
 	case "start":

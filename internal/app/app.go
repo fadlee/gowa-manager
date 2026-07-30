@@ -18,6 +18,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/config"
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
+	"github.com/fadlee/gowa-manager/internal/instancelogs"
 	"github.com/fadlee/gowa-manager/internal/instances"
 	"github.com/fadlee/gowa-manager/internal/monitoring"
 	"github.com/fadlee/gowa-manager/internal/observability"
@@ -338,13 +339,14 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 	portAllocator := system.NewPortAllocator(repo)
 	deviceClient := instances.NewDeviceClient(instances.DeviceClientOptions{})
 	processMonitor := monitoring.New(monitoring.MonitorOptions{})
+	logStore := instancelogs.NewStore(instancelogs.DefaultCapacity)
 	releases := versions.NewGitHubClient("", nil)
 	versionService := versions.NewService(opts.DataDir, releases)
 	versionInstaller := versions.NewInstaller(opts.DataDir, releases, nil)
 	lifecycleCallbacks := appLifecycleCallbacks{repo: repo, cache: deviceClient, monitor: processMonitor}
 	processSupervisor := supervisor.New(supervisor.SupervisorConfig{StatusCallback: lifecycleCallbacks.PersistSupervisorStatus, ExitCallback: lifecycleCallbacks.PersistSupervisorExit})
-	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient, Monitor: processMonitor})
-	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient), instances.WithMonitorCacheCleaner(processMonitor))
+	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient, Monitor: processMonitor, Logs: logStore})
+	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient), instances.WithMonitorCacheCleaner(processMonitor), instances.WithLogsCleaner(logStore))
 
 	// Build the auto-update scheduler service. It is wired into deps.AutoUpdate
 	// so the HTTP /api/system/auto-update/* routes surface real status, and
@@ -378,6 +380,7 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		DeviceClient:        deviceClient,
 		ConnectionTester:    instances.NewConnectionTester(instances.ConnectionTesterOptions{}),
 		AdminLinkIssuer:     httpapi.NewMagicAdminLinkIssuer(magicAuth),
+		InstanceLogs:        logStore,
 		System:              system.NewSystemService(repo, opts.DataDir, buildinfo.Version),
 		PortAllocator:       portAllocator,
 		PortChecker:         appPortChecker{},

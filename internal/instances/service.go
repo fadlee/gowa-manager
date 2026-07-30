@@ -37,6 +37,10 @@ type MonitorCacheCleaner interface {
 	Clear(int64)
 }
 
+type LogsCleaner interface {
+	Clear(int64)
+}
+
 type ServiceOption func(*Service)
 
 func WithDeviceCacheCleaner(cleaner DeviceCacheCleaner) ServiceOption {
@@ -48,6 +52,12 @@ func WithDeviceCacheCleaner(cleaner DeviceCacheCleaner) ServiceOption {
 func WithMonitorCacheCleaner(cleaner MonitorCacheCleaner) ServiceOption {
 	return func(s *Service) {
 		s.monitorCache = cleaner
+	}
+}
+
+func WithLogsCleaner(cleaner LogsCleaner) ServiceOption {
+	return func(s *Service) {
+		s.logsCleaner = cleaner
 	}
 }
 
@@ -66,6 +76,7 @@ type Service struct {
 	lifecycle    Lifecycle
 	deviceCache  DeviceCacheCleaner
 	monitorCache MonitorCacheCleaner
+	logsCleaner  LogsCleaner
 	generateKey  func() (string, error)
 	generateName func() string
 	locksMu      sync.Mutex
@@ -200,6 +211,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	}
 	s.clearDeviceCache(id)
 	s.clearMonitorCache(id)
+	s.clearLogs(id)
 	if trash == (Trash{}) {
 		return nil
 	}
@@ -236,6 +248,7 @@ func (s *Service) ResetData(ctx context.Context, id int64) error {
 	}
 	s.clearDeviceCache(id)
 	s.clearMonitorCache(id)
+	s.clearLogs(id)
 	if trash == (Trash{}) {
 		return nil
 	}
@@ -305,4 +318,11 @@ func (s *Service) clearMonitorCache(id int64) {
 		return
 	}
 	s.monitorCache.Clear(id)
+}
+
+func (s *Service) clearLogs(id int64) {
+	if s.logsCleaner == nil {
+		return
+	}
+	s.logsCleaner.Clear(id)
 }

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/instancelogs"
 	"github.com/fadlee/gowa-manager/internal/monitoring"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
 )
@@ -46,6 +47,7 @@ type LifecycleOptions struct {
 	Supervisor      ProcessSupervisor
 	DeviceCache     DeviceCacheCleaner
 	Monitor         ProcessMonitor
+	Logs            *instancelogs.Store
 	MonitorTimeout  time.Duration
 	Now             func() time.Time
 	Sleep           func(context.Context, time.Duration) error
@@ -71,12 +73,21 @@ type LifecycleService struct {
 	supervisor     ProcessSupervisor
 	cache          DeviceCacheCleaner
 	monitor        ProcessMonitor
+	logs           *instancelogs.Store
 	monitorTimeout time.Duration
 	now            func() time.Time
 	sleep          func(context.Context, time.Duration) error
 
 	mu      sync.Mutex
 	startMu map[int64]*startLock
+
+	logsMu     sync.Mutex
+	logWriters map[int64]logWriterPair
+}
+
+type logWriterPair struct {
+	stdout *instancelogs.LineWriter
+	stderr *instancelogs.LineWriter
 }
 
 type startLock struct {
@@ -106,7 +117,7 @@ func NewLifecycleService(opts LifecycleOptions) *LifecycleService {
 	if monitorTimeout <= 0 {
 		monitorTimeout = 200 * time.Millisecond
 	}
-	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, monitorTimeout: monitorTimeout, now: now, sleep: sleep, startMu: make(map[int64]*startLock)}
+	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, logs: opts.Logs, monitorTimeout: monitorTimeout, now: now, sleep: sleep, startMu: make(map[int64]*startLock), logWriters: make(map[int64]logWriterPair)}
 }
 
 func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus, error) {
@@ -135,8 +146,17 @@ func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus
 		return LifecycleStatus{}, s.persistFailed(ctx, id, err)
 	}
 	config := ParseConfig(instance.Config)
-	snapshot, err := s.supervisor.Start(ctx, supervisor.StartConfig{InstanceID: id, Path: path, Args: ProcessArgs(config, port), Env: ParseEnvironmentVars(config, port, map[string]string{"GOWA_DATA_DIR": dir}), Dir: dir, StartedAt: s.now()})
+	startConfig := supervisor.StartConfig{InstanceID: id, Path: path, Args: ProcessArgs(config, port), Env: ParseEnvironmentVars(config, port, map[string]string{"GOWA_DATA_DIR": dir}), Dir: dir, StartedAt: s.now()}
+	if s.logs != nil {
+		stdout := instancelogs.NewLineWriter(s.logs, id, instancelogs.StreamStdout, s.now)
+		stderr := instancelogs.NewLineWriter(s.logs, id, instancelogs.StreamStderr, s.now)
+		s.setLogWriters(id, stdout, stderr)
+		startConfig.Stdout = stdout
+		startConfig.Stderr = stderr
+	}
+	snapshot, err := s.supervisor.Start(ctx, startConfig)
 	if err != nil {
+		s.flushLogWriters(id)
 		return LifecycleStatus{}, s.persistFailed(ctx, id, err)
 	}
 	if _, err := s.repo.UpdateStatus(ctx, id, "running", nil); err != nil {
@@ -361,4 +381,25 @@ func (s *LifecycleService) clearRuntimeCaches(id int64) {
 	if s.monitor != nil {
 		s.monitor.Clear(id)
 	}
+	s.flushLogWriters(id)
+}
+
+func (s *LifecycleService) setLogWriters(id int64, stdout, stderr *instancelogs.LineWriter) {
+	s.logsMu.Lock()
+	defer s.logsMu.Unlock()
+	s.logWriters[id] = logWriterPair{stdout: stdout, stderr: stderr}
+}
+
+func (s *LifecycleService) flushLogWriters(id int64) {
+	s.logsMu.Lock()
+	pair, ok := s.logWriters[id]
+	if ok {
+		delete(s.logWriters, id)
+	}
+	s.logsMu.Unlock()
+	if !ok {
+		return
+	}
+	pair.stdout.Flush()
+	pair.stderr.Flush()
 }
