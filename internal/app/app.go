@@ -346,7 +346,7 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 	lifecycleCallbacks := appLifecycleCallbacks{repo: repo, cache: deviceClient, monitor: processMonitor}
 	processSupervisor := supervisor.New(supervisor.SupervisorConfig{StatusCallback: lifecycleCallbacks.PersistSupervisorStatus, ExitCallback: lifecycleCallbacks.PersistSupervisorExit})
 	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient, Monitor: processMonitor, Logs: logStore})
-	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient), instances.WithMonitorCacheCleaner(processMonitor))
+	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient), instances.WithMonitorCacheCleaner(processMonitor), instances.WithLogsCleaner(logStore))
 
 	// Build the auto-update scheduler service. It is wired into deps.AutoUpdate
 	// so the HTTP /api/system/auto-update/* routes surface real status, and
