@@ -35,6 +35,7 @@ type Dependencies struct {
 	Versions          VersionService
 	VersionInstaller  VersionInstaller
 	Readiness         ReadinessProbe
+	InstanceLogs      InstanceLogReader
 	// InstanceDirResolver resolves an instance ID to its on-disk directory.
 	// Optional: required by the read-only instance file manager routes and also
 	// used by the app layer to wire the cleanup scheduler. Defined locally to

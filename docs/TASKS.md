@@ -88,11 +88,11 @@ Updated: 2026-06-11
 - [ ] No active task selected
 
 ### 🚫 Blocked
-- [ ] Add Logs tab for instance debugging
-  - Requires backend capture of `Bun.spawn` stdout/stderr
-  - Store recent logs in a per-instance ring buffer or log file
-  - Add endpoint such as `GET /instances/:id/logs?tail=200`
-  - UI should support tail view and manual refresh
+- [x] Add Logs tab for instance debugging
+  - Moved to the Go runtime path; the legacy Bun/Elysia backend under `src/**` should not be updated for this feature
+  - Go backend captures managed child process stdout/stderr into a bounded per-instance ring buffer
+  - Added manager endpoint `GET /api/instances/:id/logs?tail=200`
+  - UI supports recent tail view with stdout/stderr labels and manual refresh
 - [ ] Inline QR pairing in Overview
   - Requires reliable API/source for QR and WhatsApp connection state
   - Show QR only when instance needs pairing

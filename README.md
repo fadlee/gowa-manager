@@ -338,6 +338,9 @@ POST /api/instances/{id}/restart
 # Get instance status
 GET /api/instances/{id}/status
 
+# Get recent Go-managed stdout/stderr logs
+GET /api/instances/{id}/logs?tail=200
+
 # Read-only instance files
 GET /api/instances/{id}/files?path=logs
 GET /api/instances/{id}/files/preview?path=logs/app.log

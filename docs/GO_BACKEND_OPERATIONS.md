@@ -311,6 +311,7 @@ Register-ScheduledTask -TaskName "GOWAManager" `
 | `GET /api/ready` | None | `200` when ready; `503` during startup/shutdown |
 | `GET /metrics` | None (loopback-only) | Prometheus metrics (requires `GOWA_METRICS_ENABLED=1`) |
 | `GET /api/instances` | Basic Auth | List instances |
+| `GET /api/instances/{id}/logs?tail=200` | Basic Auth | Recent stdout/stderr captured from one managed GOWA child process |
 | `GET /api/system/status` | Basic Auth | System status |
 | `GET /api/system/versions/installed` | Basic Auth | Installed GOWA versions |
 | `GET /api/system/auto-update/status` | Basic Auth | Auto-update status |
@@ -348,13 +349,26 @@ scrape_configs:
 
 ### Logs
 
-The Go backend writes structured logs (`slog` text format) to **stderr**. There
-is no log file — capture stderr via your process manager:
+The Go backend writes structured manager logs (`slog` text format) to **stderr**.
+There is no manager log file — capture stderr via your process manager:
 
 - **systemd:** `journalctl -u gowa-manager -f`
 - **Docker:** `docker logs -f gowa-manager`
 - **NSSM:** configured log files (see above)
 - **Scheduled Task:** redirect output in the task action
+
+For managed GOWA child processes, the Go runtime captures each instance's
+stdout and stderr into an in-memory bounded recent-history ring buffer. Read it
+from the manager API or the instance detail Logs tab:
+
+```bash
+curl -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
+  "http://localhost:3000/api/instances/1/logs?tail=200"
+```
+
+`tail` defaults to 200 and is capped by the API to prevent excessive responses.
+The buffer is recent history only; use process-manager logging if you need
+long-term archival.
 
 ### Load Balancer Health Check
 

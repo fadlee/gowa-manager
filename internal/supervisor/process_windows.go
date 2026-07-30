@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -18,10 +19,12 @@ import (
 )
 
 type platformProcessConfig struct {
-	Path string
-	Args []string
-	Env  map[string]string
-	Dir  string
+	Path   string
+	Args   []string
+	Env    map[string]string
+	Dir    string
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 type windowsProcess struct {
@@ -31,6 +34,7 @@ type windowsProcess struct {
 	processHandle windows.Handle
 	threadHandle  windows.Handle
 	jobHandle     windows.Handle
+	pipes         []*windowsOutputPipe
 	waitOnce      sync.Once
 	waitDone      chan struct{}
 	waitErr       error
@@ -84,10 +88,35 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*w
 		return nil, err
 	}
 
+	stdoutPipe, err := newWindowsOutputPipe(config.Stdout)
+	if err != nil {
+		return nil, fmt.Errorf("start process: stdout pipe: %w", err)
+	}
+	defer func() { stdoutPipe.closeOnStartFailure() }()
+	stderrPipe, err := newWindowsOutputPipe(config.Stderr)
+	if err != nil {
+		return nil, fmt.Errorf("start process: stderr pipe: %w", err)
+	}
+	defer func() { stderrPipe.closeOnStartFailure() }()
+
 	var startup windows.StartupInfo
 	var processInfo windows.ProcessInformation
 	startup.Cb = uint32(unsafe.Sizeof(startup))
 	creationFlags := uint32(createSuspended | windows.CREATE_UNICODE_ENVIRONMENT | windows.CREATE_NEW_PROCESS_GROUP)
+	inheritHandles := false
+	if stdoutPipe != nil || stderrPipe != nil {
+		startup.Flags |= windows.STARTF_USESTDHANDLES
+		startup.StdOutput = windows.Stdout
+		startup.StdErr = windows.Stderr
+		if stdoutPipe != nil {
+			startup.StdOutput = stdoutPipe.childWrite
+			inheritHandles = true
+		}
+		if stderrPipe != nil {
+			startup.StdErr = stderrPipe.childWrite
+			inheritHandles = true
+		}
+	}
 	var dirPtr *uint16
 	if config.Dir != "" {
 		dirPtr, err = windows.UTF16PtrFromString(config.Dir)
@@ -95,7 +124,7 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*w
 			return nil, fmt.Errorf("start process: working directory: %w", err)
 		}
 	}
-	if err := windows.CreateProcess(app, cmdline, nil, nil, false, creationFlags, &envBlock[0], dirPtr, &startup, &processInfo); err != nil {
+	if err := windows.CreateProcess(app, cmdline, nil, nil, inheritHandles, creationFlags, &envBlock[0], dirPtr, &startup, &processInfo); err != nil {
 		return nil, fmt.Errorf("start process: %w", err)
 	}
 	proc := &windowsProcess{
@@ -103,8 +132,11 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*w
 		processHandle: processInfo.Process,
 		threadHandle:  processInfo.Thread,
 		jobHandle:     job,
+		pipes:         compactWindowsOutputPipes(stdoutPipe, stderrPipe),
 		waitDone:      make(chan struct{}),
 	}
+	stdoutPipe = nil
+	stderrPipe = nil
 	cleanupJob = false
 	assigned := false
 	resumed := false
@@ -127,6 +159,7 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*w
 		return nil, fmt.Errorf("resume process %d: %w", proc.pid, err)
 	}
 	resumed = true
+	proc.startOutputCopy()
 	proc.startWait()
 
 	select {
@@ -210,12 +243,19 @@ func (p *windowsProcess) Close() error {
 	processHandle := p.processHandle
 	threadHandle := p.threadHandle
 	jobHandle := p.jobHandle
+	pipes := p.pipes
 	p.processHandle = 0
 	p.threadHandle = 0
 	p.jobHandle = 0
+	p.pipes = nil
 	p.mu.Unlock()
 
 	var closeErr error
+	for _, pipe := range pipes {
+		if err := pipe.close(); err != nil && closeErr == nil {
+			closeErr = err
+		}
+	}
 	for _, handle := range []windows.Handle{threadHandle, processHandle, jobHandle} {
 		if handle == 0 {
 			continue
@@ -225,6 +265,15 @@ func (p *windowsProcess) Close() error {
 		}
 	}
 	return closeErr
+}
+
+func (p *windowsProcess) startOutputCopy() {
+	p.mu.Lock()
+	pipes := append([]*windowsOutputPipe(nil), p.pipes...)
+	p.mu.Unlock()
+	for _, pipe := range pipes {
+		pipe.startCopy()
+	}
 }
 
 func (p *windowsProcess) startWait() {
@@ -296,6 +345,94 @@ func setInformationJobObject(job windows.Handle, infoClass uint32, info unsafe.P
 		return windows.GetLastError()
 	}
 	return nil
+}
+
+type windowsOutputPipe struct {
+	reader     *os.File
+	childWrite windows.Handle
+	writer     io.Writer
+	once       sync.Once
+	done       chan struct{}
+}
+
+func newWindowsOutputPipe(writer io.Writer) (*windowsOutputPipe, error) {
+	if writer == nil {
+		return nil, nil
+	}
+	var readHandle windows.Handle
+	var writeHandle windows.Handle
+	var sa windows.SecurityAttributes
+	sa.Length = uint32(unsafe.Sizeof(sa))
+	sa.InheritHandle = 1
+	if err := windows.CreatePipe(&readHandle, &writeHandle, &sa, 0); err != nil {
+		return nil, err
+	}
+	if err := windows.SetHandleInformation(readHandle, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
+		_ = windows.CloseHandle(readHandle)
+		_ = windows.CloseHandle(writeHandle)
+		return nil, err
+	}
+	return &windowsOutputPipe{reader: os.NewFile(uintptr(readHandle), "gowa-manager-output-pipe"), childWrite: writeHandle, writer: writer, done: make(chan struct{})}, nil
+}
+
+func compactWindowsOutputPipes(pipes ...*windowsOutputPipe) []*windowsOutputPipe {
+	out := make([]*windowsOutputPipe, 0, len(pipes))
+	for _, pipe := range pipes {
+		if pipe != nil {
+			out = append(out, pipe)
+		}
+	}
+	return out
+}
+
+func (p *windowsOutputPipe) startCopy() {
+	if p == nil {
+		return
+	}
+	_ = windows.CloseHandle(p.childWrite)
+	p.childWrite = 0
+	go func() {
+		_, _ = io.Copy(p.writer, p.reader)
+		close(p.done)
+	}()
+}
+
+func (p *windowsOutputPipe) closeOnStartFailure() {
+	if p == nil {
+		return
+	}
+	if p.childWrite != 0 {
+		_ = windows.CloseHandle(p.childWrite)
+		p.childWrite = 0
+	}
+	if p.reader != nil {
+		_ = p.reader.Close()
+	}
+}
+
+func (p *windowsOutputPipe) close() error {
+	if p == nil {
+		return nil
+	}
+	var err error
+	p.once.Do(func() {
+		if p.childWrite != 0 {
+			if closeErr := windows.CloseHandle(p.childWrite); closeErr != nil && err == nil {
+				err = closeErr
+			}
+			p.childWrite = 0
+		}
+		if p.reader != nil {
+			if closeErr := p.reader.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}
+		select {
+		case <-p.done:
+		case <-time.After(time.Second):
+		}
+	})
+	return err
 }
 
 func terminateJobObject(job windows.Handle, exitCode uint32) error {

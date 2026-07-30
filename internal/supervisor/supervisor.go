@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 )
@@ -33,6 +34,8 @@ type StartConfig struct {
 	ReadyTimeout time.Duration
 	StopTimeout  time.Duration
 	StartedAt    time.Time
+	Stdout       io.Writer
+	Stderr       io.Writer
 }
 
 type ProcessConfig struct {
@@ -41,6 +44,8 @@ type ProcessConfig struct {
 	Args       []string
 	Env        map[string]string
 	Dir        string
+	Stdout     io.Writer
+	Stderr     io.Writer
 }
 
 type Platform interface {
@@ -123,7 +128,7 @@ func (s *Supervisor) Start(ctx context.Context, config StartConfig) (ProcessSnap
 	if startedAt.IsZero() {
 		startedAt = s.now()
 	}
-	proc, err := s.platform.Start(ctx, ProcessConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env, Dir: config.Dir})
+	proc, err := s.platform.Start(ctx, ProcessConfig{InstanceID: config.InstanceID, Path: config.Path, Args: config.Args, Env: config.Env, Dir: config.Dir, Stdout: config.Stdout, Stderr: config.Stderr})
 	if err != nil {
 		return ProcessSnapshot{}, fmt.Errorf("%w: %v", ErrStartFailed, err)
 	}
@@ -353,5 +358,5 @@ func (s *Supervisor) handleExit(instanceID, generation int64, snapshot ProcessSn
 type defaultPlatform struct{}
 
 func (defaultPlatform) Start(ctx context.Context, config ProcessConfig) (Process, error) {
-	return startPlatformProcess(ctx, platformProcessConfig{Path: config.Path, Args: config.Args, Env: config.Env, Dir: config.Dir})
+	return startPlatformProcess(ctx, platformProcessConfig{Path: config.Path, Args: config.Args, Env: config.Env, Dir: config.Dir, Stdout: config.Stdout, Stderr: config.Stderr})
 }

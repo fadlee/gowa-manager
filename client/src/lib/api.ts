@@ -6,6 +6,7 @@ import type {
   InstanceDevicesResponse,
   InstanceFilesResponse,
   InstanceFilePreviewResponse,
+  InstanceLogsResponse,
   ApiSuccess,
   AdminLinkResponse,
   SystemStatus,
@@ -118,6 +119,10 @@ class ApiClient {
 
   async previewInstanceFile(id: number, path: string): Promise<InstanceFilePreviewResponse> {
     return this.request<InstanceFilePreviewResponse>(`/instances/${id}/files/preview${buildPathQuery(path)}`);
+  }
+
+  async getInstanceLogs(id: number, tail: number = 200): Promise<InstanceLogsResponse> {
+    return this.request<InstanceLogsResponse>(`/instances/${id}/logs?tail=${tail}`);
   }
 
   getInstanceFileDownloadUrl(id: number, path: string): string {

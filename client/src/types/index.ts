@@ -62,6 +62,18 @@ export interface InstanceFilePreviewResponse {
   content: string;
 }
 
+export interface InstanceLogEntry {
+  timestamp: string;
+  stream: 'stdout' | 'stderr';
+  line: string;
+}
+
+export interface InstanceLogsResponse {
+  instanceId: number;
+  tail: number;
+  entries: InstanceLogEntry[];
+}
+
 export interface InstanceStatus {
   id: number;
   name: string;

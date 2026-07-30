@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/auth"
+	"github.com/fadlee/gowa-manager/internal/instancelogs"
 	"github.com/fadlee/gowa-manager/internal/instances"
 )
 
@@ -38,6 +39,41 @@ func TestInstanceRoutes(t *testing.T) {
 		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, device, http.MethodGet, "/api/instances/1/devices", nil)
 		assertStatus(t, rec, http.StatusOK)
 		assertBodyFields(t, rec, map[string]any{"count": float64(1), "connected": true, "source": "live"})
+	})
+
+	t.Run("logs returns bounded recent output and clamps tail", func(t *testing.T) {
+		logs := instancelogs.NewStore(3)
+		base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+		logs.Append(1, instancelogs.StreamStdout, "first", base)
+		logs.Append(1, instancelogs.StreamStderr, "second", base.Add(time.Second))
+		logs.Append(1, instancelogs.StreamStdout, "third", base.Add(2*time.Second))
+		logs.Append(1, instancelogs.StreamStderr, "fourth", base.Add(3*time.Second))
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/logs?tail=9999", nil, withLogReader(logs))
+		assertStatus(t, rec, http.StatusOK)
+		body := decodeBody(t, rec)
+		if body["instanceId"] != float64(1) || body["tail"] != float64(500) {
+			t.Fatalf("logs metadata = %v, want instanceId 1 and clamped tail 500", body)
+		}
+		entries, ok := body["entries"].([]any)
+		if !ok || len(entries) != 3 {
+			t.Fatalf("entries = %#v, want 3 entries", body["entries"])
+		}
+		firstEntry, _ := entries[0].(map[string]any)
+		lastEntry, _ := entries[2].(map[string]any)
+		if firstEntry["line"] != "second" || firstEntry["stream"] != "stderr" || lastEntry["line"] != "fourth" {
+			t.Fatalf("entries = %#v, want oldest retained through newest", entries)
+		}
+	})
+
+	t.Run("logs validates tail and missing instance", func(t *testing.T) {
+		logs := instancelogs.NewStore(3)
+		badTail := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodGet, "/api/instances/1/logs?tail=abc", nil, withLogReader(logs))
+		assertStatus(t, badTail, http.StatusBadRequest)
+
+		service := newFakeInstanceService(instance)
+		service.err = instances.ErrNotFound
+		missing := serveInstanceRequest(service, nil, nil, http.MethodGet, "/api/instances/99/logs", nil, withLogReader(logs))
+		assertStatus(t, missing, http.StatusNotFound)
 	})
 
 	t.Run("detail returns explicit legacy field names", func(t *testing.T) {
@@ -442,6 +478,10 @@ func withAdminLinkIssuer(issuer AdminLinkIssuer) func(*Dependencies) {
 
 func withInstanceDir(dir string) func(*Dependencies) {
 	return func(deps *Dependencies) { deps.InstanceDirResolver = fakeInstanceDirResolver(dir) }
+}
+
+func withLogReader(reader InstanceLogReader) func(*Dependencies) {
+	return func(deps *Dependencies) { deps.InstanceLogs = reader }
 }
 
 type fakeInstanceDirResolver string

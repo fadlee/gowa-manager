@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
@@ -16,10 +17,12 @@ import (
 )
 
 type platformProcessConfig struct {
-	Path string
-	Args []string
-	Env  map[string]string
-	Dir  string
+	Path   string
+	Args   []string
+	Env    map[string]string
+	Dir    string
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 type darwinProcess struct {
@@ -49,8 +52,14 @@ func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*d
 	if config.Dir != "" {
 		cmd.Dir = config.Dir
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = config.Stdout
+	if cmd.Stdout == nil {
+		cmd.Stdout = os.Stdout
+	}
+	cmd.Stderr = config.Stderr
+	if cmd.Stderr == nil {
+		cmd.Stderr = os.Stderr
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start process: %w", err)
