@@ -349,10 +349,10 @@ func (s *Supervisor) handleExit(instanceID, generation int64, snapshot ProcessSn
 	if err := s.registry.MarkExited(instanceID, generation, exited.State); errors.Is(err, ErrStaleGeneration) {
 		return
 	}
+	_ = proc.Close()
 	if s.onExit != nil {
 		s.onExit(exited)
 	}
-	_ = proc.Close()
 }
 
 type defaultPlatform struct{}
