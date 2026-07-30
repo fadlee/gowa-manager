@@ -1,7 +1,7 @@
 # Active Tasks
 
 ## Sprint: Developer Instance UX
-Updated: 2026-06-11
+Updated: 2026-07-30
 
 ### ✅ Done
 - [x] Backend lifecycle endpoints exist for instances
