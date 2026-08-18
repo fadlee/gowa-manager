@@ -36,3 +36,6 @@ playwright-report/
 
 # Stray test artifacts
 /dy
+
+# Local git worktrees
+/.worktrees/
