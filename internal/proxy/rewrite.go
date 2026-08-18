@@ -122,7 +122,8 @@ func GetInstanceBasicAuthCredentials(instance instances.Instance) (username stri
 // bootstrap injection. It is case-insensitive and accepts parameters
 // such as "charset=utf-8".
 func isHTMLContentType(contentType string) bool {
-	return strings.Contains(strings.ToLower(contentType), "text/html")
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	return ct == "text/html" || strings.HasPrefix(ct, "text/html;")
 }
 
 // gowaUIConnectionState mirrors the persisted Zustand state shape read

@@ -618,6 +618,12 @@ func TestIsHTMLContentType_RejectsNonHTML(t *testing.T) {
 	if isHTMLContentType("application/javascript") {
 		t.Error(`application/javascript should not be HTML`)
 	}
+	if isHTMLContentType("text/htmlfoo") {
+		t.Error(`text/htmlfoo should not be HTML`)
+	}
+	if isHTMLContentType("xtext/htmlx") {
+		t.Error(`xtext/htmlx should not be HTML`)
+	}
 }
 
 // ---- InjectGOWAUILocalStorageBootstrap ----
@@ -711,5 +717,15 @@ func TestInjectGOWAUILocalStorageBootstrap_TrimTrailingSlashOnOrigin(t *testing.
 
 	if !strings.Contains(got, `"baseUrl":"http://manager.test/app/k"`) {
 		t.Fatalf("expected trimmed origin in baseUrl: %s", got)
+	}
+}
+
+func TestInjectGOWAUILocalStorageBootstrap_MalformedHTMLReturnsOriginal(t *testing.T) {
+	inst := instances.Instance{Key: "k", Config: `{"flags":{"basicAuth":[{"username":"u","password":"p"}]}}`}
+	// HTML with a <script> tag that has no closing '>' and no <head>.
+	html := []byte(`<html><body><script type="module"`)
+
+	if got := InjectGOWAUILocalStorageBootstrap(html, "http://manager.test", inst); !bytes.Equal(got, html) {
+		t.Fatalf("malformed HTML should be returned unchanged: %s", got)
 	}
 }
