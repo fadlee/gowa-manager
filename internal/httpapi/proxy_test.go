@@ -151,6 +151,13 @@ func newUpstreamServer(t *testing.T) *httptest.Server {
 		http.Redirect(w, r, to, http.StatusFound)
 	})
 
+	// UI handler — returns a minimal GOWA UI HTML document with a
+	// module script, used by the localStorage bootstrap injection tests.
+	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, `<!doctype html><html><head><script type="module">window.gowaUI = true</script></head><body>GOWA UI</body></html>`)
+	})
+
 	// WebSocket echo handler — upgrades and bounces messages.
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -228,6 +235,15 @@ func runningInstance(key string, port int) instances.Instance {
 		Status: "running",
 		Port:   &port,
 	}
+}
+
+// runningInstanceWithBasicAuth builds a running instance with a Basic
+// Auth configuration, used by tests that exercise the GOWA UI
+// localStorage bootstrap injection.
+func runningInstanceWithBasicAuth(key string, port int, user, pass string) instances.Instance {
+	inst := runningInstance(key, port)
+	inst.Config = `{"flags":{"basicAuth":[{"username":"` + user + `","password":"` + pass + `"}]}}`
+	return inst
 }
 
 // stoppedInstance builds a stopped instance with a port.
@@ -858,6 +874,76 @@ func TestProxyRoutes_AutologinPreservesOtherQueryParams(t *testing.T) {
 	}
 	if !strings.Contains(loc, "foo=bar") {
 		t.Fatalf("Location = %q, want foo=bar preserved", loc)
+	}
+}
+
+// ---- 16. Autologin initializes GOWA UI localStorage connection ----
+
+func TestProxyRoutes_AutologinInitializesGOWAUIConnection(t *testing.T) {
+	upstream := newUpstreamServer(t)
+	port := upstreamPort(t, upstream)
+	inst := runningInstanceWithBasicAuth("mykey", port, "admin", "secret")
+	deps := proxyRouteDeps(t, upstream, inst)
+	srv := newProxyRouteServer(t, deps)
+
+	// Create a valid token.
+	token, _ := deps.MagicAuth.CreateToken("mykey", time.Now())
+
+	// Step 1: request the magic link URL — the proxy validates the
+	// token, sets the HttpOnly magic cookie, and redirects to the same
+	// URL without the token.
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get(srv.URL + "/app/mykey/ui?autologin=" + token)
+	if err != nil {
+		t.Fatalf("GET magic link: %v", err)
+	}
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want 302", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if strings.Contains(loc, "autologin") {
+		t.Fatalf("Location %q still contains autologin", loc)
+	}
+	// Extract the Set-Cookie header to carry the magic cookie forward.
+	setCookie := resp.Header.Get("Set-Cookie")
+	if setCookie == "" {
+		t.Fatal("missing Set-Cookie on autologin redirect")
+	}
+	resp.Body.Close()
+
+	// Step 2: follow the redirect manually, carrying the magic cookie.
+	// The upstream /ui endpoint returns HTML with a module script; the
+	// proxy should inject the GOWA UI localStorage bootstrap.
+	req, err := http.NewRequest(http.MethodGet, srv.URL+loc, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Cookie", setCookie[:strings.IndexByte(setCookie, ';')])
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET redirected URL: %v", err)
+	}
+	defer resp2.Body.Close()
+	body, _ := io.ReadAll(resp2.Body)
+
+	for _, want := range []string{
+		"gowa-ui.connection.v1",
+		"gowa-ui.device.v1",
+		"/app/mykey",
+		`"username":"admin"`,
+		`"password":"secret"`,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+	// The final URL must not contain the autologin parameter.
+	if strings.Contains(req.URL.String(), "autologin") {
+		t.Fatalf("final URL %q still contains autologin", req.URL.String())
 	}
 }
 
