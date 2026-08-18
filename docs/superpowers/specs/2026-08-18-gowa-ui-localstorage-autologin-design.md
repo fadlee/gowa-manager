@@ -41,6 +41,49 @@ The bootstrap script writes the two required localStorage entries on the manager
 
 The proxy-derived base URL ensures browser HTTP and WebSocket traffic remains under `/app/{key}/`, where existing proxy behavior, magic-cookie authentication, header injection, URL rewriting, and upstream cookie scoping apply.
 
+## Flow Visualization
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Manager as GOWA Manager UI
+    participant API as Manager API
+    participant Proxy as /app/{key} Proxy
+    participant Browser as Browser localStorage
+    participant GOWA as GOWA UI / API
+
+    User->>Manager: Open Admin
+    Manager->>API: POST /api/instances/{id}/admin-link
+    API-->>Manager: /app/{key}/?autologin={short-lived token}
+    Manager->>Proxy: Navigate to magic link
+    Proxy->>Proxy: Validate token for instance key
+    Proxy-->>Browser: Set HttpOnly magic cookie\n302 /app/{key}/ (token removed)
+    Browser->>Proxy: GET /app/{key}/ with magic cookie
+    Proxy->>GOWA: Fetch proxied GOWA UI HTML\nwith instance Basic Auth
+    GOWA-->>Proxy: HTML document
+    Proxy->>Proxy: Validate cookie + HTML + Basic Auth config
+    Proxy-->>Browser: HTML with bootstrap script
+    Browser->>Browser: Store gowa-ui.connection.v1\nStore gowa-ui.device.v1
+    Browser->>Proxy: GOWA UI API / WebSocket requests\nusing proxy baseUrl
+    Proxy->>GOWA: Forward request with instance Basic Auth
+    GOWA-->>Browser: Proxied GOWA UI response
+```
+
+```mermaid
+flowchart TD
+    Start[Open /app/{key}/?autologin=token] --> ValidToken{Token valid?}
+    ValidToken -- No --> Reject[401 and clear magic cookie]
+    ValidToken -- Yes --> Cookie[Set instance-scoped HttpOnly cookie]
+    Cookie --> Redirect[302 to URL without token]
+    Redirect --> HTML{Response is GOWA UI HTML?}
+    HTML -- No --> Original[Forward response unchanged]
+    HTML -- Yes --> Session{Valid magic cookie and Basic Auth config?}
+    Session -- No --> Unchanged[Return original HTML without credentials]
+    Session -- Yes --> Inject[Inject bootstrap script]
+    Inject --> Store[Write proxy baseUrl, username, password, default device to localStorage]
+    Store --> Ready[GOWA UI is connected through /app/{key} proxy]
+```
+
 ## Request Eligibility
 
 Injection is allowed only when every condition is true:
