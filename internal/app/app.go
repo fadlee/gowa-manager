@@ -67,7 +67,7 @@ type Options struct {
 	OnReadiness          func(*httpapi.AtomicReadiness)
 	ReconcileConcurrency int
 	// AutoUpdateInterval is the interval between auto-update checks. Defaults
-	// to 1 hour when zero, matching the legacy Bun AutoUpdater.start(60*60*1000).
+	// to 1 hour when zero.
 	AutoUpdateInterval time.Duration
 	// ForceShutdown, when closed, forces an immediate (non-graceful)
 	// shutdown: the HTTP server is closed without draining and the shutdown
@@ -284,12 +284,11 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	emit("runtime-connections-closed")
 
-	// 7. Child-process policy: per the legacy Bun SIGINT handler
-	//    (src/index.ts lines 75-82), children are LEFT RUNNING on shutdown
+	// 7. Child-process policy: children are LEFT RUNNING on shutdown
 	//    (orphaned). Reconciliation picks them up on the next start. The
 	//    supervisor's exit callbacks are guarded by the reconcile-done wait
 	//    above so they do not race with DB close. No explicit StopAll/KillAll
-	//    is invoked — this matches the legacy policy.
+	//    is invoked.
 	emit("child-policy")
 	//
 	//    NOTE: if a future policy requires stopping children on shutdown,

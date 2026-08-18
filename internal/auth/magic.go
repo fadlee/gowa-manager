@@ -3,11 +3,6 @@
 // feature produces short-lived HMAC-signed tokens that allow opening a
 // proxied GOWA instance's admin UI without a browser Basic Auth prompt.
 //
-// This is a Go port of the Bun reference implementation in
-// src/modules/proxy/magic-auth.ts. The token format, cookie attributes,
-// and secret derivation are preserved so that links behave identically
-// during the cutover period.
-//
 // Tokens are intentionally short-lived (60 seconds) and do NOT survive a
 // manager restart when the secret is the runtime default — the nonce is
 // random and the secret is derived from env vars at construction time.

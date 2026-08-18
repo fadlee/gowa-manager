@@ -2,9 +2,9 @@
 
 ## 1. Project Snapshot
 
-- **Repo type**: Single full-stack project (Bun + Elysia backend, React + Vite frontend).
-- **Primary stack**: Bun, Elysia, TypeScript, SQLite, React, Vite, TailwindCSS, TanStack Query.
-- **Structure**: Backend/CLI in `src/`, SPA frontend in `client/`. Each has its own AGENTS file.
+- **Repo type**: Full-stack project (Go backend, React + Vite frontend).
+- **Primary stack**: Go 1.24, SQLite, React 18, Vite, TailwindCSS, TanStack Query, Bun (frontend tooling only).
+- **Structure**: Go backend in `cmd/` + `internal/`, SPA frontend in `client/`. Each has its own AGENTS file.
 - **Rule**: Always check the **nearest `AGENTS.md`** to the file you’re editing.
 
 ---
@@ -14,26 +14,24 @@
 Run all commands from the **repo root** unless noted.
 
 ```bash
-# Install backend + CLI + frontend deps
+# Install frontend deps (Bun is used only for client tooling)
 bun install
 
-# Dev – integrated mode (build client on change, serve via Bun)
+# Dev – frontend only (Vite dev server on :5173)
 bun run dev
 
-# Dev – backend only (API + embedded static)
-bun run dev:server
+# Dev – Go backend
+bun run dev:go
+# OR: go run ./cmd/gowa-manager-go
 
-# Dev – frontend only (Vite dev server on :5173)
-bun run dev:client
-
-# Build all for production (client + embed + server)
+# Build for production (client + Go binary)
 bun run build:production
 
-# Typecheck all TypeScript (no emit)
-bun run build:tsc
+# Go tests
+go test ./...
 
-# Tests (Bun test runner; currently no tests checked in)
-bun test
+# Go benchmark comparison
+bun run test:benchmark:compare
 ```
 
 ---
@@ -41,12 +39,14 @@ bun test
 ## 3. Universal Conventions
 
 - **Language & style**
-  - Backend & frontend are **TypeScript-first**. Prefer proper types over `any`.
-  - No explicit ESLint/Prettier config in this repo; follow existing patterns in `src/**` and `client/src/**`.
+  - Go backend: follow existing patterns in `internal/**`. Use `go vet` and `go test`.
+  - Frontend: **TypeScript-first**. Prefer proper types over `any`.
+  - No explicit ESLint/Prettier config; follow existing patterns in `client/src/**`.
 - **Architecture**
-  - Backend:
-    - Use **module structure**: `src/modules/<domain>/{index.ts, model.ts, service.ts, utils/**}`.
-    - All DB access via `src/db.ts` prepared queries.
+  - Backend (Go):
+    - Module structure: `internal/<domain>/` with service, handler, and model files.
+    - HTTP API routes in `internal/httpapi/`.
+    - DB access via `internal/database/`.
   - Frontend:
     - Use `client/src/lib/api.ts` as the single REST client.
     - Use **React Query** for data fetching, not ad-hoc `fetch`.
@@ -61,9 +61,9 @@ bun test
     - `fix: handle missing gowa_version`
 - **PR expectations**
   - PRs should:
-    - Include **tests** when adding behavior (once tests exist).
+    - Include **tests** when adding behavior.
     - Update docs in `README.md` or `docs/**` if APIs/CLI flags change.
-    - Pass `bun run build:tsc` and `bun run build:production`.
+    - Pass `go test ./...` and `cd client && bun run build`.
 
 ---
 
@@ -88,15 +88,16 @@ bun test
 
 ### Package Structure
 
-- **Backend service & CLI**: `src/`
-  - Start with: `src/index.ts`, `src/modules/instances/index.ts`, `src/modules/system/versions.ts`.
-  - See [src/AGENTS.md](src/AGENTS.md) for backend patterns and commands.
+- **Go backend**: `cmd/` + `internal/`
+  - Start with: `cmd/gowa-manager-go/main.go`, `internal/app/app.go`, `internal/httpapi/`.
+  - See `internal/AGENTS.md` (if present) or package-level comments for Go patterns.
 - **Web UI (SPA)**: `client/`
   - Start with: `client/src/App.tsx`, `client/src/components/InstanceList.tsx`, `client/src/lib/api.ts`.
   - See [client/AGENTS.md](client/AGENTS.md) for frontend patterns and commands.
 - **Static & embedding**
-  - `scripts/embed-static.ts`, `scripts/dev-watch.ts`
-  - `public/` and `src/embedded-static.ts` (generated).
+  - `public/` (Vite build output, gitignored) → `internal/static/web/` (Go embed directory).
+  - Build: `bun run build:client` then `cp -r public/* internal/static/web/`.
+  - Or use `bun run scripts/build-go.ts` which does both.
 - **Docs**
   - Integration and versioning: `docs/INTEGRATED_SETUP.md`, `docs/VERSION_MANAGEMENT.md`.
   - CLI flags reference: `docs/gowa-cli-flags.md`.
@@ -104,17 +105,17 @@ bun test
 ### Quick Find Commands (from repo root)
 
 ```bash
-# Search for a backend route definition
-rg -n "new Elysia" src/modules
+# Search for Go HTTP route definitions
+rg -n "func.*Handler\|HandleFunc\|mux\." internal/httpapi
 
-# Find instance-related API handlers
-rg -n "instancesModule" src/modules
+# Find instance-related Go code
+rg -n "instances" internal/instances
 
-# Find system/version-related logic
-rg -n "VersionManager" src/modules src/types
+# Find system/version-related Go logic
+rg -n "VersionManager\|versions" internal/versions
 
-# Find all Bun.spawn usages (process management)
-rg -n "Bun\.spawn" src
+# Find process management (Go)
+rg -n "exec\.\|os/exec" internal/supervisor
 
 # Find React components
 rg -n "export function .*" client/src
@@ -127,7 +128,7 @@ rg -n "useMutation" client/src
 rg -n "apiClient\." client/src
 
 # Find types
-rg -n "export interface Instance" client/src/types src/types
+rg -n "export interface Instance" client/src/types
 ```
 
 ---
@@ -137,12 +138,12 @@ rg -n "export interface Instance" client/src/types src/types
 Before you consider a change **ready for PR**:
 
 - **Build & types**
-  - `bun run build:tsc`
-  - `bun run build:production` (ensures client build + embed + server build).
+  - `go build ./...`
+  - `cd client && bun run build`
 - **Tests**
-  - `bun test` (once tests exist; keep it passing at all times).
+  - `go test ./...`
 - **Self-check**
-  - No obvious TypeScript `any` leaks, unused imports, or dead code in touched files.
+  - No obvious unused imports or dead code in touched files.
   - Docs updated if you changed:
     - Public API routes (`/api/**`)
     - CLI flags

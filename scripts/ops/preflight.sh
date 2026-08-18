@@ -264,22 +264,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Check 5: Absence of active Bun / Go manager process
+# Check 5: Absence of active Go manager process
 # ---------------------------------------------------------------------------
-mgr_bun=false
 mgr_go=false
 if command -v pgrep >/dev/null 2>&1; then
   pgrep -f 'gowa-manager' >/dev/null 2>&1 && mgr_go=true
-  pgrep -f 'bun.*src/index' >/dev/null 2>&1 && mgr_bun=true
 elif command -v ps >/dev/null 2>&1; then
   ps aux 2>/dev/null | grep -v grep | grep -q 'gowa-manager' && mgr_go=true
-  ps aux 2>/dev/null | grep -v grep | grep -q 'bun.*src/index' && mgr_bun=true
 fi
-if [ "$mgr_bun" = true ] || [ "$mgr_go" = true ]; then
-  _d=""
-  [ "$mgr_bun" = true ] && _d="bun active"
-  [ "$mgr_go" = true ] && _d="$_d go active"
-  add_check "manager_active" "fail" "$_d"
+if [ "$mgr_go" = true ]; then
+  add_check "manager_active" "fail" "go active"
   add_blocker "a manager process is still running"
 else
   add_check "manager_active" "pass" "no manager process detected"
