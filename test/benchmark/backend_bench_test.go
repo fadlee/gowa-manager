@@ -285,7 +285,6 @@ func findFreePort(tb testing.TB) int {
 }
 
 // startBenchBackend starts a Go backend on a free port with a temp data dir.
-// It pre-creates a dummy GOWA binary to skip the download step.
 func startBenchBackend(tb testing.TB) *benchBackend {
 	tb.Helper()
 	root := findRepoRoot(tb)
@@ -296,31 +295,14 @@ func startBenchBackend(tb testing.TB) *benchBackend {
 		tb.Fatalf("mkdtemp: %v", err)
 	}
 
-	// Pre-create dummy GOWA binary so the backend skips download.
-	binDir := filepath.Join(dataDir, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		tb.Fatal(err)
-	}
-	dummyName := "gowa"
+	binaryPath := filepath.Join(dataDir, "gowa-manager-go")
 	if runtime.GOOS == "windows" {
-		dummyName = "gowa.exe"
+		binaryPath += ".exe"
 	}
-	dummyPath := filepath.Join(binDir, dummyName)
-	if err := os.WriteFile(dummyPath, []byte("#!/bin/sh\necho dummy\n"), 0o755); err != nil {
-		tb.Fatal(err)
-	}
-
-	// Build the Go binary if not present.
-	binaryPath := filepath.Join(root, "gowa-manager-go.exe")
-	if runtime.GOOS != "windows" {
-		binaryPath = filepath.Join(root, "gowa-manager-go")
-	}
-	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/gowa-manager-go")
-		cmd.Dir = root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			tb.Fatalf("go build: %v\n%s", err, out)
-		}
+	build := exec.Command("go", "build", "-o", binaryPath, "./cmd/gowa-manager-go")
+	build.Dir = root
+	if out, err := build.CombinedOutput(); err != nil {
+		tb.Fatalf("go build: %v\n%s", err, out)
 	}
 
 	cmd := exec.Command(binaryPath,
@@ -330,7 +312,7 @@ func startBenchBackend(tb testing.TB) *benchBackend {
 		"-d", dataDir,
 	)
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "NODE_ENV=production")
+	cmd.Env = append(os.Environ(), "NODE_ENV=production", "GOWA_SKIP_STARTUP_INSTALL=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
