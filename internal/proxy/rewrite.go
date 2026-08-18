@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -77,8 +78,23 @@ func PrepareForwardHeaders(originalHeaders http.Header, instance instances.Insta
 // an empty string when no basic auth is configured or the config is
 // invalid. This mirrors the Bun getFirstInstanceBasicAuthHeader.
 func GetInstanceBasicAuthHeader(instance instances.Instance) string {
-	if instance.Config == "" {
+	username, password, ok := GetInstanceBasicAuthCredentials(instance)
+	if !ok {
 		return ""
+	}
+	creds := username + ":" + password
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(creds))
+}
+
+// GetInstanceBasicAuthCredentials returns the first basicAuth username
+// and password from the instance config. It returns ("", "", false) when
+// no basic auth is configured, the config is invalid, or the first entry
+// is missing a username or password. It is the single source of truth
+// for both proxy header injection and the GOWA UI localStorage bootstrap
+// so both paths select exactly the same credential pair.
+func GetInstanceBasicAuthCredentials(instance instances.Instance) (username string, password string, ok bool) {
+	if instance.Config == "" {
+		return "", "", false
 	}
 	var cfg struct {
 		Flags struct {
@@ -89,17 +105,177 @@ func GetInstanceBasicAuthHeader(instance instances.Instance) string {
 		} `json:"flags"`
 	}
 	if err := json.Unmarshal([]byte(instance.Config), &cfg); err != nil {
-		return ""
+		return "", "", false
 	}
 	if len(cfg.Flags.BasicAuth) == 0 {
-		return ""
+		return "", "", false
 	}
 	first := cfg.Flags.BasicAuth[0]
 	if first.Username == "" || first.Password == "" {
-		return ""
+		return "", "", false
 	}
-	creds := first.Username + ":" + first.Password
-	return "Basic " + base64.StdEncoding.EncodeToString([]byte(creds))
+	return first.Username, first.Password, true
+}
+
+// isHTMLContentType reports whether the given Content-Type indicates an
+// HTML response that may be eligible for the GOWA UI localStorage
+// bootstrap injection. It is case-insensitive and accepts parameters
+// such as "charset=utf-8".
+func isHTMLContentType(contentType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	return ct == "text/html" || strings.HasPrefix(ct, "text/html;")
+}
+
+// gowaUIConnectionState mirrors the persisted Zustand state shape read
+// by new GOWA UI releases under the localStorage key
+// "gowa-ui.connection.v1".
+type gowaUIConnectionState struct {
+	State struct {
+		BaseURL  string `json:"baseUrl"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"state"`
+	Version int `json:"version"`
+}
+
+// gowaUIDeviceState mirrors the persisted Zustand state shape read by
+// new GOWA UI releases under the localStorage key
+// "gowa-ui.device.v1".
+type gowaUIDeviceState struct {
+	State struct {
+		SelectedDeviceID string `json:"selectedDeviceId"`
+	} `json:"state"`
+	Version int `json:"version"`
+}
+
+// InjectGOWAUILocalStorageBootstrap returns html with an inline script
+// that writes the GOWA UI connection and device localStorage entries
+// expected by new GOWA UI releases. The script is inserted before the
+// first <script type="module"> tag, or immediately after the opening
+// <head> tag when no module script is present.
+//
+// When the instance has no usable Basic Auth credentials, or no safe
+// insertion point can be found, the original html bytes are returned
+// unchanged. All dynamic values are serialized with json.Marshal and
+// the JSON payload is sanitized so the literal sequence "</script"
+// cannot terminate the inline script element early.
+//
+// managerOrigin must be the browser-visible origin of the manager
+// (scheme://host) and must not include a trailing slash; a trailing
+// slash is trimmed defensively.
+func InjectGOWAUILocalStorageBootstrap(html []byte, managerOrigin string, instance instances.Instance) []byte {
+	username, password, ok := GetInstanceBasicAuthCredentials(instance)
+	if !ok {
+		return html
+	}
+
+	connection := gowaUIConnectionState{Version: 0}
+	connection.State.BaseURL = strings.TrimRight(managerOrigin, "/") + "/app/" + instance.Key
+	connection.State.Username = username
+	connection.State.Password = password
+	connectionJSON, err := json.Marshal(connection)
+	if err != nil {
+		return html
+	}
+
+	device := gowaUIDeviceState{Version: 0}
+	device.State.SelectedDeviceID = "default"
+	deviceJSON, err := json.Marshal(device)
+	if err != nil {
+		return html
+	}
+
+	// Defend against the HTML parser terminating the inline script
+	// element early: replace every case-insensitive "</script" sequence
+	// in the marshaled JSON with a safe split form.
+	safeConnectionJSON := sanitizeScriptJSON(connectionJSON)
+	safeDeviceJSON := sanitizeScriptJSON(deviceJSON)
+
+	script := []byte(`<script>(function(){try{` +
+		`localStorage.setItem("gowa-ui.connection.v1",` + string(safeConnectionJSON) + `);` +
+		`localStorage.setItem("gowa-ui.device.v1",` + string(safeDeviceJSON) + `);` +
+		`}catch(e){}})();</script>`)
+
+	insertAt, found := findGOWAUIBootstrapInsertionPoint(html)
+	if !found {
+		return html
+	}
+
+	out := make([]byte, 0, len(html)+len(script))
+	out = append(out, html[:insertAt]...)
+	out = append(out, script...)
+	out = append(out, html[insertAt:]...)
+	return out
+}
+
+// findGOWAUIBootstrapInsertionPoint returns the byte offset at which the
+// GOWA UI bootstrap script should be inserted. It prefers the position
+// immediately before the first <script type="module"> tag so the
+// bootstrap runs before the GOWA UI bundle. When no module script is
+// present it falls back to immediately after the opening <head> tag.
+// It returns (0, false) when no safe insertion point exists.
+func findGOWAUIBootstrapInsertionPoint(html []byte) (int, bool) {
+	lower := bytes.ToLower(html)
+	if idx := bytes.Index(lower, []byte(`<script`)); idx >= 0 {
+		// Walk forward to the end of the opening <script ...> tag and
+		// check whether it carries type="module". We accept either
+		// single or double quotes around the attribute value.
+		end := bytes.IndexByte(lower[idx:], '>')
+		if end < 0 {
+			// No closing '>' for this script tag; fall through to the
+			// <head> fallback rather than risk splitting the tag.
+		} else {
+			tag := lower[idx : idx+end+1]
+			if isModuleScriptTag(tag) {
+				return idx, true
+			}
+		}
+	}
+	if idx := bytes.Index(lower, []byte("<head>")); idx >= 0 {
+		return idx + len("<head>"), true
+	}
+	return 0, false
+}
+
+// isModuleScriptTag reports whether the given lowercased opening <script
+// ...> tag (including the closing '>') declares type="module".
+func isModuleScriptTag(tag []byte) bool {
+	for _, quote := range []string{`"`, `'`} {
+		if bytes.Contains(tag, []byte(`type=`+quote+`module`+quote)) {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeScriptJSON replaces every case-insensitive "</script"
+// sequence in data with "<\\/script" so the bytes cannot terminate an
+// inline <script> element when embedded as a JavaScript string literal.
+// json.Marshal already escapes '/' as "\/" when the data is a string,
+// but nested string values inside objects are emitted with the raw
+// forward slash; this defense covers both cases uniformly.
+func sanitizeScriptJSON(data []byte) []byte {
+	lower := bytes.ToLower(data)
+	if !bytes.Contains(lower, []byte("</script")) {
+		return data
+	}
+	// Build the replacement on a single pass. The replacement keeps
+	// the JSON valid because "<\/script" is a valid JavaScript string
+	// literal escape for "<\/script" (the backslash before '/' is
+	// ignored by JSON.parse and JS string parsing).
+	var out bytes.Buffer
+	out.Grow(len(data))
+	i := 0
+	for i < len(data) {
+		if i+8 <= len(data) && bytes.EqualFold(data[i:i+8], []byte("</script")) {
+			out.WriteString(`<\/script`)
+			i += 8
+			continue
+		}
+		out.WriteByte(data[i])
+		i++
+	}
+	return out.Bytes()
 }
 
 // StripAbsoluteURLs rewrites JSON response bodies by converting absolute

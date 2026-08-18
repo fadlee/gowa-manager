@@ -123,6 +123,11 @@ func newUpstreamServer(t *testing.T) *httptest.Server {
 		http.Redirect(w, r, to, code)
 	})
 
+	mux.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, `<!doctype html><html><head><script type="module">window.gowaUI = true</script></head><body>GOWA UI</body></html>`)
+	})
+
 	mux.HandleFunc("/set-cookie", func(w http.ResponseWriter, r *http.Request) {
 		name := r.URL.Query().Get("name")
 		if name == "" {
@@ -1070,4 +1075,133 @@ func TestHTTPProxy_ConcurrentRequests(t *testing.T) {
 // base64Std returns the standard base64 encoding of s.
 func base64Std(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+
+// ---- GOWA UI localStorage bootstrap injection ----
+
+func TestHTTPProxy_InjectsGOWAUIBootstrapForValidMagicCookie(t *testing.T) {
+	upstream := newUpstreamServer(t)
+	port := upstreamPort(t, upstream)
+	inst := newRunningInstance("k", port, basicAuthConfig("admin", "secret"))
+	svc := auth.NewMagicAuthServiceWithSecret("s")
+	srv := newProxyServer(t, svc, nil, inst)
+
+	req, err := http.NewRequest(http.MethodGet, proxyURL(srv.URL, "k", "/ui"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Cookie", validMagicCookie(t, svc, "k"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	for _, want := range []string{
+		`gowa-ui.connection.v1`,
+		`gowa-ui.device.v1`,
+		srv.URL + `/app/k`,
+		`"username":"admin"`,
+		`"password":"secret"`,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestHTTPProxy_DoesNotInjectGOWAUIBootstrapWithoutCookie(t *testing.T) {
+	upstream := newUpstreamServer(t)
+	port := upstreamPort(t, upstream)
+	inst := newRunningInstance("k", port, basicAuthConfig("admin", "secret"))
+	svc := auth.NewMagicAuthServiceWithSecret("s")
+	srv := newProxyServer(t, svc, nil, inst)
+
+	resp, err := http.Get(proxyURL(srv.URL, "k", "/ui"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if strings.Contains(string(body), "gowa-ui.connection.v1") {
+		t.Fatalf("body should not contain bootstrap without cookie: %s", body)
+	}
+}
+
+func TestHTTPProxy_DoesNotInjectGOWAUIBootstrapWithInvalidCookie(t *testing.T) {
+	upstream := newUpstreamServer(t)
+	port := upstreamPort(t, upstream)
+	inst := newRunningInstance("k", port, basicAuthConfig("admin", "secret"))
+	svc := auth.NewMagicAuthServiceWithSecret("s")
+	srv := newProxyServer(t, svc, nil, inst)
+
+	req, err := http.NewRequest(http.MethodGet, proxyURL(srv.URL, "k", "/ui"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Cookie", svc.CookieName("k")+"=invalid-token")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if strings.Contains(string(body), "gowa-ui.connection.v1") {
+		t.Fatalf("body should not contain bootstrap with invalid cookie: %s", body)
+	}
+}
+
+func TestHTTPProxy_DoesNotInjectGOWAUIBootstrapWithoutBasicAuth(t *testing.T) {
+	upstream := newUpstreamServer(t)
+	port := upstreamPort(t, upstream)
+	inst := newRunningInstance("k", port, "")
+	svc := auth.NewMagicAuthServiceWithSecret("s")
+	srv := newProxyServer(t, svc, nil, inst)
+
+	req, err := http.NewRequest(http.MethodGet, proxyURL(srv.URL, "k", "/ui"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Cookie", validMagicCookie(t, svc, "k"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if strings.Contains(string(body), "gowa-ui.connection.v1") {
+		t.Fatalf("body should not contain bootstrap without basic auth: %s", body)
+	}
+}
+
+func TestHTTPProxy_JSONResponseRemainsUnchangedWithValidCookie(t *testing.T) {
+	upstream := newUpstreamServer(t)
+	port := upstreamPort(t, upstream)
+	inst := newRunningInstance("k", port, basicAuthConfig("admin", "secret"))
+	svc := auth.NewMagicAuthServiceWithSecret("s")
+	srv := newProxyServer(t, svc, nil, inst)
+
+	req, err := http.NewRequest(http.MethodGet, proxyURL(srv.URL, "k", "/echo"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Cookie", validMagicCookie(t, svc, "k"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if strings.Contains(string(body), "gowa-ui.connection.v1") {
+		t.Fatalf("JSON response should not contain bootstrap: %s", body)
+	}
+	var got echoResponse
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("response is not valid JSON: %v\nbody: %s", err, body)
+	}
 }

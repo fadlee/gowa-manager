@@ -117,6 +117,8 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	instance := target.Instance
 	requestHost := r.Host
+	requestScheme := managerScheme(r)
+	cookieHeader := r.Header.Get("Cookie")
 
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -134,7 +136,15 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Out.Header = PrepareForwardHeaders(r.In.Header, instance, p.magicAuth, r.In.URL)
 		},
 		ModifyResponse: func(resp *http.Response) error {
-			return modifyProxyResponse(resp, instanceKey, requestHost)
+			ctx := modifyResponseContext{
+				instanceKey:    instanceKey,
+				requestHost:    requestHost,
+				instance:       instance,
+				managerOrigin:  requestScheme + "://" + requestHost,
+				cookieHeader:   cookieHeader,
+				magicAuth:      p.magicAuth,
+			}
+			return modifyProxyResponse(resp, ctx)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			// When the client disconnects (request context cancelled) there
@@ -153,31 +163,49 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rp.ServeHTTP(w, r)
 }
 
+// modifyResponseContext carries the request-scoped information needed by
+// modifyProxyResponse to rewrite redirect/cookie/JSON responses and to
+// decide whether the GOWA UI localStorage bootstrap may be injected into
+// an HTML response.
+type modifyResponseContext struct {
+	instanceKey   string
+	requestHost   string
+	instance      instances.Instance
+	managerOrigin string
+	cookieHeader  string
+	magicAuth     *auth.MagicAuthService
+}
+
 // modifyProxyResponse rewrites upstream response headers and bodies so
 // they are scoped under the proxy prefix:
 //   - redirect Location headers are rewritten to /app/{key}/...;
 //   - Set-Cookie paths are scoped under /app/{key} and Domain dropped;
 //   - JSON response bodies have absolute http(s) URLs converted to
 //     relative paths (binary content is left untouched and streams
-//     through without buffering).
-func modifyProxyResponse(resp *http.Response, instanceKey, requestHost string) error {
+//     through without buffering);
+//   - HTML responses carrying a valid magic admin cookie for the
+//     instance get a bootstrap script that initializes GOWA UI's
+//     localStorage connection state so new GOWA UI releases open
+//     connected through the manager proxy without a manual login form.
+func modifyProxyResponse(resp *http.Response, ctx modifyResponseContext) error {
 	// Rewrite redirect Location.
 	if loc := resp.Header.Get("Location"); loc != "" {
-		resp.Header.Set("Location", RewriteRedirectLocation(loc, instanceKey, requestHost))
+		resp.Header.Set("Location", RewriteRedirectLocation(loc, ctx.instanceKey, ctx.requestHost))
 	}
 
 	// Rewrite Set-Cookie headers (path scoped, domain removed).
 	if cookies := resp.Header.Values("Set-Cookie"); len(cookies) > 0 {
 		rewritten := make([]string, 0, len(cookies))
 		for _, c := range cookies {
-			rewritten = append(rewritten, RewriteSetCookie(c, instanceKey, requestHost))
+			rewritten = append(rewritten, RewriteSetCookie(c, ctx.instanceKey, ctx.requestHost))
 		}
 		resp.Header["Set-Cookie"] = rewritten
 	}
 
+	ct := resp.Header.Get("Content-Type")
+
 	// JSON body URL stripping. Only application/json responses are
 	// buffered; binary and other content types stream through unchanged.
-	ct := resp.Header.Get("Content-Type")
 	if isJSONContentType(ct) {
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -188,7 +216,28 @@ func modifyProxyResponse(resp *http.Response, instanceKey, requestHost string) e
 		resp.Body = io.NopCloser(bytes.NewReader(stripped))
 		resp.ContentLength = int64(len(stripped))
 		resp.Header.Set("Content-Length", strconv.Itoa(len(stripped)))
+		return nil
 	}
+
+	// GOWA UI localStorage bootstrap injection. Only HTML responses
+	// with a valid instance-scoped magic admin cookie and a configured
+	// Basic Auth pair are eligible. The bootstrap writes the Zustand
+	// state entries that new GOWA UI releases read on startup, using
+	// the manager proxy URL as the connection base so all subsequent
+	// browser traffic stays under /app/{key}/.
+	if isHTMLContentType(ct) && ctx.magicAuth != nil &&
+		ctx.magicAuth.HasValidCookie(ctx.cookieHeader, ctx.instanceKey, time.Now()) {
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		injected := InjectGOWAUILocalStorageBootstrap(body, ctx.managerOrigin, ctx.instance)
+		resp.Body = io.NopCloser(bytes.NewReader(injected))
+		resp.ContentLength = int64(len(injected))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(injected)))
+	}
+
 	return nil
 }
 
@@ -210,6 +259,20 @@ func splitProxyPath(path string) (instanceKey, subPath string) {
 		return rest, "/"
 	}
 	return rest[:idx], rest[idx:]
+}
+
+// managerScheme returns the scheme of the request as seen by the
+// browser, accounting for TLS and the X-Forwarded-Proto header set by
+// upstream reverse proxies. It is used to build the manager origin
+// embedded in the GOWA UI localStorage bootstrap.
+func managerScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
+	return "http"
 }
 
 // isNotAvailableError reports whether the resolver error indicates the
