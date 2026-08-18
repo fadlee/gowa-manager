@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { X, Plus, Eye, EyeOff, Copy, Check } from 'lucide-react'
+import { X, Plus, Eye, EyeOff, Copy, Check, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import type { CliFlags } from '../../types'
+import { generateUsername, generatePassword } from '../../lib/utils'
 
 interface BasicAuthSectionProps {
   flags: CliFlags
@@ -61,6 +62,10 @@ export function BasicAuthSection({ flags, updateFlag }: BasicAuthSectionProps) {
         setCopiedStates(prev => ({ ...prev, [index]: false }))
       }, 2000)
     })
+  }
+
+  const generateCredentials = () => {
+    setNewAuth({ username: generateUsername(), password: generatePassword() })
   }
 
   return (
@@ -168,6 +173,24 @@ export function BasicAuthSection({ flags, updateFlag }: BasicAuthSectionProps) {
           onBlur={() => handleAuthBlur('password')}
           className="flex-1"
         />
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={generateCredentials}
+                className="shrink-0"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Generate random credentials</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         {flags.basicAuth && flags.basicAuth.length > 0 && (
           <Button
             type="button"
