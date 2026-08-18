@@ -84,6 +84,26 @@ flowchart TD
     Store --> Ready[GOWA UI is connected through /app/{key} proxy]
 ```
 
+## Backward Compatibility
+
+The feature is version-agnostic and additive; it must not branch on a GOWA version string.
+
+- The existing magic-cookie flow and proxy-side Basic Auth injection remain unchanged. They continue to authorize HTTP and WebSocket traffic for all supported GOWA versions.
+- Older GOWA UIs that do not read `gowa-ui.connection.v1` or `gowa-ui.device.v1` ignore the additional localStorage entries and continue using the proxy's injected Authorization header.
+- New GOWA UI releases read the injected entries and use the manager proxy URL as their connection base.
+- Requests that are not eligible for injection, including non-HTML responses and ordinary proxy visits without a valid magic cookie, retain their prior byte-for-byte response handling.
+- If future GOWA UI releases change their state-key schema, the old proxy authentication path remains available; the only degraded behavior is the return of GOWA UI's manual connection form rather than failed proxy access.
+
+### Compatibility Test Matrix
+
+| Scenario | HTML bootstrap | Proxy Basic Auth injection | Expected result |
+| --- | --- | --- | --- |
+| Older GOWA UI + valid magic cookie | Present but ignored by UI | Active | Existing one-click admin access continues |
+| New GOWA UI + valid magic cookie | Present and consumed | Active | GOWA UI opens connected to `/app/{key}` |
+| Any UI + normal proxy visit | Absent | Absent unless client sends Authorization | No credentials exposed; existing normal behavior |
+| Any UI + invalid or expired magic link | Absent | Absent | Existing 401 and cleared cookie behavior |
+| Instance without Basic Auth | Absent | Absent | Existing unauthenticated proxy behavior |
+
 ## Request Eligibility
 
 Injection is allowed only when every condition is true:
