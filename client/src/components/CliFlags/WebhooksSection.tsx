@@ -8,9 +8,10 @@ import type { CliFlags } from '../../types'
 interface WebhooksSectionProps {
   flags: CliFlags
   updateFlag: (key: keyof CliFlags, value: any) => void
+  updateFlags: (updates: Partial<CliFlags>) => void
 }
 
-export function WebhooksSection({ flags, updateFlag }: WebhooksSectionProps) {
+export function WebhooksSection({ flags, updateFlag, updateFlags }: WebhooksSectionProps) {
   const [newWebhook, setNewWebhook] = useState('')
 
   const addWebhook = (e?: React.MouseEvent | React.KeyboardEvent) => {
@@ -48,8 +49,14 @@ export function WebhooksSection({ flags, updateFlag }: WebhooksSectionProps) {
     e.preventDefault()
     const webhooks = flags.webhooks || []
     const webhookToRemove = webhooks[index]
-    updateFlag('webhooks', webhooks.filter((_, i) => i !== index))
-    updateFlag('disabledWebhooks', (flags.disabledWebhooks || []).filter((webhook) => webhook !== webhookToRemove))
+    // Update both fields atomically in a single onChange call.
+    // Two separate updateFlag calls would race: the second call spreads from
+    // the stale `flags` closure (still containing the removed webhook), so the
+    // first call's webhooks change would be silently reverted.
+    updateFlags({
+      webhooks: webhooks.filter((_, i) => i !== index),
+      disabledWebhooks: (flags.disabledWebhooks || []).filter((webhook) => webhook !== webhookToRemove),
+    })
   }
 
   const handleWebhookKeyDown = (e: React.KeyboardEvent) => {

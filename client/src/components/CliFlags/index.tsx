@@ -14,10 +14,21 @@ export function CliFlagsComponent({ flags, onChange }: CliFlagsProps) {
     onChange(newFlags)
   }
 
+  // Update multiple flags atomically in a single onChange call.
+  // Use this when a single user action must change more than one field,
+  // e.g. removing a webhook also needs to prune it from disabledWebhooks.
+  // Calling updateFlag twice in a row would hit a stale-closure bug because
+  // `flags` here only updates on the next render, so the second call would
+  // overwrite the first.
+  const updateFlags = (updates: Partial<CliFlags>) => {
+    const newFlags = { ...flags, ...updates }
+    onChange(newFlags)
+  }
+
   return (
     <div className="space-y-6">
       <BasicAuthSection flags={flags} updateFlag={updateFlag} />
-      <WebhooksSection flags={flags} updateFlag={updateFlag} />
+      <WebhooksSection flags={flags} updateFlag={updateFlag} updateFlags={updateFlags} />
       <AdvancedOptionsSection flags={flags} updateFlag={updateFlag} />
     </div>
   )
