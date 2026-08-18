@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -551,4 +552,164 @@ func mustParseURL(t *testing.T, raw string) *url.URL {
 		t.Fatalf("parse url %q: %v", raw, err)
 	}
 	return u
+}
+
+// ---- GetInstanceBasicAuthCredentials ----
+
+func TestGetInstanceBasicAuthCredentials_FirstAuth(t *testing.T) {
+	inst := instances.Instance{Config: `{"flags":{"basicAuth":[{"username":"admin","password":"secret"},{"username":"ignored","password":"ignored"}]}}`}
+
+	username, password, ok := GetInstanceBasicAuthCredentials(inst)
+
+	if !ok || username != "admin" || password != "secret" {
+		t.Fatalf("credentials = (%q, %q, %t), want (admin, secret, true)", username, password, ok)
+	}
+}
+
+func TestGetInstanceBasicAuthCredentials_NoConfig(t *testing.T) {
+	inst := instances.Instance{Config: ""}
+	if _, _, ok := GetInstanceBasicAuthCredentials(inst); ok {
+		t.Fatal("expected ok=false when config is empty")
+	}
+}
+
+func TestGetInstanceBasicAuthCredentials_NoBasicAuth(t *testing.T) {
+	inst := instances.Instance{Config: `{"flags":{}}`}
+	if _, _, ok := GetInstanceBasicAuthCredentials(inst); ok {
+		t.Fatal("expected ok=false when no basicAuth entry")
+	}
+}
+
+func TestGetInstanceBasicAuthCredentials_MissingUsername(t *testing.T) {
+	inst := instances.Instance{Config: `{"flags":{"basicAuth":[{"password":"secret"}]}}`}
+	if _, _, ok := GetInstanceBasicAuthCredentials(inst); ok {
+		t.Fatal("expected ok=false when username missing")
+	}
+}
+
+func TestGetInstanceBasicAuthCredentials_InvalidJSON(t *testing.T) {
+	inst := instances.Instance{Config: `{not json`}
+	if _, _, ok := GetInstanceBasicAuthCredentials(inst); ok {
+		t.Fatal("expected ok=false on invalid json")
+	}
+}
+
+// ---- isHTMLContentType ----
+
+func TestIsHTMLContentType_AcceptsTextHTML(t *testing.T) {
+	if !isHTMLContentType("text/html") {
+		t.Error(`text/html should be HTML`)
+	}
+	if !isHTMLContentType("text/html; charset=utf-8") {
+		t.Error(`text/html; charset=utf-8 should be HTML`)
+	}
+	if !isHTMLContentType("TEXT/HTML") {
+		t.Error(`TEXT/HTML should be HTML (case-insensitive)`)
+	}
+}
+
+func TestIsHTMLContentType_RejectsNonHTML(t *testing.T) {
+	if isHTMLContentType("application/json") {
+		t.Error(`application/json should not be HTML`)
+	}
+	if isHTMLContentType("") {
+		t.Error(`empty content type should not be HTML`)
+	}
+	if isHTMLContentType("application/javascript") {
+		t.Error(`application/javascript should not be HTML`)
+	}
+}
+
+// ---- InjectGOWAUILocalStorageBootstrap ----
+
+func TestInjectGOWAUILocalStorageBootstrap_InsertsEscapedProxyStateBeforeModuleScript(t *testing.T) {
+	inst := instances.Instance{Key: "K1", Config: `{"flags":{"basicAuth":[{"username":"ad\"min","password":"pa</script>ss"}]}}`}
+	html := []byte(`<!doctype html><html><head><script type="module">start()</script></head><body></body></html>`)
+
+	got := string(InjectGOWAUILocalStorageBootstrap(html, "https://manager.example", inst))
+
+	for _, want := range []string{
+		`localStorage.setItem("gowa-ui.connection.v1"`,
+		`https://manager.example/app/K1`,
+		`localStorage.setItem("gowa-ui.device.v1"`,
+		`"selectedDeviceId":"default"`,
+		`"username":"ad\"min"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("injected HTML missing %q: %s", want, got)
+		}
+	}
+	// The password contains "</script>" which must never appear as a
+	// literal sequence inside the inline <script> block, otherwise it
+	// would terminate the script element early. Go's json.Marshal escapes
+	// '<' to \u003c, and sanitizeScriptJSON provides defense-in-depth.
+	// Extract the bootstrap <script> block (from the first "<script>" to
+	// its closing "</script>") and verify no "</script" appears inside
+	// the block body before the closing tag.
+	lower := strings.ToLower(got)
+	scriptStart := strings.Index(lower, "<script>")
+	if scriptStart < 0 {
+		t.Fatal("missing bootstrap <script> opening tag")
+	}
+	closeIdx := strings.Index(lower[scriptStart+len("<script>"):], "</script>")
+	if closeIdx < 0 {
+		t.Fatal("missing bootstrap </script> closing tag")
+	}
+	blockBody := got[scriptStart+len("<script>") : scriptStart+len("<script>")+closeIdx]
+	if strings.Contains(strings.ToLower(blockBody), "</script") {
+		t.Fatalf("password </script> sequence not escaped in bootstrap block body: %s", blockBody)
+	}
+	bootstrapIdx := strings.Index(got, "gowa-ui.connection.v1")
+	moduleIdx := strings.Index(got, `type="module"`)
+	if bootstrapIdx < 0 || moduleIdx < 0 {
+		t.Fatalf("missing bootstrap or module script: %s", got)
+	}
+	if bootstrapIdx > moduleIdx {
+		t.Fatal("bootstrap must precede the module script")
+	}
+}
+
+func TestInjectGOWAUILocalStorageBootstrap_InsertsAfterHeadWhenNoModuleScript(t *testing.T) {
+	inst := instances.Instance{Key: "k", Config: `{"flags":{"basicAuth":[{"username":"u","password":"p"}]}}`}
+	html := []byte(`<!doctype html><html><head><title>old</title></head><body></body></html>`)
+
+	got := string(InjectGOWAUILocalStorageBootstrap(html, "http://manager.test", inst))
+
+	headIdx := strings.Index(got, "<head>")
+	bootstrapIdx := strings.Index(got, "gowa-ui.connection.v1")
+	if headIdx < 0 || bootstrapIdx < 0 {
+		t.Fatalf("missing head or bootstrap: %s", got)
+	}
+	if bootstrapIdx < headIdx {
+		t.Fatal("bootstrap should be inserted after <head>")
+	}
+}
+
+func TestInjectGOWAUILocalStorageBootstrap_ReturnsOriginalForMissingCredentials(t *testing.T) {
+	html := []byte(`<!doctype html><html><head></head><body>old ui</body></html>`)
+	inst := instances.Instance{Key: "K1", Config: `{"flags":{}}`}
+
+	if got := InjectGOWAUILocalStorageBootstrap(html, "http://manager.test", inst); !bytes.Equal(got, html) {
+		t.Fatalf("HTML changed without credentials: %s", got)
+	}
+}
+
+func TestInjectGOWAUILocalStorageBootstrap_ReturnsOriginalWhenNoInsertionPoint(t *testing.T) {
+	inst := instances.Instance{Key: "k", Config: `{"flags":{"basicAuth":[{"username":"u","password":"p"}]}}`}
+	html := []byte(`plain text without html structure`)
+
+	if got := InjectGOWAUILocalStorageBootstrap(html, "http://manager.test", inst); !bytes.Equal(got, html) {
+		t.Fatalf("HTML changed when no insertion point exists: %s", got)
+	}
+}
+
+func TestInjectGOWAUILocalStorageBootstrap_TrimTrailingSlashOnOrigin(t *testing.T) {
+	inst := instances.Instance{Key: "k", Config: `{"flags":{"basicAuth":[{"username":"u","password":"p"}]}}`}
+	html := []byte(`<!doctype html><html><head></head><body></body></html>`)
+
+	got := string(InjectGOWAUILocalStorageBootstrap(html, "http://manager.test/", inst))
+
+	if !strings.Contains(got, `"baseUrl":"http://manager.test/app/k"`) {
+		t.Fatalf("expected trimmed origin in baseUrl: %s", got)
+	}
 }
