@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import {
@@ -14,6 +14,7 @@ import { Input } from './ui/input'
 import { Loader2 } from 'lucide-react'
 import { VersionSelector } from './VersionSelector'
 import { toast } from './ui/use-toast'
+import { generateInstanceName } from '../lib/utils'
 import type { InstanceConfig } from '../types'
 
 interface CreateInstanceDialogProps {
@@ -26,6 +27,18 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
   const [version, setVersion] = useState('latest')
   const [errors, setErrors] = useState<{name?: string}>({})
   const queryClient = useQueryClient()
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (open) {
+      setName(generateInstanceName())
+      // Select the generated name so the user can immediately type
+      // to replace it if they want a custom name. The small delay
+      // lets the Radix Dialog finish its open animation.
+      const timer = setTimeout(() => nameInputRef.current?.select(), 50)
+      return () => clearTimeout(timer)
+    }
+  }, [open])
 
   const createMutation = useMutation({
     mutationFn: (data: { name?: string; config?: string; gowa_version?: string }) =>
@@ -94,17 +107,18 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
         <DialogHeader>
           <DialogTitle>New Instance</DialogTitle>
           <DialogDescription>
-            Create a new GOWA instance. Name is optional.
+            Create a new GOWA instance. A random name is generated — edit if you want a custom one.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4" id="createForm">
           <div className="space-y-2">
             <label htmlFor="name" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Name (optional)
+              Name
             </label>
             <Input
               id="name"
+              ref={nameInputRef}
               placeholder="Enter instance name..."
               value={name}
               onChange={(e) => setName(e.target.value)}

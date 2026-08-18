@@ -21,3 +21,15 @@ export function generateUsername(length: number = 8): string {
 export function generatePassword(length: number = 16): string {
   return randomString(length, PASSWORD_CHARS)
 }
+
+const NAME_ADJECTIVES = ["fast", "swift", "bright", "cool", "smart", "quick", "active", "dynamic"]
+const NAME_NOUNS = ["app", "service", "worker", "server", "instance", "process", "handler", "engine"]
+
+export function generateInstanceName(): string {
+  const arr = new Uint32Array(3)
+  crypto.getRandomValues(arr)
+  const adjective = NAME_ADJECTIVES[arr[0] % NAME_ADJECTIVES.length]
+  const noun = NAME_NOUNS[arr[1] % NAME_NOUNS.length]
+  const number = arr[2] % 1000
+  return `${adjective}-${noun}-${number}`
+}
