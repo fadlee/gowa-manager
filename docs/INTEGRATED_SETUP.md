@@ -1,17 +1,16 @@
 # Integrated Development Setup
 
-This document describes the integrated development workflow where the Elysia server serves both the API and the client application.
+This document describes the integrated development workflow where the Go server serves both the API and the client application.
 
 ## Overview
 
-Instead of running the client and server on separate ports:
-- **Server**: `http://localhost:3000` (API + Static Files)
-- **Client**: Automatically built and served from the server root
+- **Server**: `http://localhost:3000` (API + embedded static files)
+- **Client**: Built by Vite into `public/`, then copied to `internal/static/web/` for Go embedding
 
 ## How It Works
 
-1. **Static File Serving**: Elysia uses `@elysiajs/static` plugin to serve the client build files
-2. **Auto-build**: Vite watches for client file changes and automatically rebuilds to `public/` directory
+1. **Static File Serving**: Go serves embedded client assets via `go:embed` in `internal/static/`
+2. **Build**: Vite builds client to `public/`, then assets are copied to `internal/static/web/`
 3. **API Routes**: All API endpoints remain under `/api/` prefix
 4. **Client App**: Served from the root path `/`
 
@@ -21,96 +20,55 @@ Instead of running the client and server on separate ports:
 ├── client/                 # React client source
 │   ├── src/               # React components, etc.
 │   └── vite.config.ts     # Builds to ../public
-├── public/                # Client build output (served by Elysia)
+├── public/                # Client build output (gitignored)
 │   ├── index.html
 │   └── assets/
-└── src/                   # Elysia server source
-    └── index.ts           # Configured with static plugin
+├── internal/static/web/   # Go embed directory (gitignored except .gitkeep)
+└── cmd/gowa-manager-go/   # Go server entrypoint
 ```
 
 ## Development Commands
 
-### Start Integrated Development Mode
+### Frontend Development (Vite dev server)
 ```bash
 bun run dev
 ```
-This runs a cross-platform dev runner that starts both:
-- `vite build --watch` in `client/` (auto-rebuilds client on changes)
-- `bun --watch run src/index.ts` (auto-restarts server on changes)
+Starts Vite dev server on `http://localhost:5173` with hot module reload.
 
-This avoids shell-specific backgrounding so the integrated workflow works on Windows too.
-
-### Alternative Commands
+### Go Backend Development
 ```bash
-# Just client development server
-bun run dev:client
+bun run dev:go
+# OR: go run ./cmd/gowa-manager-go
+```
 
-# Just server
-bun run dev:server
+### Build for Production
+```bash
+bun run build:production
+```
+This builds the client and compiles the Go binary with embedded static assets.
+
+### Manual asset embedding
+```bash
+bun run build:client && cp -r public/* internal/static/web/
+go build -o gowa-manager-go ./cmd/gowa-manager-go
+```
+
+Or use the build script:
+```bash
+bun run scripts/build-go.ts
 ```
 
 ## Access Points
 
 - **Main App**: `http://localhost:3000/` (React UI)
 - **API Health**: `http://localhost:3000/api/health`
+- **API Ready**: `http://localhost:3000/api/ready`
 - **Instances API**: `http://localhost:3000/api/instances`
-- **Proxy**: `http://localhost:3000/proxy/app/{id}/`
-
-## Configuration Details
-
-### Elysia Static Plugin
-```typescript
-.use(staticPlugin({
-  assets: 'public',     // Serves from ./public directory
-  prefix: '/',          // Root path (not /public)
-  indexHTML: true       // Serves index.html for SPA routing
-}))
-```
-
-### Vite Build Configuration
-```typescript
-build: {
-  outDir: '../public',    // Builds to server's public directory
-  emptyOutDir: true,      // Cleans before build
-}
-```
+- **Proxy**: `http://localhost:3000/app/{key}/`
 
 ## Benefits
 
 1. **Single Port**: Everything runs on `localhost:3000`
 2. **No CORS Issues**: Client and API on same origin
 3. **Production-like**: Similar to production deployment
-4. **Auto-rebuild**: Changes instantly reflected
-5. **Simple Deployment**: One server serves everything
-
-## File Watching
-
-- **Client Changes**: Vite detects changes → rebuilds to `public/` → Elysia serves updated files
-- **Server Changes**: Bun detects changes → restarts server → continues serving latest client build
-
-This setup provides a seamless development experience with automatic rebuilds while maintaining the production deployment model.
-
-## Go Backend (Production Alternative)
-
-In addition to the Bun/Elysia backend described above, a **Go backend** rewrite
-is available as a production alternative. The Go backend is CLI- and
-env-compatible with Bun for operational flags (`--port`, `--admin-username`,
-`--admin-password`, `--data-dir`) and adds `--host`,
-`GOWA_METRICS_ENABLED`, and `GOWA_SKIP_STARTUP_INSTALL` for production deployments.
-
-> **Warning:** Bun and Go must **never** run against the same `DATA_DIR` at
-> the same time. Cutover from Bun to Go follows a controlled canary sequence.
-
-### Operator Runbooks
-
-For production deployment, cutover, and rollback procedures, see:
-
-- [GO_BACKEND_OPERATIONS.md](GO_BACKEND_OPERATIONS.md) — Normal operation
-  (service/Docker/Windows setup, monitoring, backups, troubleshooting)
-- [GO_BACKEND_CANARY.md](GO_BACKEND_CANARY.md) — Canary cutover from Bun to Go
-- [GO_BACKEND_ROLLBACK.md](GO_BACKEND_ROLLBACK.md) — Rollback from Go to Bun
-
-### Development
-
-For local development of the Go backend, see the "Experimental Go Backend"
-section in the [README](../README.md).
+4. **Simple Deployment**: One binary serves everything

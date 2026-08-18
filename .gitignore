@@ -13,8 +13,6 @@ data/*
 # Build outputs
 dist/
 public/
-src/embedded-static.ts
-src/version.ts
 /gowa-manager
 /gowa-manager-go
 /gowa-manager-go.exe
