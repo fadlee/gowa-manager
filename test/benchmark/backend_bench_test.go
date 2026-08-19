@@ -1,14 +1,9 @@
 // Package benchmark contains performance baseline tests and Go-native
-// micro-benchmarks for the GOWA Manager backends.
+// micro-benchmarks for the GOWA Manager Go backend.
 //
-// The harness script (scripts/benchmark-backends.ts) captures full baseline
-// measurements across nine scenarios.  This file validates the harness output
-// against baseline.schema.json and provides Go-native benchmarks using
-// testing.B for scenarios that benefit from the Go benchmark framework.
-//
-// Run the harness:
-//
-//	bun run scripts/benchmark-backends.ts --backend bun --output test/benchmark/bun-baseline.json
+// This file validates the committed baseline JSON against
+// baseline.schema.json and provides Go-native benchmarks using testing.B
+// for scenarios that benefit from the Go benchmark framework.
 //
 // Run the Go tests:
 //
@@ -242,15 +237,6 @@ func TestBunBaselineMatchesSchema(t *testing.T) {
 		validateScenarios(t, scenarios)
 	} else {
 		t.Fatal("root.scenarios missing or not object")
-	}
-}
-
-// TestHarnessScriptExists verifies the benchmark harness script is present.
-func TestHarnessScriptExists(t *testing.T) {
-	root := findRepoRoot(t)
-	path := filepath.Join(root, "scripts", "benchmark-backends.ts")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("harness script not found: %v", err)
 	}
 }
 

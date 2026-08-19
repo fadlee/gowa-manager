@@ -20,11 +20,11 @@ FROM oven/bun:1-alpine AS frontend
 
 WORKDIR /app
 
-# Copy lockfiles first for better layer caching.
-COPY package.json bun.lock ./
+# Copy package manifests first for better layer caching.
+COPY package.json ./
 COPY client/package.json ./client/
 
-RUN bun install --frozen-lockfile && cd client && bun install --frozen-lockfile
+RUN bun install && cd client && bun install
 
 # Copy the frontend source and build it. Vite uses client/index.html as its
 # entry point and outputs the production bundle to /app/public.

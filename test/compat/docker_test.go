@@ -112,11 +112,16 @@ func startContainer(t *testing.T, volumeName string) *containerInfo {
 	defer cancel()
 
 	// Start the container detached, mapping port 3000 to a random host port.
+	// GOWA_SKIP_STARTUP_INSTALL prevents the container from trying to download
+	// the latest GOWA binary from GitHub releases on startup, which would make
+	// the test depend on GitHub API availability and rate limits. The version
+	// download is tested separately with mocks (TestRunInstallsLatestVersion).
 	cmd := exec.CommandContext(ctx,
 		"docker", "run", "-d",
 		"--name", volumeName,
 		"-p", "3000",
 		"-v", volumeName+":/app/data",
+		"-e", "GOWA_SKIP_STARTUP_INSTALL=true",
 		testImage,
 	)
 	out, err := cmd.CombinedOutput()
@@ -514,6 +519,7 @@ func testDockerSIGTERMShutdown(t *testing.T) {
 		"--name", vol,
 		"-p", "3000",
 		"-v", vol+":/app/data",
+		"-e", "GOWA_SKIP_STARTUP_INSTALL=true",
 		testImage,
 	)
 	out, err := cmd.CombinedOutput()
@@ -604,6 +610,7 @@ func testDockerRollbackImageSameVolume(t *testing.T) {
 		"--name", rollbackName,
 		"-p", "3000",
 		"-v", vol+":/app/data",
+		"-e", "GOWA_SKIP_STARTUP_INSTALL=true",
 		rollbackImage,
 	).CombinedOutput()
 	if err != nil {
