@@ -6,6 +6,19 @@ This project is built on top of [go-whatsapp-web-multidevice](https://github.com
 
 > **Runtime status:** the Go backend is the current target runtime. The Bun/Elysia backend under `src/` is legacy and kept for compatibility/reference while remaining users migrate.
 
+## Preview
+
+Dashboard and instance monitoring:
+
+![GOWA Manager dashboard with a demo instance](docs/assets/dashboard-preview.png)
+
+<details>
+<summary>Watch a short dashboard preview</summary>
+
+![Animated GOWA Manager dashboard preview](docs/assets/dashboard-preview.gif)
+
+</details>
+
 ## Features
 
 - 🚀 **Multiple Instance Management** - Create, configure, and manage multiple GOWA instances
