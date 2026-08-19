@@ -10,7 +10,7 @@
     "build:production": "bun run build:client && bun run build:go",
     "dev": "cd client && bun run dev",
     "dev:go": "go run ./cmd/gowa-manager-go",
-    "test:go": "go test ./...",
+    "test:go": "go test ./... -count=1 -p=1",
     "test:benchmark:compare": "bun run test/benchmark/compare.ts",
     "test:e2e:go": "bun run build:client && bun run build:go && playwright test --config playwright.config.ts"
   },

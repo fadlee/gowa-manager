@@ -40,7 +40,7 @@ async function login(page: Page) {
 /** Create an instance via the UI and return its name. */
 async function createInstanceViaUI(page: Page, name: string): Promise<string> {
   await page.getByRole('button', { name: 'New Instance' }).click();
-  await page.getByLabel('Name (optional)').fill(name);
+  await page.getByLabel('Name').fill(name);
   await page.getByRole('button', { name: 'Create' }).click();
   // Wait for the dialog to close and the instance card heading to appear.
   await expect(page.getByRole('heading', { name })).toBeVisible();
