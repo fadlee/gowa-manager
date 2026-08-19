@@ -8,14 +8,14 @@ This project is built on top of [go-whatsapp-web-multidevice](https://github.com
 
 ## Preview
 
-Dashboard and instance monitoring:
+Multi-instance dashboard with mixed versions and running/stopped status:
 
-![GOWA Manager dashboard with a demo instance](docs/assets/dashboard-preview.png)
+![GOWA Manager dashboard with four instances in different versions and states](docs/assets/dashboard-preview.png)
 
 <details>
-<summary>Watch a short dashboard preview</summary>
+<summary>Watch a short multi-instance dashboard preview</summary>
 
-![Animated GOWA Manager dashboard preview](docs/assets/dashboard-preview.gif)
+![Animated GOWA Manager dashboard showing instance filters](docs/assets/dashboard-preview.gif)
 
 </details>
 
