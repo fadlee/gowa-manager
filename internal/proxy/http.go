@@ -137,12 +137,12 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			ctx := modifyResponseContext{
-				instanceKey:    instanceKey,
-				requestHost:    requestHost,
-				instance:       instance,
-				managerOrigin:  requestScheme + "://" + requestHost,
-				cookieHeader:   cookieHeader,
-				magicAuth:      p.magicAuth,
+				instanceKey:   instanceKey,
+				requestHost:   requestHost,
+				instance:      instance,
+				managerOrigin: requestScheme + "://" + requestHost,
+				cookieHeader:  cookieHeader,
+				magicAuth:     p.magicAuth,
 			}
 			return modifyProxyResponse(resp, ctx)
 		},
