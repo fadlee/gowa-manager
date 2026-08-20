@@ -20,6 +20,9 @@ const getBinaryName = () => {
   if (platform === 'linux') {
     if (arch === 'x64') return 'gowa-manager-linux-amd64';
     if (arch === 'arm64') return 'gowa-manager-linux-arm64';
+  } else if (platform === 'darwin') {
+    if (arch === 'x64') return 'gowa-manager-macos-amd64';
+    if (arch === 'arm64') return 'gowa-manager-macos-arm64';
   } else if (platform === 'win32') {
     if (arch === 'x64') return 'gowa-manager-windows-amd64.exe';
   }
