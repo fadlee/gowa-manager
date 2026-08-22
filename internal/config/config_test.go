@@ -63,6 +63,35 @@ func TestParseLongFlags(t *testing.T) {
 	}
 }
 
+func TestParseVerboseFlag(t *testing.T) {
+	// CLI flag
+	cfg, _, err := Parse([]string{"--verbose"}, env(nil))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if !cfg.Verbose {
+		t.Fatalf("expected Verbose=true for --verbose flag")
+	}
+
+	// Env var
+	cfg, _, err = Parse(nil, env(map[string]string{"GOWA_VERBOSE": "1"}))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if !cfg.Verbose {
+		t.Fatalf("expected Verbose=true for GOWA_VERBOSE=1")
+	}
+
+	// Default off
+	cfg, _, err = Parse(nil, env(nil))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if cfg.Verbose {
+		t.Fatalf("expected Verbose=false by default")
+	}
+}
+
 func TestParseHelpAndVersionActions(t *testing.T) {
 	for _, tc := range []struct {
 		args []string

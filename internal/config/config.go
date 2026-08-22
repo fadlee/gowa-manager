@@ -19,6 +19,10 @@ type Config struct {
 	// MetricsEnabled controls the opt-in /metrics observability endpoint.
 	// Disabled by default for safety; enable via GOWA_METRICS_ENABLED=1.
 	MetricsEnabled bool
+	// Verbose controls detailed (slog INFO-level) log output. When false
+	// (default), only warnings and errors are logged to stderr and a
+	// user-friendly startup banner is printed instead.
+	Verbose bool
 }
 
 type Action int
@@ -38,6 +42,7 @@ func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 		DataDir:            envDefault(getenv("DATA_DIR"), "./data"),
 		SkipStartupInstall: envBool(getenv("GOWA_SKIP_STARTUP_INSTALL")),
 		MetricsEnabled:     envBool(getenv("GOWA_METRICS_ENABLED")),
+		Verbose:            envBool(getenv("GOWA_VERBOSE")),
 	}
 	args = stripDuplicatedExecutable(args)
 	if len(args) > 0 && args[0] == "--" {
@@ -96,6 +101,8 @@ func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 			}
 			cfg.DataDir = value
 			i = next
+		case "--verbose":
+			cfg.Verbose = true
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return cfg, action, fmt.Errorf("❌ Unknown option: %s\nUse --help to see available options", arg)
@@ -119,6 +126,7 @@ OPTIONS:
   -u, --admin-username <user>    Admin username (default: admin)
   -P, --admin-password <pass>    Admin password (default: password)
   -d, --data-dir <path>          Data directory (default: ./data)
+      --verbose                  Detailed log output (default: off)
   -h, --help                     Show this help message
   -v, --version                  Show version information
 
@@ -136,7 +144,7 @@ ENVIRONMENT VARIABLES:
   DATA_DIR          Data directory
   GOWA_METRICS_ENABLED  Enable loopback-only /metrics endpoint (0/1)
   GOWA_SKIP_STARTUP_INSTALL  Skip automatic latest GOWA install on startup (0/1)
-
+  GOWA_VERBOSE               Detailed log output, same as --verbose (0/1)
 Note: Command line arguments take precedence over environment variables.
 
 For more information, visit: https://github.com/fadlee/gowa-manager

@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/fadlee/gowa-manager/internal/app"
+	"github.com/fadlee/gowa-manager/internal/buildinfo"
 	"github.com/fadlee/gowa-manager/internal/config"
 )
 
@@ -51,13 +52,43 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		close(force)
 	}()
 
+	// In verbose mode, log at INFO level (detailed slog output). In the
+	// default (quiet) mode, log at WARN level so only warnings/errors
+	// reach stderr; a user-friendly banner is printed via OnStarted.
+	level := slog.LevelWarn
+	if cfg.Verbose {
+		level = slog.LevelInfo
+	}
+	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))
+
+	var onStarted func(addr string)
+	if !cfg.Verbose {
+		onStarted = func(addr string) {
+			fmt.Fprint(stdout, startupBanner(addr, cfg.AdminUsername))
+		}
+	}
+
 	if err := app.Run(ctx, app.Options{
 		Config:        cfg,
-		Logger:        slog.New(slog.NewTextHandler(stderr, nil)),
+		Logger:        logger,
 		ForceShutdown: force,
+		OnStarted:     onStarted,
 	}); err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 1
 	}
 	return 0
+}
+
+// startupBanner returns the user-friendly message printed to stdout when
+// the HTTP server is listening and verbose mode is off.
+func startupBanner(addr, adminUser string) string {
+	return fmt.Sprintf(`%s
+
+  Web UI:  http://%s
+  Admin:   %s
+
+  Ready! Press Ctrl+C to stop.
+  Run with --verbose for detailed logs.
+`, buildinfo.DisplayVersion(), addr, adminUser)
 }
