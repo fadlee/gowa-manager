@@ -1,4 +1,5 @@
 package ownership
+
 import (
 	"context"
 	"errors"
