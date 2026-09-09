@@ -61,11 +61,8 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	}
 	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))
 
-	var onStarted func(addr string)
-	if !cfg.Verbose {
-		onStarted = func(addr string) {
-			fmt.Fprint(stdout, startupBanner(addr, cfg.AdminUsername))
-		}
+	onStarted := func(addr string) {
+		fmt.Fprint(stdout, startupBanner(addr, cfg.AdminUsername))
 	}
 
 	if err := app.Run(ctx, app.Options{
@@ -81,14 +78,14 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 }
 
 // startupBanner returns the user-friendly message printed to stdout when
-// the HTTP server is listening and verbose mode is off.
+// the HTTP server starts listening.
 func startupBanner(addr, adminUser string) string {
-	return fmt.Sprintf(`%s
-
-  Web UI:  http://%s
-  Admin:   %s
-
-  Ready! Press Ctrl+C to stop.
-  Run with --verbose for detailed logs.
+	return fmt.Sprintf(`==================================================
+  %s
+==================================================
+  Web UI:   http://%s
+  Admin:    %s
+  Status:   Ready! Press Ctrl+C to stop.
+==================================================
 `, buildinfo.DisplayVersion(), addr, adminUser)
 }
