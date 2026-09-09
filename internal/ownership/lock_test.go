@@ -1,6 +1,7 @@
 package ownership
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -73,5 +74,76 @@ func TestAcquireContentionAcrossProcesses(t *testing.T) {
 	}
 	if !errors.Is(err, ErrAlreadyLocked) {
 		t.Fatalf("Acquire() error = %v, want ErrAlreadyLocked", err)
+	}
+}
+
+func TestAcquireContextRetriesAndAcquiresWhenReleased(t *testing.T) {
+	dataDir := t.TempDir()
+	firstLock, err := Acquire(dataDir)
+	if err != nil {
+		t.Fatalf("first Acquire() error = %v", err)
+	}
+
+	// Release lock after 300ms
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_ = firstLock.Release()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	secondLock, err := AcquireContext(ctx, dataDir)
+	if err != nil {
+		t.Fatalf("AcquireContext() error = %v", err)
+	}
+	defer secondLock.Release()
+
+	if elapsed := time.Since(start); elapsed < 250*time.Millisecond {
+		t.Fatalf("AcquireContext() returned too quickly: %v", elapsed)
+	}
+}
+
+func TestAcquireContextTimeout(t *testing.T) {
+	dataDir := t.TempDir()
+	firstLock, err := Acquire(dataDir)
+	if err != nil {
+		t.Fatalf("first Acquire() error = %v", err)
+	}
+	defer firstLock.Release()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	_, err = AcquireContext(ctx, dataDir)
+	if err == nil {
+		t.Fatal("AcquireContext() error = nil, want timeout")
+	}
+	if !errors.Is(err, ErrAlreadyLocked) {
+		t.Fatalf("AcquireContext() error = %v, want ErrAlreadyLocked", err)
+	}
+}
+
+func TestAcquireContextCanceled(t *testing.T) {
+	dataDir := t.TempDir()
+	firstLock, err := Acquire(dataDir)
+	if err != nil {
+		t.Fatalf("first Acquire() error = %v", err)
+	}
+	defer firstLock.Release()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err = AcquireContext(ctx, dataDir)
+	if err == nil {
+		t.Fatal("AcquireContext() error = nil, want canceled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("AcquireContext() error = %v, want context.Canceled", err)
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/httpapi"
 	"github.com/fadlee/gowa-manager/internal/instances"
+	"github.com/fadlee/gowa-manager/internal/ownership"
 	"github.com/fadlee/gowa-manager/internal/proxy"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
 	"github.com/fadlee/gowa-manager/internal/versions"
@@ -66,7 +67,7 @@ func TestRunStartupOrderAndShutdown(t *testing.T) {
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			mu.Lock()
 			events = append(events, "lock")
 			mu.Unlock()
@@ -156,7 +157,7 @@ func TestRunInstallsLatestVersionBeforeListening(t *testing.T) {
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			return &fakeLock{events: &[]string{}}, nil
 		},
 		OpenDB: func(context.Context, string) (Closer, error) {
@@ -203,7 +204,7 @@ func TestRunSkipsStartupVersionInstallWhenConfigured(t *testing.T) {
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir(), SkipStartupInstall: true},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			return &fakeLock{events: &[]string{}}, nil
 		},
 		OpenDB: func(context.Context, string) (Closer, error) {
@@ -247,7 +248,7 @@ func TestRunShutdownSetsNotReadyBeforeDrain(t *testing.T) {
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			return &fakeLock{events: &[]string{}}, nil
 		},
 		OpenDB: func(context.Context, string) (Closer, error) {
@@ -310,7 +311,7 @@ func TestRunSecondSignalForcesImmediateShutdown(t *testing.T) {
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			events = append(events, "lock")
 			return &fakeLock{events: &events}, nil
 		},
@@ -359,7 +360,7 @@ func TestRunShutdownCollectsErrorsWithoutSkipping(t *testing.T) {
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			events = append(events, "lock")
 			return &errorLock{releaseErr: wantLockErr, events: &events}, nil
 		},
@@ -428,7 +429,7 @@ func TestRunShutdownClosesWebSockets(t *testing.T) {
 	opts := Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
 		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			return &fakeLock{events: &events}, nil
 		},
 		OpenDB: func(context.Context, string) (Closer, error) {
@@ -560,7 +561,7 @@ func TestRunRejectsDatabaseWithoutSQLiteHandle(t *testing.T) {
 	events := []string{}
 	err := Run(context.Background(), Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			events = append(events, "lock")
 			return &fakeLock{events: &events}, nil
 		},
@@ -582,7 +583,7 @@ func TestRunDatabaseFailureReleasesLock(t *testing.T) {
 	wantErr := errors.New("db fail")
 	err := Run(context.Background(), Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			events = append(events, "lock")
 			return &fakeLock{events: &events}, nil
 		},
@@ -604,7 +605,7 @@ func TestRunWiringFailureClosesDatabaseAndReleasesLock(t *testing.T) {
 	wantErr := errors.New("wiring fail")
 	err := Run(context.Background(), Options{
 		Config: config.Config{Port: 0, DataDir: t.TempDir()},
-		AcquireLock: func(string) (Releaser, error) {
+		AcquireLock: func(context.Context, string) (Releaser, error) {
 			events = append(events, "lock")
 			return &fakeLock{events: &events}, nil
 		},
@@ -643,7 +644,7 @@ func TestRunFallsBackToNextAvailablePort(t *testing.T) {
 		errCh <- Run(ctx, Options{
 			Config:      config.Config{Port: port, DataDir: t.TempDir()},
 			Logger:      slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-			AcquireLock: func(string) (Releaser, error) { return &fakeLock{events: &[]string{}}, nil },
+			AcquireLock: func(context.Context, string) (Releaser, error) { return &fakeLock{events: &[]string{}}, nil },
 			OpenDB:      func(context.Context, string) (Closer, error) { return &fakeDB{events: &[]string{}}, nil },
 			BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
 				return httpapi.Dependencies{}, nil
@@ -665,6 +666,50 @@ func TestRunFallsBackToNextAvailablePort(t *testing.T) {
 	cancel()
 	if err := <-errCh; err != nil {
 		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+func TestRunWaitsForLockAcquisitionOnContention(t *testing.T) {
+	dataDir := t.TempDir()
+	firstLock, err := ownership.Acquire(dataDir)
+	if err != nil {
+		t.Fatalf("first Acquire() error = %v", err)
+	}
+
+	// Release lock after 300ms
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_ = firstLock.Release()
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	opts := Options{
+		Config: config.Config{Port: 0, DataDir: dataDir, SkipStartupInstall: true},
+		Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		OpenDB: func(context.Context, string) (Closer, error) {
+			return &fakeDB{events: &[]string{}}, nil
+		},
+		BuildHTTPDeps: func(context.Context, httpDepsOptions) (httpapi.Dependencies, error) {
+			return httpapi.Dependencies{}, nil
+		},
+		Listen: func(network, address string) (net.Listener, error) {
+			ln, err := net.Listen(network, "127.0.0.1:0")
+			if err == nil {
+				cancel() // Stop server immediately once started
+			}
+			return ln, err
+		},
+	}
+
+	start := time.Now()
+	err = Run(ctx, opts)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 250*time.Millisecond {
+		t.Fatalf("Run() acquired lock too quickly, expected delay: %v", elapsed)
 	}
 }
 

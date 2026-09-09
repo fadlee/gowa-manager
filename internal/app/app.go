@@ -58,7 +58,7 @@ type RuntimeConnections interface {
 type Options struct {
 	Config               config.Config
 	Logger               *slog.Logger
-	AcquireLock          func(dataDir string) (Releaser, error)
+	AcquireLock          func(context.Context, string) (Releaser, error)
 	OpenDB               func(context.Context, string) (Closer, error)
 	BuildHTTPDeps        func(context.Context, httpDepsOptions) (httpapi.Dependencies, error)
 	BuildSchedulers      func(context.Context, httpapi.Dependencies) (Schedulers, error)
@@ -94,7 +94,12 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	acquireLock := opts.AcquireLock
 	if acquireLock == nil {
-		acquireLock = func(dataDir string) (Releaser, error) { return ownership.Acquire(dataDir) }
+		acquireLock = func(ctx context.Context, dataDir string) (Releaser, error) {
+			// ponytail: fixed 30s timeout on startup lock contention; increase if shutdown takes longer.
+			lockCtx, cancel := context.WithTimeout(ctx, ownership.DefaultLockTimeout)
+			defer cancel()
+			return ownership.AcquireContext(lockCtx, dataDir)
+		}
 	}
 	openDB := opts.OpenDB
 	if openDB == nil {
@@ -115,7 +120,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	// --- Startup: lock -> DB -> services -> listen -> reconcile -> schedulers -> ready ---
 
-	lock, err := acquireLock(opts.Config.DataDir)
+	lock, err := acquireLock(ctx, opts.Config.DataDir)
 	if err != nil {
 		return err
 	}

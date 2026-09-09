@@ -1,13 +1,19 @@
 package ownership
-
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/gofrs/flock"
+)
+
+const (
+	DefaultLockTimeout = 30 * time.Second
+	DefaultRetryDelay  = 250 * time.Millisecond
 )
 
 var ErrAlreadyLocked = errors.New("data directory is already locked by another manager")
@@ -26,6 +32,25 @@ func Acquire(dataDir string) (*Lock, error) {
 	fileLock := flock.New(path)
 	locked, err := fileLock.TryLock()
 	if err != nil {
+		return nil, fmt.Errorf("acquire manager lock %q: %w", path, err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("acquire manager lock %q: %w", path, ErrAlreadyLocked)
+	}
+	return &Lock{fileLock: fileLock}, nil
+}
+
+func AcquireContext(ctx context.Context, dataDir string) (*Lock, error) {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create data directory %q: %w", dataDir, err)
+	}
+	path := filepath.Join(dataDir, ".gowa-manager.lock")
+	fileLock := flock.New(path)
+	locked, err := fileLock.TryLockContext(ctx, DefaultRetryDelay)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("acquire manager lock %q: %w", path, ErrAlreadyLocked)
+		}
 		return nil, fmt.Errorf("acquire manager lock %q: %w", path, err)
 	}
 	if !locked {
