@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fadlee/gowa-manager/internal/testutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -133,15 +135,10 @@ func main() {
 	return binPath
 }
 
-// killFakeBun kills any running fake-bun processes to ensure test
-// isolation and allow temp dir cleanup.  Best-effort; failures ignored.
-func killFakeBun(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/IM", "fake-bun.exe", "/F").Run()
-	} else {
-		_ = exec.Command("pkill", "-f", "fake-bun").Run()
-	}
+// killFakeBun kills fake-bun processes started from binPath (in this
+// test's temp dir) to ensure test isolation and allow temp dir cleanup.
+func killFakeBun(binPath string) {
+	testutil.KillByExecutable(binPath)
 }
 
 // computeFileSHA256 computes the SHA-256 hex digest of a file.
@@ -395,7 +392,7 @@ func TestRollback_ChecksumMatchProceeds(t *testing.T) {
 	// Spawn a sleeper as the "Go PID".
 	pid, cleanup := spawnSleeperProcess(t)
 	defer cleanup()
-	defer killFakeBun(t) // kill any fake-bun started by the rollback script
+	defer killFakeBun(bunBinary) // kill any fake-bun started by the rollback script
 
 	r := runScript(t, "rollback", []string{
 		"--execute",
@@ -502,7 +499,7 @@ func TestRollback_OverrideAmbiguousState(t *testing.T) {
 	correctChecksum := computeFileSHA256(t, bunBinary)
 	backupDir := filepath.Join(filepath.Dir(dataDir), "rollback-override")
 
-	defer killFakeBun(t) // kill any fake-bun started by the rollback script
+	defer killFakeBun(bunBinary) // kill any fake-bun started by the rollback script
 
 	r := runScript(t, "rollback", []string{
 		"--execute",
@@ -686,7 +683,7 @@ func TestRollback_StagingRehearsal(t *testing.T) {
 	// Build a fake Bun binary for the rollback.
 	bunBinary := buildFakeBunForRollback(t)
 	correctChecksum := computeFileSHA256(t, bunBinary)
-	defer killFakeBun(t) // kill any fake-bun started by the rollback script
+	defer killFakeBun(bunBinary) // kill any fake-bun started by the rollback script
 
 	// 6. Run rollback with --execute using the current DB (compatible path).
 	//    The Go manager is stopped, so we use --override-ambiguous-state.
@@ -747,7 +744,7 @@ func TestRollback_StagingRehearsal(t *testing.T) {
 	}
 
 	// Kill any fake-bun processes from the first run before the second.
-	killFakeBun(t)
+	killFakeBun(bunBinary)
 
 	restoreResult := runScript(t, "rollback", []string{
 		"--execute",

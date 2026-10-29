@@ -126,12 +126,16 @@ function Invoke-GetCheck([string]$Name, [string]$Path, [bool]$UseAuth, [int]$Exp
   }
 }
 
-function Invoke-PostCheck([string]$Name, [string]$Path, [bool]$UseAuth, [int]$Expect) {
+function Invoke-PostCheck([string]$Name, [string]$Path, [bool]$UseAuth, [int]$Expect, [string]$Body = '') {
   $fullUrl = "$Url$Path"
   try {
     $headers = @{}
     if ($UseAuth) { $headers['Authorization'] = $authHeader }
-    $resp = Invoke-WebRequest -Uri $fullUrl -Method Post -Headers $headers -UseBasicParsing -TimeoutSec 3
+    if ($Body) {
+      $resp = Invoke-WebRequest -Uri $fullUrl -Method Post -Headers $headers -ContentType 'application/json' -Body $Body -UseBasicParsing -TimeoutSec 3
+    } else {
+      $resp = Invoke-WebRequest -Uri $fullUrl -Method Post -Headers $headers -UseBasicParsing -TimeoutSec 3
+    }
     $status = [int]$resp.StatusCode
   } catch {
     $status = 0
@@ -199,8 +203,11 @@ Invoke-GetCheck 'health' '/api/health' $false 200
 # GET /api/ready - no auth, expect 200.
 Invoke-GetCheck 'ready' '/api/ready' $false 200
 
-# POST /api/auth/login - Basic Auth credentials, expect 200.
-Invoke-PostCheck 'auth_login' '/api/auth/login' $true 200
+# POST /api/auth/login - expect 200. Credentials go in the JSON body
+# (current managers) and as Basic auth (older managers), so the check works
+# against both sides of an upgrade or rollback.
+$loginBody = @{ username = $AdminUsername; password = $AdminPassword } | ConvertTo-Json -Compress
+Invoke-PostCheck 'auth_login' '/api/auth/login' $true 200 $loginBody
 
 # GET /api/instances - with Basic Auth, expect 200.
 Invoke-GetCheck 'instances' '/api/instances' $true 200

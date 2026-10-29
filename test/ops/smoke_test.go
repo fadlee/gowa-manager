@@ -27,9 +27,8 @@ func startManagerBinary(t *testing.T, dataDir string, metrics bool) (string, fun
 	args := []string{
 		"--port", fmt.Sprint(port),
 		"--data-dir", dataDir,
-	}
-	if metrics {
-		args = append(args, "--admin-username", "admin", "--admin-password", "password")
+		// Seed the first superadmin so authenticated checks can run.
+		"--admin-username", "admin", "--admin-password", "password",
 	}
 
 	cmd := exec.Command(bin, args...)
@@ -170,15 +169,6 @@ func startFakeBun(t *testing.T) (string, func()) {
 			_ = cmd.Process.Kill()
 			_, _ = cmd.Process.Wait()
 		}
-	}
-}
-
-// killFakeBunProcesses kills any running fake-bun processes.  Best-effort.
-func killFakeBunProcesses() {
-	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/IM", "fake-bun.exe", "/F").Run()
-	} else {
-		_ = exec.Command("pkill", "-f", "fake-bun").Run()
 	}
 }
 

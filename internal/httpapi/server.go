@@ -14,15 +14,17 @@ import (
 	"github.com/fadlee/gowa-manager/internal/auth"
 	"github.com/fadlee/gowa-manager/internal/observability"
 	"github.com/fadlee/gowa-manager/internal/proxy"
+	"github.com/fadlee/gowa-manager/internal/users"
 )
 
 type Dependencies struct {
-	Logger            *slog.Logger
-	AllowedOrigins    []string
-	TestPanicRoute    bool
-	StaticFS          fs.FS
-	AdminUsername     string
-	AdminPassword     string
+	Logger         *slog.Logger
+	AllowedOrigins []string
+	TestPanicRoute bool
+	StaticFS       fs.FS
+	// Users backs manager authentication. When nil (tests only), the
+	// protected routes are served without authentication.
+	Users             *users.Service
 	Instances         InstanceService
 	InstanceLifecycle InstanceLifecycle
 	DeviceClient      InstanceDeviceClient
@@ -70,18 +72,11 @@ func New(deps Dependencies) http.Handler {
 	if deps.Readiness != nil {
 		mux.HandleFunc("/api/ready", readyHandler(deps.Readiness))
 	}
-	registerAuthRoutes(mux, deps)
 
-	// Protected routes (instances, system, versions) are registered on a
-	// sub-mux and wrapped with Basic Auth middleware. This mirrors the
-	// Bun/Elysia .guard() that protects the instances and system modules
-	// while leaving health, auth/logout, and the /api/ 404 catch-all
-	// unprotected.
-	//
-	// Auth is applied only when credentials are configured. In production
-	// the config always supplies defaults ("admin"/"password"), so the
-	// guard is always active. Tests that omit credentials get the raw
-	// handler, preserving existing behaviour.
+	// Protected routes (instances, system, versions, account, users) are
+	// registered on a sub-mux wrapped with the auth middleware, which
+	// accepts a session cookie, an API key, or a user's Basic credentials.
+	// Health, ready, and the public /api/auth/* routes stay unprotected.
 	protectedMux := http.NewServeMux()
 	if deps.Instances != nil {
 		registerInstanceRoutes(protectedMux, deps)
@@ -93,8 +88,15 @@ func New(deps Dependencies) http.Handler {
 		registerVersionRoutes(protectedMux, deps)
 	}
 	protectedHandler := http.Handler(protectedMux)
-	if deps.AdminUsername != "" && deps.AdminPassword != "" {
-		protectedHandler = basicAuthMiddleware(protectedMux, deps.AdminUsername, deps.AdminPassword)
+	if deps.Users != nil {
+		authH := newAuthHandler(deps.Users)
+		authH.registerPublic(mux)
+		authH.registerAccountRoutes(protectedMux)
+		protectedHandler = authH.require(protectedMux)
+		mux.Handle("/api/account", protectedHandler)
+		mux.Handle("/api/account/", protectedHandler)
+		mux.Handle("/api/users", protectedHandler)
+		mux.Handle("/api/users/", protectedHandler)
 	}
 	mux.Handle("/api/instances", protectedHandler)
 	mux.Handle("/api/instances/", protectedHandler)
@@ -161,7 +163,7 @@ func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-API-Key")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {

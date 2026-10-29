@@ -3,12 +3,11 @@
 // feature produces short-lived HMAC-signed tokens that allow opening a
 // proxied GOWA instance's admin UI without a browser Basic Auth prompt.
 //
-// Tokens are intentionally short-lived (60 seconds) and do NOT survive a
-// manager restart when the secret is the runtime default — the nonce is
-// random and the secret is derived from env vars at construction time.
-// Key rotation is performed by changing the ADMIN_LINK_SECRET (or
-// ADMIN_PASSWORD) env var and restarting the manager; tokens signed with
-// the previous secret will fail validation against the new secret.
+// Tokens are intentionally short-lived (60 seconds). The signing secret
+// comes from ADMIN_LINK_SECRET or, when unset, a random secret persisted
+// in the database (see users.Service.MagicLinkSecret). Key rotation is
+// performed by changing ADMIN_LINK_SECRET and restarting the manager;
+// tokens signed with the previous secret fail validation.
 package auth
 
 import (
@@ -19,7 +18,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +27,6 @@ const (
 	tokenTTLSeconds  = 60
 	cookieTTLSeconds = 15 * 60
 	cookiePrefix     = "gowa_admin_auth_"
-	defaultSecret    = "gowa-manager-runtime-admin-link-secret"
 )
 
 // magicPayload is the JSON payload encoded inside a magic admin token.
@@ -41,36 +38,16 @@ type magicPayload struct {
 }
 
 // MagicAuthService holds the signing secret and provides token/cookie
-// utilities for the magic admin link feature. The secret is resolved
-// once at construction time (via NewMagicAuthService or
-// NewMagicAuthServiceWithSecret) so that key rotation requires creating
-// a new service instance.
+// utilities for the magic admin link feature. The secret is fixed at
+// construction time, so key rotation requires a new service instance.
 type MagicAuthService struct {
 	secret string
 }
 
-// NewMagicAuthService creates a MagicAuthService whose secret is derived
-// from the environment, matching the Bun getSecret() precedence:
-// ADMIN_LINK_SECRET → ADMIN_PASSWORD → built-in default.
-func NewMagicAuthService() *MagicAuthService {
-	return &MagicAuthService{secret: resolveSecretFromEnv()}
-}
-
 // NewMagicAuthServiceWithSecret creates a MagicAuthService with an
-// explicit secret. This is primarily useful for tests.
+// explicit signing secret.
 func NewMagicAuthServiceWithSecret(secret string) *MagicAuthService {
 	return &MagicAuthService{secret: secret}
-}
-
-// resolveSecretFromEnv mirrors the Bun getSecret() precedence.
-func resolveSecretFromEnv() string {
-	if s := os.Getenv("ADMIN_LINK_SECRET"); s != "" {
-		return s
-	}
-	if s := os.Getenv("ADMIN_PASSWORD"); s != "" {
-		return s
-	}
-	return defaultSecret
 }
 
 // CookieName returns the cookie name used to persist a magic admin

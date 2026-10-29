@@ -100,10 +100,11 @@ VOLUME ["/app/data"]
 
 EXPOSE 3000
 
+# No default credentials: on first start, register the first superadmin in
+# the Web UI using the setup token from the logs, or set ADMIN_USERNAME and
+# ADMIN_PASSWORD to seed it.
 ENV PORT=3000 \
     HOST=0.0.0.0 \
-    ADMIN_USERNAME=admin \
-    ADMIN_PASSWORD=password \
     DATA_DIR=/app/data
 
 

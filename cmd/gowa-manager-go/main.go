@@ -31,6 +31,17 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	case config.ActionVersion:
 		fmt.Fprintln(stdout, config.VersionText())
 		return 0
+	case config.ActionResetPassword:
+		password, err := app.ResetPassword(context.Background(), cfg.DataDir, cfg.ResetUsername, cfg.ResetPassword)
+		if err != nil {
+			fmt.Fprintln(stderr, "❌ "+err.Error())
+			return 1
+		}
+		fmt.Fprintf(stdout, "✅ Password for %q reset. All of the user's sessions were signed out.\n", cfg.ResetUsername)
+		if cfg.ResetPassword == "" {
+			fmt.Fprintf(stdout, "New password: %s\n", password)
+		}
+		return 0
 	}
 
 	// Signal handling: the first SIGINT/SIGTERM initiates graceful shutdown
@@ -61,8 +72,9 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	}
 	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))
 
+	var setupToken string
 	onStarted := func(addr string) {
-		fmt.Fprint(stdout, startupBanner(addr, cfg.AdminUsername))
+		fmt.Fprint(stdout, startupBanner(addr, setupToken))
 	}
 
 	if err := app.Run(ctx, app.Options{
@@ -70,6 +82,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		Logger:        logger,
 		ForceShutdown: force,
 		OnStarted:     onStarted,
+		OnSetupToken:  func(token string) { setupToken = token },
 	}); err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 1
@@ -78,14 +91,18 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 }
 
 // startupBanner returns the user-friendly message printed to stdout when
-// the HTTP server starts listening.
-func startupBanner(addr, adminUser string) string {
+// the HTTP server starts listening. When no users exist yet, it includes
+// the one-time setup token needed to register the first superadmin.
+func startupBanner(addr, setupToken string) string {
+	setup := ""
+	if setupToken != "" {
+		setup = fmt.Sprintf("  Setup:    No users yet. Open the Web UI to register the\n            first superadmin with this setup token:\n            %s\n", setupToken)
+	}
 	return fmt.Sprintf(`==================================================
   %s
 ==================================================
   Web UI:   http://%s
-  Admin:    %s
-  Status:   Ready! Press Ctrl+C to stop.
+%s  Status:   Ready! Press Ctrl+C to stop.
 ==================================================
-`, buildinfo.DisplayVersion(), addr, adminUser)
+`, buildinfo.DisplayVersion(), addr, setup)
 }

@@ -121,12 +121,11 @@ jobs:
       - name: Run app and internal tests with race detector
         run: go test -race -p 1 ./cmd/... ./internal/...
 
-      # Cross-process integration suites, kept non-blocking so a shared-runner
-      # hiccup reports without gating main:
-      #   - ops shells out to the backup/preflight/rollback scripts and
-      #     spawns real processes.
-      - name: Run ops tests explicitly (non-blocking)
-        continue-on-error: true
+      # ops shells out to the backup/preflight/rollback/smoke scripts and
+      # spawns real processes. Its tests are isolated from host processes
+      # (unique manager process name, exact-path process cleanup) and build
+      # the manager from source, so the suite gates main.
+      - name: Run ops tests
         run: go test ./test/ops/...
 
       # Resource-leak stress test with tight thresholds; non-blocking so a
@@ -436,5 +435,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # vite build does not type-check, so run tsc explicitly.
+      - name: Type-check client
+        run: cd client && bun run typecheck
+
       - name: Build client
         run: bun run build:client
+
+      - name: Run script tests (workflows, Docker runtime, release artifacts)
+        run: bun test scripts

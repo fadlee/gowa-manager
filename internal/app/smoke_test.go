@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/config"
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/instances"
+	"github.com/fadlee/gowa-manager/internal/testutil"
 )
 
 // TestRunSmokeFakeGOWA is a simplified native smoke test (Task 11 Step 3).
@@ -139,7 +141,7 @@ func startManager(t *testing.T, ctx context.Context, dataDir string) (string, <-
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- Run(ctx, Options{
-			Config: config.Config{Port: 0, DataDir: dataDir},
+			Config: config.Config{Port: 0, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass},
 			Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
 			OpenDB: func(_ context.Context, _ string) (Closer, error) {
 				return database.Open(context.Background(), dataDir)
@@ -189,7 +191,7 @@ type smokeInstanceResponse struct {
 func createInstanceViaHTTP(t *testing.T, addr, name string) smokeInstanceResponse {
 	t.Helper()
 	body := bytes.NewBufferString(`{"name":"` + name + `","gowa_version":"v1.0.0"}`)
-	resp, err := http.Post("http://"+addr+"/api/instances", "application/json", body)
+	resp, err := postWithTestAuth("http://"+addr+"/api/instances", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +208,7 @@ func createInstanceViaHTTP(t *testing.T, addr, name string) smokeInstanceRespons
 
 func startInstanceViaHTTP(t *testing.T, addr string, id int64) {
 	t.Helper()
-	resp, err := http.Post("http://"+addr+"/api/instances/"+fmt.Sprintf("%d", id)+"/start", "application/json", nil)
+	resp, err := postWithTestAuth("http://"+addr+"/api/instances/"+fmt.Sprintf("%d", id)+"/start", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +223,9 @@ func waitForInstanceStatus(t *testing.T, addr string, id int64, want string, tim
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := client.Get("http://" + addr + "/api/instances/" + fmt.Sprintf("%d", id) + "/status")
+		req, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/api/instances/"+fmt.Sprintf("%d", id)+"/status", nil)
+		req.SetBasicAuth(testAdminUser, testAdminPass)
+		resp, err := client.Do(req)
 		if err == nil {
 			var status struct {
 				Status string `json:"status"`
@@ -257,17 +261,12 @@ func waitForInstanceStatusViaRepo(t *testing.T, dataDir string, id int64, want s
 	t.Fatalf("instance %d did not reach status %q via repo within %v", id, want, timeout)
 }
 
-// cleanupOrphanedGOWA kills any running fakegowa processes to ensure test
-// isolation. In production, children are left running per legacy policy.
+// cleanupOrphanedGOWA kills fakegowa processes started from binaryPath (in
+// this test's temp dir) to ensure test isolation. In production, children
+// are left running per legacy policy.
 func cleanupOrphanedGOWA(t *testing.T, binaryPath string) {
 	t.Helper()
-	// On all platforms, try to kill processes running the fakegowa binary.
-	// This is best-effort; failures are ignored.
-	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/IM", filepath.Base(binaryPath), "/F").Run()
-	} else {
-		_ = exec.Command("pkill", "-f", filepath.Base(binaryPath)).Run()
-	}
+	testutil.KillByExecutable(binaryPath)
 }
 
 // projectRoot returns the repository root by searching upwards from the test
@@ -290,4 +289,14 @@ func projectRoot(t *testing.T) string {
 	}
 	t.Fatal("could not find project root (go.mod)")
 	return ""
+}
+
+func postWithTestAuth(url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(testAdminUser, testAdminPass)
+	return http.DefaultClient.Do(req)
 }

@@ -239,7 +239,7 @@ export interface InstanceStatus {
   error_message?: string;
 }
 
-/** Create an authenticated API helper wrapping fetch with Basic Auth. */
+/** Create an authenticated API helper wrapping fetch with a user's Basic credentials. */
 export function apiClient(opts: ApiClientOptions) {
   const username = opts.username ?? ADMIN_USERNAME;
   const password = opts.password ?? ADMIN_PASSWORD;
@@ -326,7 +326,7 @@ export function apiClient(opts: ApiClientOptions) {
     getSystemStatus: () =>
       request<unknown>('GET', '/api/system/status'),
     login: () =>
-      request<{ success: boolean; user: string }>('POST', '/api/auth/login'),
+      request<{ success: boolean; user: { username: string } }>('POST', '/api/auth/login', { username, password }),
   };
 }
 

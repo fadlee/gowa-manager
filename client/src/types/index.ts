@@ -167,3 +167,44 @@ export interface VersionInstallRequest {
 export interface VersionCleanupRequest {
   keepCount?: number;
 }
+
+// Auth & user management
+export type UserRole = 'superadmin' | 'user';
+
+export interface User {
+  id: number;
+  username: string;
+  role: UserRole;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthStatus {
+  needsSetup: boolean;
+  user: User | null;
+}
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  prefix: string;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatedApiKey {
+  apiKey: ApiKey;
+  key: string;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+  role: UserRole;
+}
+
+export interface UpdateUserRequest {
+  role?: UserRole;
+  isActive?: boolean;
+}

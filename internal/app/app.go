@@ -28,6 +28,7 @@ import (
 	staticassets "github.com/fadlee/gowa-manager/internal/static"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
 	"github.com/fadlee/gowa-manager/internal/system"
+	"github.com/fadlee/gowa-manager/internal/users"
 	"github.com/fadlee/gowa-manager/internal/versions"
 )
 
@@ -56,14 +57,18 @@ type RuntimeConnections interface {
 }
 
 type Options struct {
-	Config               config.Config
-	Logger               *slog.Logger
-	AcquireLock          func(context.Context, string) (Releaser, error)
-	OpenDB               func(context.Context, string) (Closer, error)
-	BuildHTTPDeps        func(context.Context, httpDepsOptions) (httpapi.Dependencies, error)
-	BuildSchedulers      func(context.Context, httpapi.Dependencies) (Schedulers, error)
-	Listen               func(network, address string) (net.Listener, error)
-	OnStarted            func(addr string)
+	Config          config.Config
+	Logger          *slog.Logger
+	AcquireLock     func(context.Context, string) (Releaser, error)
+	OpenDB          func(context.Context, string) (Closer, error)
+	BuildHTTPDeps   func(context.Context, httpDepsOptions) (httpapi.Dependencies, error)
+	BuildSchedulers func(context.Context, httpapi.Dependencies) (Schedulers, error)
+	Listen          func(network, address string) (net.Listener, error)
+	OnStarted       func(addr string)
+	// OnSetupToken, when non-nil, is called before OnStarted with the
+	// one-time token required to register the first user. It is only
+	// called when no users exist.
+	OnSetupToken         func(token string)
 	OnReadiness          func(*httpapi.AtomicReadiness)
 	ReconcileConcurrency int
 	// AutoUpdateInterval is the interval between auto-update checks. Defaults
@@ -144,13 +149,13 @@ func Run(ctx context.Context, opts Options) error {
 	db, ok := dbFromCloser(dbCloser)
 	deps := httpapi.Dependencies{Logger: logger, StaticFS: staticassets.FS()}
 	if ok {
-		builtDeps, err := buildDeps(ctx, httpDepsOptions{DB: db, DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled, AdminUsername: opts.Config.AdminUsername, AdminPassword: opts.Config.AdminPassword})
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DB: db, DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled, AdminUsername: opts.Config.AdminUsername, AdminPassword: opts.Config.AdminPassword, AdminLinkSecret: opts.Config.AdminLinkSecret})
 		if err != nil {
 			return err
 		}
 		deps = builtDeps
 	} else if opts.BuildHTTPDeps != nil {
-		builtDeps, err := buildDeps(ctx, httpDepsOptions{DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled, AdminUsername: opts.Config.AdminUsername, AdminPassword: opts.Config.AdminPassword})
+		builtDeps, err := buildDeps(ctx, httpDepsOptions{DataDir: opts.Config.DataDir, Logger: logger, MetricsEnabled: opts.Config.MetricsEnabled, AdminUsername: opts.Config.AdminUsername, AdminPassword: opts.Config.AdminPassword, AdminLinkSecret: opts.Config.AdminLinkSecret})
 		if err != nil {
 			return err
 		}
@@ -176,6 +181,11 @@ func Run(ctx context.Context, opts Options) error {
 	go func() {
 		errCh <- server.Serve(ln)
 	}()
+	if deps.Users != nil && opts.OnSetupToken != nil {
+		if token := deps.Users.SetupToken(); token != "" {
+			opts.OnSetupToken(token)
+		}
+	}
 	if opts.OnStarted != nil {
 		opts.OnStarted(ln.Addr().String())
 	}
@@ -327,9 +337,11 @@ type httpDepsOptions struct {
 	MetricsEnabled bool
 	AdminUsername  string
 	AdminPassword  string
+	// AdminLinkSecret overrides the persisted magic admin link secret.
+	AdminLinkSecret string
 }
 
-func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencies, error) {
+func buildHTTPDeps(ctx context.Context, opts httpDepsOptions) (httpapi.Dependencies, error) {
 	if opts.DB == nil || opts.DB.SQL == nil {
 		return httpapi.Dependencies{}, errors.New("database handle is required")
 	}
@@ -371,7 +383,20 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 	// instance-level Basic Auth injection. The admin link issuer mints
 	// short-lived tokens that let a user open an instance's admin UI
 	// without a browser Basic Auth prompt.
-	magicAuth := auth.NewMagicAuthService()
+	userService, err := users.NewService(ctx, opts.DB.SQL, users.Options{SeedUsername: opts.AdminUsername, SeedPassword: opts.AdminPassword, Logger: opts.Logger})
+	if err != nil {
+		return httpapi.Dependencies{}, fmt.Errorf("initialize users: %w", err)
+	}
+	if err := userService.PruneExpiredSessions(ctx); err != nil && opts.Logger != nil {
+		opts.Logger.Warn("failed to prune expired sessions", "err", err)
+	}
+	linkSecret := opts.AdminLinkSecret
+	if linkSecret == "" {
+		if linkSecret, err = userService.MagicLinkSecret(ctx); err != nil {
+			return httpapi.Dependencies{}, fmt.Errorf("load magic link secret: %w", err)
+		}
+	}
+	magicAuth := auth.NewMagicAuthServiceWithSecret(linkSecret)
 	targetResolver := proxy.NewTargetResolver(repo)
 
 	return httpapi.Dependencies{
@@ -391,8 +416,7 @@ func buildHTTPDeps(_ context.Context, opts httpDepsOptions) (httpapi.Dependencie
 		VersionInstaller:    versionInstaller,
 		InstanceDirResolver: filesystem,
 		Metrics:             metrics,
-		AdminUsername:       opts.AdminUsername,
-		AdminPassword:       opts.AdminPassword,
+		Users:               userService,
 		HTTPProxy:           proxy.NewHTTPProxy(targetResolver, magicAuth, nil),
 		WSBridge:            proxy.NewWSBridge(targetResolver, magicAuth, proxy.NewRegistry()),
 		MagicAuth:           magicAuth,
@@ -749,4 +773,29 @@ func runReconciliation(ctx context.Context, deps httpapi.Dependencies, logger *s
 	if err := r.Reconcile(ctx); err != nil {
 		logger.Error("startup reconciliation completed with error", "error", err)
 	}
+}
+
+// ResetPassword sets a new password for username in the data directory's
+// database and revokes all of the user's sessions. When password is
+// empty a random one is generated. It returns the password that was set.
+func ResetPassword(ctx context.Context, dataDir, username, password string) (string, error) {
+	if password == "" {
+		password = users.RandomPassword()
+	}
+	db, err := database.Open(ctx, dataDir)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	svc, err := users.NewService(ctx, db.SQL, users.Options{})
+	if err != nil {
+		return "", err
+	}
+	if _, err := svc.ResetPasswordByUsername(ctx, username, password); err != nil {
+		if errors.Is(err, users.ErrNotFound) {
+			return "", fmt.Errorf("user %q not found", username)
+		}
+		return "", err
+	}
+	return password, nil
 }
