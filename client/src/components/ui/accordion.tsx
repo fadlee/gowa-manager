@@ -34,7 +34,7 @@ const Accordion = React.forwardRef<
       {React.Children.map(children, (child) => {
         if (!React.isValidElement(child)) return child
 
-        const { value: itemValue, children: itemChildren } = child.props
+        const { value: itemValue } = child.props
 
         return React.cloneElement(child as React.ReactElement, {
           isOpen: isOpen(itemValue),

@@ -18,6 +18,7 @@ import (
 	"github.com/fadlee/gowa-manager/internal/config"
 	"github.com/fadlee/gowa-manager/internal/database"
 	"github.com/fadlee/gowa-manager/internal/instances"
+	"github.com/fadlee/gowa-manager/internal/testutil"
 )
 
 // TestRunSmokeFakeGOWA is a simplified native smoke test (Task 11 Step 3).
@@ -260,17 +261,12 @@ func waitForInstanceStatusViaRepo(t *testing.T, dataDir string, id int64, want s
 	t.Fatalf("instance %d did not reach status %q via repo within %v", id, want, timeout)
 }
 
-// cleanupOrphanedGOWA kills any running fakegowa processes to ensure test
-// isolation. In production, children are left running per legacy policy.
+// cleanupOrphanedGOWA kills fakegowa processes started from binaryPath (in
+// this test's temp dir) to ensure test isolation. In production, children
+// are left running per legacy policy.
 func cleanupOrphanedGOWA(t *testing.T, binaryPath string) {
 	t.Helper()
-	// On all platforms, try to kill processes running the fakegowa binary.
-	// This is best-effort; failures are ignored.
-	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/IM", filepath.Base(binaryPath), "/F").Run()
-	} else {
-		_ = exec.Command("pkill", "-f", filepath.Base(binaryPath)).Run()
-	}
+	testutil.KillByExecutable(binaryPath)
 }
 
 // projectRoot returns the repository root by searching upwards from the test

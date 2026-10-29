@@ -172,15 +172,6 @@ func startFakeBun(t *testing.T) (string, func()) {
 	}
 }
 
-// killFakeBunProcesses kills any running fake-bun processes.  Best-effort.
-func killFakeBunProcesses() {
-	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/IM", "fake-bun.exe", "/F").Run()
-	} else {
-		_ = exec.Command("pkill", "-f", "fake-bun").Run()
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Smoke tests against a real Go manager
 // ---------------------------------------------------------------------------

@@ -60,6 +60,11 @@ func adminCreds() (string, string) {
 // is responsive.
 func dockerAvailable(t *testing.T) {
 	t.Helper()
+	// Building the image takes minutes and needs network access, so the
+	// suite is opt-in to keep `go test ./...` fast and deterministic.
+	if os.Getenv("GOWA_DOCKER_TESTS") != "1" {
+		t.Skip("set GOWA_DOCKER_TESTS=1 to run the Docker compat suite")
+	}
 	// The image is Linux-only (FROM oven/bun:1-alpine, gcr.io/distroless).
 	// GitHub's Windows runners expose a Docker daemon in Windows-containers
 	// mode, so `docker info` succeeds but the Linux base image has "no

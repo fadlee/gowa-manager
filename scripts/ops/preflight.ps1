@@ -243,13 +243,16 @@ if ($permRead -and $permWrite -and $permExecute) {
 # ---------------------------------------------------------------------------
 $mgrBun = $false
 $mgrGo = $false
+# Match on the process name only: matching the full path would also hit
+# unrelated processes that live under a directory containing the name.
+# GOWA_PREFLIGHT_MANAGER_PROCESS overrides the name so tests can use a
+# unique name isolated from other processes. The Bun backend no longer
+# exists; $mgrBun stays false and is kept for JSON schema compatibility.
+$managerProcess = if ($env:GOWA_PREFLIGHT_MANAGER_PROCESS) { $env:GOWA_PREFLIGHT_MANAGER_PROCESS } else { 'gowa-manager' }
 $procs = Get-Process -ErrorAction SilentlyContinue
 foreach ($p in $procs) {
   $name = $p.ProcessName
-  $cmd = ''
-  try { $cmd = $p.Path } catch {}
-  if ($name -match 'gowa-manager' -or ($cmd -and $cmd -match 'gowa-manager')) { $mgrGo = $true }
-  if ($name -match '^bun$' -or ($cmd -and $cmd -match 'bun')) { $mgrBun = $true }
+  if ($name -like "$managerProcess*") { $mgrGo = $true }
 }
 if ($mgrBun -or $mgrGo) {
   $d = @()

@@ -265,12 +265,21 @@ fi
 
 # ---------------------------------------------------------------------------
 # Check 5: Absence of active Go manager process
+# (manager_active.bun stays in the JSON for schema compatibility; the Bun
+# backend no longer exists, so it is always false.)
 # ---------------------------------------------------------------------------
+# Match on the process (executable) name, not the full command line: a
+# command-line match would also hit this script itself when it lives under
+# a path containing "gowa-manager". Linux truncates process names to 15
+# characters, so this is a prefix match (gowa-manager-linux-amd64 shows up
+# as "gowa-manager-li"). GOWA_PREFLIGHT_MANAGER_PROCESS overrides the name,
+# which lets tests use a unique name isolated from other processes.
+MANAGER_PROCESS="${GOWA_PREFLIGHT_MANAGER_PROCESS:-gowa-manager}"
 mgr_go=false
 if command -v pgrep >/dev/null 2>&1; then
-  pgrep -f 'gowa-manager' >/dev/null 2>&1 && mgr_go=true
+  pgrep "^$MANAGER_PROCESS" >/dev/null 2>&1 && mgr_go=true
 elif command -v ps >/dev/null 2>&1; then
-  ps aux 2>/dev/null | grep -v grep | grep -q 'gowa-manager' && mgr_go=true
+  ps -A -o comm= 2>/dev/null | sed 's#.*/##' | grep -q "^$MANAGER_PROCESS" && mgr_go=true
 fi
 if [ "$mgr_go" = true ]; then
   add_check "manager_active" "fail" "go active"
@@ -307,20 +316,24 @@ fi
 # ---------------------------------------------------------------------------
 # Check 7: HTTP port available
 # ---------------------------------------------------------------------------
+# /bin/sh is often dash, which has no /dev/tcp, so probe with the first
+# available tool: ss (lists listeners on any address), bash's /dev/tcp,
+# then nc. If none exists, warn instead of silently reporting "available".
 port_available=true
-# Try connecting — if something answers, the port is occupied.
-if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
-  port_available=false
-  exec 3>&- 3<&- 2>/dev/null || true
+port_checked=true
+if command -v ss >/dev/null 2>&1; then
+  ss -ltn "sport = :$PORT" 2>/dev/null | tail -n +2 | grep -q . && port_available=false
+elif command -v bash >/dev/null 2>&1; then
+  bash -c "exec 3<>/dev/tcp/127.0.0.1/$PORT" 2>/dev/null && port_available=false
+elif command -v nc >/dev/null 2>&1; then
+  nc -z 127.0.0.1 "$PORT" 2>/dev/null && port_available=false
 else
-  # /dev/tcp is a bash-ism; fall back to nc if /dev/tcp is unavailable.
-  if command -v nc >/dev/null 2>&1; then
-    if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
-      port_available=false
-    fi
-  fi
+  port_checked=false
 fi
-if [ "$port_available" = true ]; then
+if [ "$port_checked" = false ]; then
+  add_check "port" "warn" "cannot check port $PORT (need ss, bash, or nc)"
+  add_warning "could not verify that HTTP port $PORT is free"
+elif [ "$port_available" = true ]; then
   add_check "port" "pass" "port $PORT available"
 else
   add_check "port" "fail" "port $PORT occupied"
@@ -519,7 +532,7 @@ cat <<EOF
     "execute": $(jbool "$perm_execute")
   },
   "manager_active": {
-    "bun": $(jbool "$mgr_bun"),
+    "bun": false,
     "go": $(jbool "$mgr_go")
   },
   "lock": {

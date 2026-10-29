@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode"
@@ -46,28 +47,31 @@ func findRepoRoot(t *testing.T) string {
 	}
 }
 
-// managerBinary returns the path to the pre-built Go manager binary.
-// Tests skip if the binary does not exist.
+// managerBinary returns a manager binary built from the current source.
+// It is built once per test process (go build is cached, so this is cheap)
+// instead of reusing dist-go/, which may hold a stale build and would make
+// the ops tests exercise old code.
 func managerBinary(t *testing.T) string {
 	t.Helper()
-	root := findRepoRoot(t)
-	name := "gowa-manager-go"
-	if runtime.GOOS == "windows" {
-		name = "gowa-manager-go.exe"
+	managerBuild.once.Do(func() {
+		managerBuild.path, managerBuild.err = buildManager(findRepoRoot(t))
+	})
+	if managerBuild.err != nil {
+		t.Fatal(managerBuild.err)
 	}
-	path := filepath.Join(root, "dist-go", name)
-	if _, err := os.Stat(path); err != nil {
-		// Fall back to building it.
-		path = buildManager(t, root)
-	}
-	return path
+	return managerBuild.path
 }
 
-func buildManager(t *testing.T, root string) string {
-	t.Helper()
+var managerBuild struct {
+	once sync.Once
+	path string
+	err  error
+}
+
+func buildManager(root string) (string, error) {
 	dir, err := os.MkdirTemp("", "gowa-ops-mgr-")
 	if err != nil {
-		t.Fatal(err)
+		return "", err
 	}
 	name := "gowa-manager-go"
 	if runtime.GOOS == "windows" {
@@ -76,11 +80,19 @@ func buildManager(t *testing.T, root string) string {
 	path := filepath.Join(dir, name)
 	cmd := exec.Command("go", "build", "-o", path, "./cmd/gowa-manager-go")
 	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go build manager: %v\n%s", err, out)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("go build manager: %v\n%s", err, out)
 	}
-	return path
+	return path, nil
+}
+
+// TestMain removes the shared manager build after all tests ran.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if managerBuild.path != "" {
+		_ = os.RemoveAll(filepath.Dir(managerBuild.path))
+	}
+	os.Exit(code)
 }
 
 // sqlite3Available reports whether the sqlite3 CLI is on PATH.
@@ -95,6 +107,19 @@ func skipIfNoSqlite3(t *testing.T) {
 	if !sqlite3Available() {
 		t.Skip("sqlite3 CLI not available — required by preflight/backup scripts")
 	}
+}
+
+// testManagerProcess is the manager process name the preflight scripts look
+// for during tests (via GOWA_PREFLIGHT_MANAGER_PROCESS). It is unique per test
+// binary run so the manager_active check only sees the sleeper spawned by
+// TestPreflight_ManagerStillActive, never a real manager on the host or a
+// manager started by another test package running in parallel. It stays under
+// Linux's 15-character process name limit.
+var testManagerProcess = fmt.Sprintf("gowamgr-%06d", os.Getpid()%1000000)
+
+// scriptEnv is the environment for every ops script invocation.
+func scriptEnv() []string {
+	return append(os.Environ(), "GOWA_PREFLIGHT_MANAGER_PROCESS="+testManagerProcess)
 }
 
 // scriptResult holds the parsed JSON and exit code from a script invocation.
@@ -127,6 +152,7 @@ func runPowerShell(t *testing.T, script string, args []string) scriptResult {
 	cmdArgs := []string{"-NoProfile", "-NonInteractive", "-File", script}
 	cmdArgs = append(cmdArgs, normalizeFlagsPowerShell(args)...)
 	cmd := exec.Command("pwsh", cmdArgs...)
+	cmd.Env = scriptEnv()
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -148,6 +174,7 @@ func runSh(t *testing.T, script string, args []string) scriptResult {
 	// flags the .sh scripts expect (e.g. -DataDir -> --data-dir).
 	shArgs := append([]string{script}, normalizeFlagsUnix(args)...)
 	cmd := exec.Command("sh", shArgs...)
+	cmd.Env = scriptEnv()
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -1035,17 +1062,17 @@ func TestPreflight_InsufficientSpace(t *testing.T) {
 // Manager still active test (Step 4 failure case)
 // ---------------------------------------------------------------------------
 
-// spawnManagerProcess builds a tiny sleeper binary named "gowa-manager" and
-// starts it.  The returned function kills the process and cleans up.
+// spawnManagerProcess builds a tiny sleeper binary named testManagerProcess
+// and starts it.  The returned function kills the process and cleans up.
 func spawnManagerProcess(t *testing.T) func() {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "gowa-ops-mgr-proc-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := "gowa-manager"
+	name := testManagerProcess
 	if runtime.GOOS == "windows" {
-		name = "gowa-manager.exe"
+		name += ".exe"
 	}
 	binPath := filepath.Join(dir, name)
 	src := []byte("package main\n\nimport \"time\"\n\nfunc main() { time.Sleep(10 * time.Minute) }\n")
@@ -1077,7 +1104,7 @@ func TestPreflight_ManagerStillActive(t *testing.T) {
 	dataDir := createValidDataDir(t)
 	defer os.RemoveAll(filepath.Dir(dataDir))
 
-	// Spawn a process named "gowa-manager" that stays alive.
+	// Spawn a uniquely named stand-in manager process that stays alive.
 	cleanup := spawnManagerProcess(t)
 	defer cleanup()
 

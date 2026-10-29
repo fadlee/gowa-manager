@@ -287,17 +287,30 @@ operator runbooks:
 
 ### Testing And Validation
 ```bash
-# Run backend/unit/integration tests
-bun run test
+# Go: unit, integration, ops-script, and compat tests (what CI gates on)
+go test ./...
+go test -race ./cmd/... ./internal/...
 
-# Typecheck backend TypeScript
-bun run build:tsc
+# Frontend: type-check, then build
+cd client && bun run typecheck && bun run build
 
-# Recommended pre-commit validation
-bun run test && bun run build:tsc
+# Script tests (CI workflows, Docker runtime, release artifacts)
+bun test scripts
+
+# Browser E2E against a freshly built Go backend (Playwright)
+bun run test:e2e:go
 ```
 
-Tests use an isolated `.test-data/bun-<pid>` directory via `test/setup.ts`, so DB-backed tests do not touch the runtime `data/gowa.db`.
+Tests are hermetic: each one uses its own temp data directory and free port,
+builds the manager from source, and only touches processes it started itself
+(processes are matched by exact executable path, never by name). Running a
+real GOWA Manager on the same machine does not affect the results.
+
+Opt-in suites:
+- `GOWA_DOCKER_TESTS=1 go test ./test/compat/ -run TestDockerSuite` builds the
+  Docker image and checks container behavior (needs Docker with Linux containers).
+- `go test -run TestLeakDetection -count=1 ./test/benchmark/` is a resource-leak
+  stress test with tight thresholds; it is skipped in CI's blocking jobs.
 
 ### Production Build
 ```bash
