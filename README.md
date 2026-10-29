@@ -25,7 +25,7 @@ Multi-instance dashboard with mixed versions and running/stopped status:
 - 📦 **Version Control** - Install and use different GOWA versions per instance
 - 🔄 **Real-time Monitoring** - Live status updates, resource usage, and uptime tracking
 - ⚙️ **Advanced Configuration** - Comprehensive CLI flags and environment variable support
-- 🔐 **Authentication System** - Optional basic authentication for web UI
+- 🔐 **User Management** - Multiple users, superadmin role, session login, and per-user API keys
 - 🌐 **Proxy Integration** - Built-in proxy for accessing instance web interfaces
 - 🔧 **Auto-restart Service** - Automatic instance recovery after server restarts
 - 📊 **Resource Monitoring** - CPU and memory usage tracking with historical data
@@ -48,7 +48,7 @@ Installs to `~/.local/bin/gowa-manager` and adds to PATH on Unix-like systems.
 Note: for Windows, use `npx gowa-manager` or download the `.exe` release directly.
 
 ### Access the Application
-Open http://localhost:3000 in your browser (default credentials: `admin` / `password`)
+Open http://localhost:3000 in your browser. On first start, register the first account (it becomes superadmin) using the setup token printed in the startup output.
 
 <details>
 <summary>Manual Binary Download</summary>
@@ -126,38 +126,76 @@ data/
 └── gowa.db                # SQLite database
 ```
 
-## Authentication
+## Authentication & Users
 
-### Enable Authentication
-1. **Environment Variables:**
-   ```bash
-   ADMIN_USERNAME=your_username
-   ADMIN_PASSWORD=your_password
-   ```
+### First run
+When the database has no users, the Web UI shows a registration page. The
+first account registered becomes the **superadmin**. Registration requires a
+one-time **setup token** printed in the startup output, so nobody else can claim
+a freshly exposed install:
 
-2. **Or create `.env` file:**
-   ```env
-   ADMIN_USERNAME=admin
-   ADMIN_PASSWORD=securepassword
-   ```
-
-3. **Default Credentials (if not set):**
-   - Username: `admin`
-   - Password: `password`
-
-### CLI Authentication
-```bash
-# Set credentials via CLI
-bun run src/index.ts --admin-username admin --admin-password mypassword
 ```
+  Setup:    No users yet. Open the Web UI to register the
+            first superadmin with this setup token:
+            9U-TIbHB9WrM8o__2c1F4pMq
+```
+
+Alternatively, seed the first superadmin non-interactively (only used while no
+users exist; ignored afterwards):
+
+```bash
+ADMIN_USERNAME=admin ADMIN_PASSWORD=change-me gowa-manager
+# or
+gowa-manager --admin-username admin --admin-password change-me
+```
+
+There are no default credentials. Upgrading an existing install that set
+`ADMIN_USERNAME`/`ADMIN_PASSWORD` turns those credentials into the superadmin
+account automatically.
+
+### Roles
+- **superadmin** – everything, plus managing users (**Users** page).
+- **user** – manages all instances and GOWA versions.
+
+Superadmins create users (registration is closed after the first account), change
+roles, reset passwords, disable or delete users. The last active superadmin cannot
+be demoted, disabled, or deleted. Every user can change their own password from
+**My account**; doing so signs out their other sessions.
+
+### API keys
+Each user can generate API keys on **My account**. A key is shown once, stored
+only as a hash, and can be revoked at any time. A key has its owner's access,
+but cannot manage users or API keys; it stops working if the owner is disabled
+or deleted.
+
+```bash
+curl -H "Authorization: Bearer gowa_xxx" http://localhost:3000/api/instances
+# or
+curl -H "X-API-Key: gowa_xxx" http://localhost:3000/api/instances
+```
+
+HTTP Basic auth with a user's username and password also still works for
+`/api/*`, for existing scripts.
+
+### Sessions & limits
+The Web UI uses an `HttpOnly`, `SameSite=Lax` session cookie valid for 30 days
+(extended while in use). Failed logins are limited to 10 per 15 minutes per
+client IP and username.
+
+### Forgot password
+```bash
+gowa-manager reset-password <username> [--password <new>] [--data-dir <path>]
+```
+Without `--password`, a random password is generated and printed. All of the
+user's sessions are signed out.
 
 ## Proxy Access And Security
 
 GOWA Manager exposes running instances through proxy paths such as `/app/{instanceKey}/...`.
 
 Important behavior:
-- Manager Basic Auth protects manager APIs like `/api/instances` and `/api/system`.
-- Proxy routes under `/app/{instanceKey}/...` do not require manager Basic Auth.
+- Manager authentication (session, API key, or user Basic auth) protects manager APIs like `/api/instances` and `/api/system`.
+- Proxy routes under `/app/{instanceKey}/...` do not require manager authentication.
 - Proxy protection is delegated to each GOWA instance, so enable instance `basicAuth` when the proxy is reachable by untrusted clients.
 - External clients and webhooks can call proxied GOWA APIs without knowing manager admin credentials, but they should send the GOWA instance credentials when required.
 
@@ -287,9 +325,12 @@ bun run embed-static
 
 ### Environment Variables
 ```env
-# Authentication (optional)
+# Initial superadmin (optional; only used while no users exist)
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=password
+ADMIN_PASSWORD=change-me
+
+# Secret for magic admin links (optional; default: random, stored in the DB)
+ADMIN_LINK_SECRET=
 
 # Data directory (optional)
 DATA_DIR=./data
@@ -306,7 +347,8 @@ PROXY_WS_INJECT_INSTANCE_AUTH=false
 # Current Go backend
 bun run dev:go -- --data-dir /path/to/data
 bun run dev:go -- --port 8080
-bun run dev:go -- --admin-username admin --admin-password pass
+bun run dev:go -- --admin-username admin --admin-password pass   # seed first superadmin
+bun run dev:go -- reset-password admin
 
 # Legacy Bun/Elysia backend
 bun run src/index.ts --data-dir /path/to/data

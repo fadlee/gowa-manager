@@ -422,7 +422,7 @@ func TestRunShutdownClosesWebSockets(t *testing.T) {
 	// Build a real WSBridge with a real Registry so CloseAll is a real
 	// (no-op when empty) call rather than a nil dereference.
 	registry := proxy.NewRegistry()
-	magicAuth := auth.NewMagicAuthService()
+	magicAuth := auth.NewMagicAuthServiceWithSecret("test-secret")
 	resolver := proxy.NewTargetResolver(instances.NewSQLiteRepository(nil))
 	wsBridge := proxy.NewWSBridge(resolver, magicAuth, registry)
 
@@ -513,7 +513,7 @@ func TestBuildHTTPDepsWiresProxyServices(t *testing.T) {
 	}
 	defer db.Close()
 
-	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatalf("buildHTTPDeps error = %v", err)
 	}
@@ -722,11 +722,11 @@ func TestBuildHTTPDepsSharesDatabaseAcrossServices(t *testing.T) {
 	}
 	defer db.Close()
 
-	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := httpapi.New(deps)
+	handler := withTestAuth(httpapi.New(deps))
 
 	created := createInstanceViaHandler(t, handler, "shared-db")
 	repo := instances.NewSQLiteRepository(db.SQL)
@@ -748,11 +748,11 @@ func TestBuildHTTPDepsWiresConfiguredDataPaths(t *testing.T) {
 	}
 	defer db.Close()
 
-	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := httpapi.New(deps)
+	handler := withTestAuth(httpapi.New(deps))
 	created := createInstanceViaHandler(t, handler, "paths")
 	if info, err := os.Stat(filepath.Join(dataDir, "instances", int64Text(created.ID))); err != nil || !info.IsDir() {
 		t.Fatalf("instance directory stat error = %v, info = %#v", err, info)
@@ -802,11 +802,11 @@ func TestBuildHTTPDepsWiresRealLifecycleStatusRoute(t *testing.T) {
 	}
 	defer db.Close()
 
-	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := httpapi.New(deps)
+	handler := withTestAuth(httpapi.New(deps))
 	created := createInstanceViaHandler(t, handler, "runtime")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/instances/"+int64Text(created.ID)+"/status", nil)
@@ -871,11 +871,11 @@ func TestBuildHTTPDepsManagementRoutesSmoke(t *testing.T) {
 	}
 	defer db.Close()
 
-	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir})
+	deps, err := buildHTTPDeps(ctx, httpDepsOptions{DB: db, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := httpapi.New(deps)
+	handler := withTestAuth(httpapi.New(deps))
 
 	created := createInstanceViaHandler(t, handler, "smoke-create")
 	items := listInstancesViaHandler(t, handler)
@@ -1084,4 +1084,18 @@ type errorDB struct {
 func (d *errorDB) Close() error {
 	appendEvent(d.events, nil, "db-close")
 	return d.closeErr
+}
+
+const (
+	testAdminUser = "admin"
+	testAdminPass = "password123"
+)
+
+// withTestAuth sends the seeded test superadmin's Basic credentials with
+// every request.
+func withTestAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetBasicAuth(testAdminUser, testAdminPass)
+		next.ServeHTTP(w, r)
+	})
 }

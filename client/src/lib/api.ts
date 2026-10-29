@@ -11,6 +11,12 @@ import type {
   AdminLinkResponse,
   SystemStatus,
   VersionInfo,
+  AuthStatus,
+  User,
+  ApiKey,
+  CreatedApiKey,
+  CreateUserRequest,
+  UpdateUserRequest,
 } from '../types';
 
 const API_BASE = '/api';
@@ -23,6 +29,10 @@ const buildPathQuery = (path?: string) => {
 };
 
 class ApiClient {
+  // Called when a protected request returns 401 (e.g. the session
+  // expired), so the auth layer can show the login page.
+  onUnauthorized: (() => void) | null = null;
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -38,11 +48,90 @@ class ApiClient {
     });
 
     if (!response.ok) {
+      if (response.status === 401 && !endpoint.startsWith('/auth/')) {
+        this.onUnauthorized?.();
+      }
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
     }
 
     return response.json();
+  }
+
+  // Auth
+  async getAuthStatus(): Promise<AuthStatus> {
+    return this.request<AuthStatus>('/auth/status');
+  }
+
+  async setup(username: string, password: string, setupToken: string): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, setupToken }),
+    });
+  }
+
+  async login(username: string, password: string): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+  }
+
+  async logout(): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>('/auth/logout', { method: 'POST' });
+  }
+
+  // Own account
+  async changePassword(currentPassword: string, newPassword: string): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>('/account/password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  }
+
+  async getApiKeys(): Promise<ApiKey[]> {
+    return this.request<ApiKey[]>('/account/api-keys');
+  }
+
+  async createApiKey(name: string): Promise<CreatedApiKey> {
+    return this.request<CreatedApiKey>('/account/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async revokeApiKey(id: number): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>(`/account/api-keys/${id}`, { method: 'DELETE' });
+  }
+
+  // User management (superadmin)
+  async getUsers(): Promise<User[]> {
+    return this.request<User[]>('/users');
+  }
+
+  async createUser(data: CreateUserRequest): Promise<User> {
+    return this.request<User>('/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateUser(id: number, data: UpdateUserRequest): Promise<User> {
+    return this.request<User>(`/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async resetUserPassword(id: number, password: string): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>(`/users/${id}/password`, {
+      method: 'PUT',
+      body: JSON.stringify({ password }),
+    });
+  }
+
+  async deleteUser(id: number): Promise<ApiSuccess> {
+    return this.request<ApiSuccess>(`/users/${id}`, { method: 'DELETE' });
   }
 
   // Instance management

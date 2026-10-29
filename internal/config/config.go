@@ -10,10 +10,15 @@ import (
 )
 
 type Config struct {
-	Port               int
-	Host               string
-	AdminUsername      string
-	AdminPassword      string
+	Port int
+	Host string
+	// AdminUsername and AdminPassword seed the first superadmin when no
+	// users exist yet. They are ignored once any user is registered.
+	AdminUsername string
+	AdminPassword string
+	// AdminLinkSecret signs magic admin links. When empty, a random
+	// secret persisted in the database is used.
+	AdminLinkSecret    string
 	DataDir            string
 	SkipStartupInstall bool
 	// MetricsEnabled controls the opt-in /metrics observability endpoint.
@@ -23,6 +28,10 @@ type Config struct {
 	// (default), only warnings and errors are logged to stderr and a
 	// user-friendly startup banner is printed instead.
 	Verbose bool
+	// ResetUsername and ResetPassword are the arguments of the
+	// reset-password command. An empty ResetPassword means "generate one".
+	ResetUsername string
+	ResetPassword string
 }
 
 type Action int
@@ -31,14 +40,16 @@ const (
 	ActionRun Action = iota
 	ActionHelp
 	ActionVersion
+	ActionResetPassword
 )
 
 func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 	cfg := Config{
 		Port:               envPort(getenv("PORT")),
 		Host:               envDefault(getenv("HOST"), "127.0.0.1"),
-		AdminUsername:      envDefault(getenv("ADMIN_USERNAME"), "admin"),
-		AdminPassword:      envDefault(getenv("ADMIN_PASSWORD"), "password"),
+		AdminUsername:      getenv("ADMIN_USERNAME"),
+		AdminPassword:      getenv("ADMIN_PASSWORD"),
+		AdminLinkSecret:    getenv("ADMIN_LINK_SECRET"),
 		DataDir:            envDefault(getenv("DATA_DIR"), "./data"),
 		SkipStartupInstall: envBool(getenv("GOWA_SKIP_STARTUP_INSTALL")),
 		MetricsEnabled:     envBool(getenv("GOWA_METRICS_ENABLED")),
@@ -49,6 +60,14 @@ func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 		args = args[1:]
 	}
 	action := ActionRun
+	if len(args) > 0 && args[0] == "reset-password" {
+		if len(args) < 2 || strings.HasPrefix(args[1], "-") {
+			return cfg, action, errors.New("❌ Usage: gowa-manager reset-password <username> [--password <pass>] [--data-dir <path>]")
+		}
+		action = ActionResetPassword
+		cfg.ResetUsername = args[1]
+		args = args[2:]
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
@@ -103,6 +122,16 @@ func Parse(args []string, getenv func(string) string) (Config, Action, error) {
 			i = next
 		case "--verbose":
 			cfg.Verbose = true
+		case "--password":
+			if action != ActionResetPassword {
+				return cfg, action, fmt.Errorf("❌ Unknown option: %s\nUse --help to see available options", arg)
+			}
+			value, next, err := valueArg(args, i, arg)
+			if err != nil {
+				return cfg, action, err
+			}
+			cfg.ResetPassword = value
+			i = next
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return cfg, action, fmt.Errorf("❌ Unknown option: %s\nUse --help to see available options", arg)
@@ -119,12 +148,13 @@ func HelpText() string {
 
 USAGE:
   gowa-manager [OPTIONS]
+  gowa-manager reset-password <username> [--password <pass>] [-d <path>]
 
 OPTIONS:
   -p, --port <port>              Server port (default: 3000)
   --host <host>                  Server bind host (default: 127.0.0.1; use 0.0.0.0 for Docker)
-  -u, --admin-username <user>    Admin username (default: admin)
-  -P, --admin-password <pass>    Admin password (default: password)
+  -u, --admin-username <user>    Initial superadmin username (only used while no users exist)
+  -P, --admin-password <pass>    Initial superadmin password (only used while no users exist)
   -d, --data-dir <path>          Data directory (default: ./data)
       --verbose                  Detailed log output (default: off)
   -h, --help                     Show this help message
@@ -133,14 +163,19 @@ OPTIONS:
 EXAMPLES:
   gowa-manager                                    # Run with defaults
   gowa-manager --port 8080                       # Custom port
-  gowa-manager -u admin -P mypassword            # Custom credentials
-  gowa-manager --port 8080 -u myuser -P mypass   # Full custom config
+  gowa-manager -u admin -P mypassword            # Seed the first superadmin
+  gowa-manager reset-password admin              # Reset a forgotten password
+
+When no users exist and no initial superadmin is configured, open the Web UI
+and register the first account (it becomes superadmin) using the setup token
+printed at startup.
 
 ENVIRONMENT VARIABLES:
   PORT              Server port
   HOST              Server bind host (default: 127.0.0.1; use 0.0.0.0 for Docker)
-  ADMIN_USERNAME    Admin username
-  ADMIN_PASSWORD    Admin password
+  ADMIN_USERNAME    Initial superadmin username (only used while no users exist)
+  ADMIN_PASSWORD    Initial superadmin password (only used while no users exist)
+  ADMIN_LINK_SECRET Secret for magic admin links (default: random, stored in DB)
   DATA_DIR          Data directory
   GOWA_METRICS_ENABLED  Enable loopback-only /metrics endpoint (0/1)
   GOWA_SKIP_STARTUP_INSTALL  Skip automatic latest GOWA install on startup (0/1)

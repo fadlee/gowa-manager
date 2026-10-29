@@ -24,8 +24,9 @@ operational flags below. Bun-only flags (e.g. `--watch`, dev-mode flags) are
 |------|----|----|-------------|
 | `-p, --port <port>` | ✅ | ✅ | Server port (default: `3000`) |
 | `--host <addr>` | ✅ | ❌ | Bind address (default: `127.0.0.1`; use `0.0.0.0` for Docker) |
-| `-u, --admin-username <user>` | ✅ | ✅ | Admin username (default: `admin`) |
-| `-P, --admin-password <pass>` | ✅ | ✅ | Admin password (default: `password`) |
+| `-u, --admin-username <user>` | ✅ | ✅ | Go: initial superadmin username, only used while no users exist (no default) |
+| `-P, --admin-password <pass>` | ✅ | ✅ | Go: initial superadmin password, only used while no users exist (no default) |
+| `reset-password <user> [--password <pass>]` | ✅ | ❌ | Reset a user's password (random if omitted) and sign out their sessions |
 | `-d, --data-dir <path>` | ✅ | ✅ | Data directory (default: `./data`) |
 | `-h, --help` | ✅ | ✅ | Show help |
 | `-v, --version` | ✅ | ✅ | Show version |
@@ -41,8 +42,9 @@ operational flags below. Bun-only flags (e.g. `--watch`, dev-mode flags) are
 |----------|----|----|-------------|
 | `PORT` | ✅ | ✅ | Server port |
 | `HOST` | ✅ | ❌ | Bind address (default: `127.0.0.1`) |
-| `ADMIN_USERNAME` | ✅ | ✅ | Admin username |
-| `ADMIN_PASSWORD` | ✅ | ✅ | Admin password |
+| `ADMIN_USERNAME` | ✅ | ✅ | Go: initial superadmin username (only while no users exist) |
+| `ADMIN_PASSWORD` | ✅ | ✅ | Go: initial superadmin password (only while no users exist) |
+| `ADMIN_LINK_SECRET` | ✅ | ✅ | Magic admin link secret (Go default: random, persisted in the DB) |
 | `DATA_DIR` | ✅ | ✅ | Data directory |
 | `GOWA_METRICS_ENABLED` | ✅ | ❌ | Enable `/metrics` endpoint (`0`/`1`, default: `0`) |
 | `GOWA_SKIP_STARTUP_INSTALL` | ✅ | ❌ | Skip automatic latest GOWA install on startup (`0`/`1`, default: `0`; mainly for isolated tests/offline canaries with preinstalled binaries) |
@@ -303,6 +305,12 @@ Register-ScheduledTask -TaskName "GOWAManager" `
 
 ## 6. Logs, Metrics, and Readiness Monitoring
 
+> **Users (Go):** with no users and no `ADMIN_USERNAME`/`ADMIN_PASSWORD`, the
+> startup output prints a one-time setup token; open the Web UI and register the
+> first superadmin with it. See the README "Authentication & Users" section.
+> API calls authenticate with `Authorization: Bearer <api key>`, `X-API-Key`, or
+> a user's Basic credentials.
+
 ### HTTP Health and Readiness Endpoints
 
 | Endpoint | Auth | Description |
@@ -310,11 +318,11 @@ Register-ScheduledTask -TaskName "GOWAManager" `
 | `GET /api/health` | None | `200` when the process is alive |
 | `GET /api/ready` | None | `200` when ready; `503` during startup/shutdown |
 | `GET /metrics` | None (loopback-only) | Prometheus metrics (requires `GOWA_METRICS_ENABLED=1`) |
-| `GET /api/instances` | Basic Auth | List instances |
-| `GET /api/instances/{id}/logs?tail=200` | Basic Auth | Recent stdout/stderr captured from one managed GOWA child process |
-| `GET /api/system/status` | Basic Auth | System status |
-| `GET /api/system/versions/installed` | Basic Auth | Installed GOWA versions |
-| `GET /api/system/auto-update/status` | Basic Auth | Auto-update status |
+| `GET /api/instances` | Session / API key / Basic | List instances |
+| `GET /api/instances/{id}/logs?tail=200` | Session / API key / Basic | Recent stdout/stderr captured from one managed GOWA child process |
+| `GET /api/system/status` | Session / API key / Basic | System status |
+| `GET /api/system/versions/installed` | Session / API key / Basic | Installed GOWA versions |
+| `GET /api/system/auto-update/status` | Session / API key / Basic | Auto-update status |
 
 ### Checking Health
 

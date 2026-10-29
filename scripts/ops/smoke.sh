@@ -165,7 +165,7 @@ AUTH="$ADMIN_USERNAME:$ADMIN_PASSWORD"
 # HTTP request helper.
 #
 # http_get <name> <path> <use_auth> <expected_status>
-# http_post <name> <path> <use_auth> <expected_status>
+# do_post <name> <path> <use_auth> <expected_status> [json_body]
 #
 # Sets HTTP_STATUS and HTTP_BODY on success/failure.  Records a check result.
 # ---------------------------------------------------------------------------
@@ -200,7 +200,10 @@ do_post() {
   _use_auth=$3
   _expect=$4
   _full="$BASE_URL$_path"
-  if [ "$_use_auth" = "1" ]; then
+  _body=${5:-}
+  if [ -n "$_body" ]; then
+    _resp=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' -X POST -u "$AUTH" -H 'Content-Type: application/json' -d "$_body" "$_full" 2>/dev/null)
+  elif [ "$_use_auth" = "1" ]; then
     _resp=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' -X POST -u "$AUTH" "$_full" 2>/dev/null)
   else
     _resp=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' -X POST "$_full" 2>/dev/null)
@@ -297,8 +300,11 @@ do_get "health" "/api/health" 0 200
 # GET /api/ready — no auth, expect 200.
 do_get "ready" "/api/ready" 0 200
 
-# POST /api/auth/login — Basic Auth credentials, expect 200.
-do_post "auth_login" "/api/auth/login" 1 200
+# POST /api/auth/login — expect 200. Credentials go in the JSON body
+# (current managers) and as Basic auth (older managers), so the check works
+# against both sides of an upgrade or rollback.
+do_post "auth_login" "/api/auth/login" 1 200 \
+  "{\"username\":$(jstr "$ADMIN_USERNAME"),\"password\":$(jstr "$ADMIN_PASSWORD")}"
 
 # GET /api/instances — with Basic Auth, expect 200.
 do_get "instances" "/api/instances" 1 200

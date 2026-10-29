@@ -17,7 +17,7 @@ func TestParseDefaults(t *testing.T) {
 	if action != ActionRun {
 		t.Fatalf("action = %v", action)
 	}
-	if cfg.Port != 3000 || cfg.AdminUsername != "admin" || cfg.AdminPassword != "password" || cfg.DataDir != "./data" {
+	if cfg.Port != 3000 || cfg.AdminUsername != "" || cfg.AdminPassword != "" || cfg.DataDir != "./data" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }
@@ -170,5 +170,21 @@ func TestHelpAndVersionText(t *testing.T) {
 	}
 	if !strings.Contains(VersionText(), "Built with Go") {
 		t.Fatalf("VersionText() = %q", VersionText())
+	}
+}
+
+func TestParseResetPassword(t *testing.T) {
+	cfg, action, err := Parse([]string{"reset-password", "alice", "--password", "newpassword", "-d", "/x"}, env(nil))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if action != ActionResetPassword || cfg.ResetUsername != "alice" || cfg.ResetPassword != "newpassword" || cfg.DataDir != "/x" {
+		t.Fatalf("unexpected result: action=%v cfg=%+v", action, cfg)
+	}
+	if _, _, err := Parse([]string{"reset-password"}, env(nil)); err == nil {
+		t.Fatal("expected error when username is missing")
+	}
+	if _, _, err := Parse([]string{"--password", "x"}, env(nil)); err == nil {
+		t.Fatal("expected --password to be rejected outside reset-password")
 	}
 }

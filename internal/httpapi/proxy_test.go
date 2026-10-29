@@ -976,8 +976,7 @@ func TestProxyRoutes_OutsideBasicAuth(t *testing.T) {
 	inst := runningInstance("mykey", port)
 	deps := proxyRouteDeps(t, upstream, inst)
 	// Configure Basic Auth credentials — proxy routes should NOT require them.
-	deps.AdminUsername = "admin"
-	deps.AdminPassword = "secret"
+	deps.Users = newTestUsers(t, "admin", "secret")
 	srv := newProxyRouteServer(t, deps)
 
 	// Request a proxy route WITHOUT Basic Auth credentials.

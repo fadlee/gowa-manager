@@ -528,8 +528,7 @@ test.describe('Go backend E2E', () => {
     // We should still be on the dashboard.
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 
-    // Reload the page — the frontend stores credentials in localStorage
-    // and should remain authenticated.
+    // Reload the page — the session cookie should keep us authenticated.
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 

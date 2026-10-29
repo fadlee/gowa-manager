@@ -428,20 +428,17 @@ func TestAdminLink(t *testing.T) {
 
 	t.Run("manager auth protects the admin-link route", func(t *testing.T) {
 		service := newFakeInstanceService(instance)
-		deps := Dependencies{Instances: service, AdminUsername: "manager", AdminPassword: "secret"}
+		deps := Dependencies{Instances: service, Users: newTestUsers(t, "manager", "secret")}
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/instances/1/admin-link", nil)
 		New(deps).ServeHTTP(rec, req)
 		assertStatus(t, rec, http.StatusUnauthorized)
-		if rec.Header().Get("WWW-Authenticate") == "" {
-			t.Fatalf("expected WWW-Authenticate challenge header")
-		}
 		assertBodyFields(t, rec, map[string]any{"success": false, "error": "Unauthorized"})
 	})
 
 	t.Run("manager auth allows admin-link with valid credentials", func(t *testing.T) {
 		service := newFakeInstanceService(instance)
-		deps := Dependencies{Instances: service, AdminUsername: "manager", AdminPassword: "secret"}
+		deps := Dependencies{Instances: service, Users: newTestUsers(t, "manager", "secret")}
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/instances/1/admin-link", nil)
 		req.SetBasicAuth("manager", "secret")

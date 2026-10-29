@@ -20,7 +20,7 @@ func Open(ctx context.Context, dataDir string) (*DB, error) {
 		return nil, fmt.Errorf("create data directory %q: %w", dataDir, err)
 	}
 	dbPath := filepath.Join(dataDir, "gowa.db")
-	sqlDB, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)")
+	sqlDB, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %q: %w", dbPath, err)
 	}
@@ -63,6 +63,11 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, createInstancesTableSQL); err != nil {
 		return err
+	}
+	for _, stmt := range authTablesSQL {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
 	}
 	columns, err := instanceColumns(ctx, tx)
 	if err != nil {
