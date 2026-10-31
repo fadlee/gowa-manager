@@ -13,6 +13,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Loader2 } from 'lucide-react'
 import { VersionSelector } from './VersionSelector'
+import { BasicAuthWarning } from './BasicAuthRequirement'
 import { toast } from './ui/use-toast'
 import { generateInstanceName } from '../lib/utils'
 import type { InstanceConfig } from '../types'
@@ -134,6 +135,10 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
             onChange={setVersion}
             disabled={createMutation.isPending}
           />
+
+          <BasicAuthWarning version={version}>
+            <p>After creating the instance, add Basic Auth in its Settings before starting it.</p>
+          </BasicAuthWarning>
         </form>
 
         <DialogFooter>

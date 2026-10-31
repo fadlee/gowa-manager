@@ -256,7 +256,7 @@ export function SettingsSection({ instance }: SettingsSectionProps) {
       <div className="space-y-4">
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Configuration</label>
         <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-          <CliFlagsComponent flags={flags} onChange={setFlags} />
+          <CliFlagsComponent flags={flags} onChange={setFlags} gowaVersion={version} />
         </div>
       </div>
 

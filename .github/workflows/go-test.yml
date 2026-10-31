@@ -444,3 +444,6 @@ jobs:
 
       - name: Run script tests (workflows, Docker runtime, release artifacts)
         run: bun test scripts
+
+      - name: Run client unit tests
+        run: bun test client/test

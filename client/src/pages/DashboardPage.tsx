@@ -25,6 +25,7 @@ import {
 } from '../components/ui/select'
 import { CreateInstanceDialog } from '../components/CreateInstanceDialog'
 import { VersionUpdateIndicator } from '../components/VersionUpdateIndicator'
+import { BasicAuthMissingIndicator } from '../components/BasicAuthRequirement'
 import { toast } from '../components/ui/use-toast'
 import { AlertTriangle, Clock, Copy, Cpu, ExternalLink, MemoryStick, Plus, QrCode, RefreshCw, RotateCcw, Search, Smartphone } from 'lucide-react'
 import type { Instance, InstanceStatus } from '../types'
@@ -448,6 +449,7 @@ function InstanceCardSimple({ instance, onClick, onStatusUpdate }: InstanceCardS
                   {instance.gowa_version || 'latest'}
                 </Badge>
                 <VersionUpdateIndicator currentVersion={instance.gowa_version} />
+                <BasicAuthMissingIndicator instance={instance} />
                 <div className="flex items-center gap-1.5">
                   <span className={cn(
                     'w-2 h-2 rounded-full transition-shadow duration-300',

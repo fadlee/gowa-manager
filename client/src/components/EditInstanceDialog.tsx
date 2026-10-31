@@ -318,7 +318,7 @@ export function EditInstanceDialog({ instance, open, onOpenChange, showJsonViewI
                       </div>
                     ) : (
                       <div>
-                        <CliFlagsComponent flags={flags} onChange={setFlags} />
+                        <CliFlagsComponent flags={flags} onChange={setFlags} gowaVersion={version} />
                       </div>
                     )}
                   </div>

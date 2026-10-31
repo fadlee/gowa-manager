@@ -9,20 +9,23 @@ function parseVersionParts(version: string): [number, number, number] | null {
   ]
 }
 
+// compareVersions compares two "vX.Y.Z" versions. It returns null when either
+// one cannot be parsed (e.g. "latest").
+export function compareVersions(a: string, b: string): number | null {
+  const left = parseVersionParts(a)
+  const right = parseVersionParts(b)
+  if (!left || !right) return null
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index] ? 1 : -1
+  }
+  return 0
+}
+
 export function hasNewerVersion(currentVersion: string | null | undefined, latestVersion: string | null | undefined): boolean {
   const current = currentVersion ? currentVersion.trim().replace(/^v/i, '') : ''
   const latest = latestVersion ? latestVersion.trim().replace(/^v/i, '') : ''
 
   if (!current || !latest || current === 'latest' || current === latest) return false
 
-  const currentParts = parseVersionParts(current)
-  const latestParts = parseVersionParts(latest)
-  if (!currentParts || !latestParts) return false
-
-  for (let index = 0; index < latestParts.length; index += 1) {
-    if (latestParts[index] > currentParts[index]) return true
-    if (latestParts[index] < currentParts[index]) return false
-  }
-
-  return false
+  return compareVersions(latest, current) === 1
 }

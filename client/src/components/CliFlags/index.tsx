@@ -6,9 +6,11 @@ import { AdvancedOptionsSection } from './AdvancedOptionsSection'
 interface CliFlagsProps {
   flags: CliFlags
   onChange: (flags: CliFlags) => void
+  // The instance's selected GOWA version, used to warn when it needs Basic Auth.
+  gowaVersion?: string
 }
 
-export function CliFlagsComponent({ flags, onChange }: CliFlagsProps) {
+export function CliFlagsComponent({ flags, onChange, gowaVersion }: CliFlagsProps) {
   const updateFlag = (key: keyof CliFlags, value: any) => {
     const newFlags = { ...flags, [key]: value }
     onChange(newFlags)
@@ -27,7 +29,7 @@ export function CliFlagsComponent({ flags, onChange }: CliFlagsProps) {
 
   return (
     <div className="space-y-6">
-      <BasicAuthSection flags={flags} updateFlag={updateFlag} />
+      <BasicAuthSection flags={flags} updateFlag={updateFlag} gowaVersion={gowaVersion} />
       <WebhooksSection flags={flags} updateFlag={updateFlag} updateFlags={updateFlags} />
       <AdvancedOptionsSection flags={flags} updateFlag={updateFlag} />
     </div>

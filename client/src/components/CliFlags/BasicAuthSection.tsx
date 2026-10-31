@@ -5,13 +5,15 @@ import { Input } from '../ui/input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import type { CliFlags } from '../../types'
 import { generateUsername, generatePassword } from '../../lib/utils'
+import { BasicAuthWarning } from '../BasicAuthRequirement'
 
 interface BasicAuthSectionProps {
   flags: CliFlags
   updateFlag: (key: keyof CliFlags, value: any) => void
+  gowaVersion?: string
 }
 
-export function BasicAuthSection({ flags, updateFlag }: BasicAuthSectionProps) {
+export function BasicAuthSection({ flags, updateFlag, gowaVersion }: BasicAuthSectionProps) {
   const [newAuth, setNewAuth] = useState({ username: '', password: '' })
   const [visiblePasswords, setVisiblePasswords] = useState<{[key: number]: boolean}>({})
   const [copiedStates, setCopiedStates] = useState<{[key: number]: boolean}>({})
@@ -72,6 +74,12 @@ export function BasicAuthSection({ flags, updateFlag }: BasicAuthSectionProps) {
     <div className="space-y-3">
       <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Basic Authentication</label>
       <p className="text-xs text-gray-500 dark:text-gray-400">Add username:password pairs for basic auth</p>
+
+      {gowaVersion !== undefined && (
+        <BasicAuthWarning version={gowaVersion} flags={flags} checkFlags>
+          <p>Add a username and password below, then save and restart the instance.</p>
+        </BasicAuthWarning>
+      )}
 
       {/* Existing Auth Pairs */}
       {flags.basicAuth && flags.basicAuth.length > 0 && (

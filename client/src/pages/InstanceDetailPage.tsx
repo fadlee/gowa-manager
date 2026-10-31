@@ -26,6 +26,8 @@ import { FilesSection } from '../components/instance-detail/FilesSection'
 import { LogsSection } from '../components/instance-detail/LogsSection'
 import { DangerZoneSection } from '../components/instance-detail/DangerZoneSection'
 import { VersionUpdateIndicator } from '../components/VersionUpdateIndicator'
+import { BasicAuthMissingIndicator, BasicAuthWarning } from '../components/BasicAuthRequirement'
+import { flagsFromConfig } from '../lib/basicAuth'
 import { toast } from '../components/ui/use-toast'
 
 type TabType = 'overview' | 'api' | 'files' | 'logs' | 'settings' | 'danger'
@@ -199,6 +201,7 @@ export function InstanceDetailPage() {
                 {instance.gowa_version || 'latest'}
               </Badge>
               <VersionUpdateIndicator currentVersion={instance.gowa_version} className="hidden sm:inline-flex" />
+              <BasicAuthMissingIndicator instance={instance} className="hidden sm:inline-flex" />
             </div>
 
             {/* Right: Status and lifecycle actions */}
@@ -332,6 +335,15 @@ export function InstanceDetailPage() {
                 Retry
               </Button>
             </div>
+          )}
+
+          {/* Settings shows its own Basic Auth warning next to the fields. */}
+          {activeTab !== 'settings' && (
+            <BasicAuthWarning version={instance.gowa_version} flags={flagsFromConfig(instance.config)} checkFlags className="mb-6">
+              <Button variant="outline" size="sm" onClick={() => setActiveTab('settings')} className="mt-2 border-amber-400 dark:border-amber-700">
+                Add Basic Auth in Settings
+              </Button>
+            </BasicAuthWarning>
           )}
 
           {/* Tab content */}
