@@ -338,19 +338,20 @@ func TestAdminLink(t *testing.T) {
 	instance := instances.Instance{ID: 1, Key: "TESTKEY1", Name: "test-instance", Port: &port, Status: "stopped", Config: "{}", GOWAVersion: "latest", CreatedAt: baseTime, UpdatedAt: baseTime}
 	basicAuthConfig := `{"flags":{"basicAuth":[{"username":"admin","password":"secret"}]}}`
 
-	t.Run("returns plain link without basic auth and omits expiresAt", func(t *testing.T) {
-		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil)
+	// Instances without Basic Auth also get a magic link: its cookie makes
+	// the proxy reset GOWA UI's stored connection to this instance.
+	t.Run("returns magic link without basic auth", func(t *testing.T) {
+		expiresAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+		issuer := &fakeAdminLinkIssuer{link: AdminLink{URL: "/app/TESTKEY1/?autologin=issued-token", ExpiresAt: &expiresAt}}
+		rec := serveInstanceRequest(newFakeInstanceService(instance), nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil, withAdminLinkIssuer(issuer))
 		assertStatus(t, rec, http.StatusOK)
-		body := decodeBody(t, rec)
-		if body["url"] != "/app/TESTKEY1/" {
-			t.Fatalf("url = %#v, want /app/TESTKEY1/", body["url"])
-		}
-		if _, ok := body["expiresAt"]; ok {
-			t.Fatalf("unexpected expiresAt in %v", body)
+		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/?autologin=issued-token", "expiresAt": "2026-01-01T12:00:00Z"})
+		if issuer.called != 1 {
+			t.Fatalf("issuer called %d times, want 1", issuer.called)
 		}
 	})
 
-	t.Run("returns 503 for basic auth without issuer", func(t *testing.T) {
+	t.Run("returns 503 without issuer", func(t *testing.T) {
 		service := newFakeInstanceService(withInstance(instance, func(i *instances.Instance) { i.Config = basicAuthConfig }))
 		rec := serveInstanceRequest(service, nil, nil, http.MethodPost, "/api/instances/1/admin-link", nil)
 		assertStatus(t, rec, http.StatusServiceUnavailable)
@@ -438,13 +439,14 @@ func TestAdminLink(t *testing.T) {
 
 	t.Run("manager auth allows admin-link with valid credentials", func(t *testing.T) {
 		service := newFakeInstanceService(instance)
-		deps := Dependencies{Instances: service, Users: newTestUsers(t, "manager", "secret")}
+		issuer := &fakeAdminLinkIssuer{link: AdminLink{URL: "/app/TESTKEY1/?autologin=issued-token"}}
+		deps := Dependencies{Instances: service, Users: newTestUsers(t, "manager", "secret"), AdminLinkIssuer: issuer}
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/instances/1/admin-link", nil)
 		req.SetBasicAuth("manager", "secret")
 		New(deps).ServeHTTP(rec, req)
 		assertStatus(t, rec, http.StatusOK)
-		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/"})
+		assertJSON(t, rec, map[string]any{"url": "/app/TESTKEY1/?autologin=issued-token"})
 	})
 }
 

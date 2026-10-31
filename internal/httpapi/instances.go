@@ -381,10 +381,10 @@ func (h *instanceHandler) adminLink(w http.ResponseWriter, r *http.Request, id i
 		h.writeError(w, err, "Failed to get instance", false)
 		return
 	}
-	if !hasBasicAuth(item.Config) {
-		writeJSON(w, http.StatusOK, map[string]any{"url": "/app/" + item.Key + "/"})
-		return
-	}
+	// Every instance gets a magic link, with or without Basic Auth: its
+	// cookie makes the proxy write this instance's GOWA UI connection to
+	// localStorage. Instances share the manager origin, so without it the
+	// UI kept the previously opened instance's connection.
 	if h.adminLinks == nil {
 		h.writeError(w, instances.ErrRuntimeNotReady, "Admin link issuer not ready", false)
 		return
@@ -480,23 +480,4 @@ func errorMessage(err error, fallback string) string {
 		return err.Error()
 	}
 	return fallback
-}
-
-func hasBasicAuth(raw string) bool {
-	var config struct {
-		Flags struct {
-			BasicAuth []struct {
-				Username string `json:"username"`
-				Password string `json:"password"`
-			} `json:"basicAuth"`
-		} `json:"flags"`
-	}
-	if err := json.Unmarshal([]byte(raw), &config); err != nil {
-		return false
-	}
-	if len(config.Flags.BasicAuth) == 0 {
-		return false
-	}
-	auth := config.Flags.BasicAuth[0]
-	return auth.Username != "" && auth.Password != ""
 }

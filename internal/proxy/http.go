@@ -220,8 +220,8 @@ func modifyProxyResponse(resp *http.Response, ctx modifyResponseContext) error {
 	}
 
 	// GOWA UI localStorage bootstrap injection. Only HTML responses
-	// with a valid instance-scoped magic admin cookie and a configured
-	// Basic Auth pair are eligible. The bootstrap writes the Zustand
+	// with a valid instance-scoped magic admin cookie are eligible; an
+	// instance without Basic Auth gets empty credentials. The bootstrap writes the Zustand
 	// state entries that new GOWA UI releases read on startup, using
 	// the manager proxy URL as the connection base so all subsequent
 	// browser traffic stays under /app/{key}/.

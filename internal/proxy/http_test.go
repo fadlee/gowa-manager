@@ -1154,7 +1154,7 @@ func TestHTTPProxy_DoesNotInjectGOWAUIBootstrapWithInvalidCookie(t *testing.T) {
 	}
 }
 
-func TestHTTPProxy_DoesNotInjectGOWAUIBootstrapWithoutBasicAuth(t *testing.T) {
+func TestHTTPProxy_InjectsGOWAUIBootstrapWithoutBasicAuth(t *testing.T) {
 	upstream := newUpstreamServer(t)
 	port := upstreamPort(t, upstream)
 	inst := newRunningInstance("k", port, "")
@@ -1173,8 +1173,15 @@ func TestHTTPProxy_DoesNotInjectGOWAUIBootstrapWithoutBasicAuth(t *testing.T) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
-	if strings.Contains(string(body), "gowa-ui.connection.v1") {
-		t.Fatalf("body should not contain bootstrap without basic auth: %s", body)
+	for _, want := range []string{
+		`gowa-ui.connection.v1`,
+		srv.URL + `/app/k`,
+		`"username":""`,
+		`"password":""`,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("body missing %q (the previous instance's connection must be replaced): %s", want, body)
+		}
 	}
 }
 

@@ -691,12 +691,28 @@ func TestInjectGOWAUILocalStorageBootstrap_InsertsAfterHeadWhenNoModuleScript(t 
 	}
 }
 
-func TestInjectGOWAUILocalStorageBootstrap_ReturnsOriginalForMissingCredentials(t *testing.T) {
+// Without Basic Auth the bootstrap still points GOWA UI at this instance,
+// with empty credentials. Every instance shares the manager's origin and
+// therefore its localStorage, so skipping it left the previous instance's
+// connection in place and the admin page opened the wrong instance.
+func TestInjectGOWAUILocalStorageBootstrap_ResetsConnectionWithoutCredentials(t *testing.T) {
 	html := []byte(`<!doctype html><html><head></head><body>old ui</body></html>`)
-	inst := instances.Instance{Key: "K1", Config: `{"flags":{}}`}
+	for _, config := range []string{`{"flags":{}}`, ``, `not json`} {
+		inst := instances.Instance{Key: "K1", Config: config}
 
-	if got := InjectGOWAUILocalStorageBootstrap(html, "http://manager.test", inst); !bytes.Equal(got, html) {
-		t.Fatalf("HTML changed without credentials: %s", got)
+		got := string(InjectGOWAUILocalStorageBootstrap(html, "http://manager.test", inst))
+
+		for _, want := range []string{
+			`localStorage.setItem("gowa-ui.connection.v1"`,
+			`"baseUrl":"http://manager.test/app/K1"`,
+			`"username":""`,
+			`"password":""`,
+			`localStorage.setItem("gowa-ui.device.v1"`,
+		} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("config %q: injected HTML missing %q: %s", config, want, got)
+			}
+		}
 	}
 }
 

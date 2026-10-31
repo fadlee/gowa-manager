@@ -154,9 +154,10 @@ type gowaUIDeviceState struct {
 // first <script type="module"> tag, or immediately after the opening
 // <head> tag when no module script is present.
 //
-// When the instance has no usable Basic Auth credentials, or no safe
-// insertion point can be found, the original html bytes are returned
-// unchanged. All dynamic values are serialized with json.Marshal and
+// When the instance has no usable Basic Auth credentials, the connection
+// is written with an empty username and password. When no safe insertion
+// point can be found, the original html bytes are returned unchanged.
+// All dynamic values are serialized with json.Marshal and
 // the JSON payload is sanitized so the literal sequence "</script"
 // cannot terminate the inline script element early.
 //
@@ -164,10 +165,11 @@ type gowaUIDeviceState struct {
 // (scheme://host) and must not include a trailing slash; a trailing
 // slash is trimmed defensively.
 func InjectGOWAUILocalStorageBootstrap(html []byte, managerOrigin string, instance instances.Instance) []byte {
-	username, password, ok := GetInstanceBasicAuthCredentials(instance)
-	if !ok {
-		return html
-	}
+	// Without Basic Auth the credentials stay empty, but the connection is
+	// still written: every instance shares the manager origin's
+	// localStorage, so skipping it would leave the previously opened
+	// instance's connection in place and open the wrong instance.
+	username, password, _ := GetInstanceBasicAuthCredentials(instance)
 
 	connection := gowaUIConnectionState{Version: 0}
 	connection.State.BaseURL = strings.TrimRight(managerOrigin, "/") + "/app/" + instance.Key
