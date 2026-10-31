@@ -177,8 +177,12 @@ jobs:
           images: |
             ghcr.io/${{ github.repository_owner }}/gowa-manager
             fadlee/gowa-manager
+          # Only final releases move `latest`; prerelease tags (e.g. v3.0.0-rc.1) do not.
+          flavor: |
+            latest=false
           tags: |
             type=ref,event=tag
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
