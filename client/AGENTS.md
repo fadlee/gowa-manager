@@ -31,10 +31,10 @@ bun run preview
 In integrated mode (recommended for full stack), **from repo root**:
 
 ```bash
-bun run dev        # backend + static-build watch
+bun run dev        # Go backend + Vite (hot reload) on :5173
 # OR run separately:
-bun run dev:server # backend on :3000
-cd client && bun run dev  # frontend on :5173
+bun run dev:go     # backend on :3000
+bun run dev:web    # frontend on :5173
 ```
 
 ---

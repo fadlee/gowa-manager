@@ -11,11 +11,24 @@ git clone https://github.com/fadlee/gowa-manager.git
 cd gowa-manager
 bun install
 
-# Backend on :3000 (use a separate data dir for development)
-go run ./cmd/gowa-manager-go --data-dir .contract-tmp/dev -u admin -P password123
-
-# Frontend with hot reload on :5173 (proxies /api and /app to :3000)
 bun run dev
+```
+
+Open http://localhost:5173 and log in with `admin` / `password123`.
+
+`bun run dev` builds and starts the Go backend (on :3000, or the next free port) and the Vite dev server with hot reload, which proxies `/api` and `/app` to the backend. Ctrl+C stops both.
+
+- UI changes reload instantly. After changing Go code, press Ctrl+C and run `bun run dev` again.
+- Data is kept in `.contract-tmp/dev/` (gitignored). Delete it to start fresh.
+- Extra arguments go to the backend: `bun run dev -- --verbose`.
+- `GOWA_SKIP_STARTUP_INSTALL=1 bun run dev` skips downloading the latest GOWA on start.
+- To try the first-run setup page, run the two sides without a seeded user: `bun run dev:go -- --data-dir .contract-tmp/setup` and, in a second terminal, `bun run dev:web`. The setup token is printed by the backend.
+
+To preview the production build instead (one binary with the UI embedded, on :3000):
+
+```bash
+bun run build:go
+./dist-go/gowa-manager-go --data-dir .contract-tmp/preview -u admin -P password123
 ```
 
 ## Build

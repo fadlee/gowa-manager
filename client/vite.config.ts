@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Backend the dev server proxies to. `bun run dev` (scripts/dev.ts) sets it
+// when port 3000 is taken.
+const apiTarget = process.env.GOWA_DEV_API_URL || 'http://127.0.0.1:3000'
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -18,11 +22,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/app': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
         changeOrigin: true,
         ws: true,
       },

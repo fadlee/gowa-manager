@@ -17,12 +17,12 @@ Run all commands from the **repo root** unless noted.
 # Install frontend deps (Bun is used only for client tooling)
 bun install
 
-# Dev – frontend only (Vite dev server on :5173)
+# Dev – Go backend + Vite with hot reload (open :5173, admin / password123)
 bun run dev
 
-# Dev – Go backend
-bun run dev:go
-# OR: go run ./cmd/gowa-manager-go
+# Dev – one side only
+bun run dev:go     # Go backend (go run ./cmd/gowa-manager-go)
+bun run dev:web    # Vite dev server on :5173
 
 # Build for production (client + Go binary)
 bun run build:production
