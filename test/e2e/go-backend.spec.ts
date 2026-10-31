@@ -391,40 +391,29 @@ test.describe('Go backend E2E', () => {
     await client.startInstance(instance.id);
     await waitForInstanceStatus(client, instance.id, 'running', 20_000);
 
-    // The fake GOWA does not implement a WebSocket endpoint, but the
-    // manager's WSBridge is wired. We verify the WebSocket upgrade
-    // route is reachable by attempting a connection from the browser.
-    // A 4xx/5xx response is acceptable (no upstream WS handler); what
-    // we're asserting is that the route exists and doesn't crash the
-    // manager.
+    // The fake GOWA echoes WebSocket messages at {basePath}/ws, like the
+    // live-updates socket of real GOWA. Round-trip a message through the
+    // manager's WebSocket proxy.
     const wsUrl = `${baseURL.replace('http', 'ws')}/app/${instance.key}/ws`;
     const result = await page.evaluate(async (url) => {
-      return new Promise<{ ok: boolean; error?: string }>((resolve) => {
-        try {
-          const ws = new WebSocket(url);
-          const timer = setTimeout(() => {
-            resolve({ ok: true, error: 'timeout (expected — fake GOWA has no WS handler)' });
-          }, 3000);
-          ws.onopen = () => {
-            clearTimeout(timer);
-            ws.close();
-            resolve({ ok: true });
-          };
-          ws.onerror = () => {
-            clearTimeout(timer);
-            // A connection error is expected since the fake GOWA has no
-            // WebSocket endpoint. The important thing is that the route
-            // exists and the manager didn't crash.
-            resolve({ ok: true, error: 'connection error (expected)' });
-          };
-        } catch (err) {
-          resolve({ ok: false, error: String(err) });
-        }
+      return new Promise<{ echoed?: string; error?: string }>((resolve) => {
+        const ws = new WebSocket(url);
+        const timer = setTimeout(() => resolve({ error: 'timeout' }), 5000);
+        ws.onopen = () => ws.send('ping-through-proxy');
+        ws.onmessage = (event) => {
+          clearTimeout(timer);
+          ws.close();
+          resolve({ echoed: String(event.data) });
+        };
+        ws.onerror = () => {
+          clearTimeout(timer);
+          resolve({ error: 'connection error' });
+        };
       });
     }, wsUrl);
-    expect(result.ok).toBe(true);
+    expect(result).toEqual({ echoed: 'ping-through-proxy' });
 
-    // Verify the manager is still alive after the WS attempt.
+    // Verify the manager is still alive after the WebSocket session.
     const readyResp = await page.request.get(`${baseURL}/api/ready`);
     expect(readyResp.ok()).toBeTruthy();
 

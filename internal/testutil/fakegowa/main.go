@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func main() {
@@ -85,12 +87,35 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	}
 
+	// GOWA serves its live-updates WebSocket at {basePath}/ws. The fake
+	// echoes every message so proxy tests can do a real round trip.
+	wsEcho := func(w http.ResponseWriter, r *http.Request) {
+		// Like GOWA, accept any Origin: browsers send the manager's.
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+		ctx := r.Context()
+		for {
+			kind, data, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			if err := conn.Write(ctx, kind, data); err != nil {
+				return
+			}
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthJSON)
 	mux.HandleFunc("/health", healthText)
+	mux.HandleFunc("/ws", wsEcho)
 	if basePath != "" {
 		mux.HandleFunc(basePath+"/api/health", healthJSON)
 		mux.HandleFunc(basePath+"/health", healthText)
+		mux.HandleFunc(basePath+"/ws", wsEcho)
 	}
 
 	server := &http.Server{Handler: mux}
