@@ -11,12 +11,17 @@ import {
 } from './ui/dialog'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Loader2 } from 'lucide-react'
+import { Switch } from './ui/switch'
+import { CopyButton } from './ui/shadcn-io/copy-button'
+import { Loader2, RefreshCw } from 'lucide-react'
 import { VersionSelector } from './VersionSelector'
-import { BasicAuthWarning } from './BasicAuthRequirement'
+import { BasicAuthWarning, useBasicAuthRequirement } from './BasicAuthRequirement'
 import { toast } from './ui/use-toast'
-import { generateInstanceName } from '../lib/utils'
-import type { InstanceConfig } from '../types'
+import { generateInstanceName, generatePassword, generateUsername } from '../lib/utils'
+import { buildCreateInstanceConfig } from '../lib/instanceConfig'
+import type { BasicAuthPair } from '../types'
+
+const newCredentials = (): BasicAuthPair => ({ username: generateUsername(), password: generatePassword() })
 
 interface CreateInstanceDialogProps {
   open: boolean
@@ -27,12 +32,19 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
   const [name, setName] = useState('')
   const [version, setVersion] = useState('latest')
   const [errors, setErrors] = useState<{name?: string}>({})
+  // null follows the default: on when the selected GOWA version needs
+  // Basic Auth to start (v9.8.0+). A toggle by the user overrides it.
+  const [generateAuthChoice, setGenerateAuthChoice] = useState<boolean | null>(null)
+  const [credentials, setCredentials] = useState<BasicAuthPair>(newCredentials)
+  const { required: authRequired } = useBasicAuthRequirement(version)
+  const generateAuth = generateAuthChoice ?? authRequired
   const queryClient = useQueryClient()
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) {
       setName(generateInstanceName())
+      setCredentials(newCredentials())
       // Select the generated name so the user can immediately type
       // to replace it if they want a custom name. The small delay
       // lets the Radix Dialog finish its open animation.
@@ -58,6 +70,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
   const handleClose = () => {
     setName('')
     setVersion('latest')
+    setGenerateAuthChoice(null)
     setErrors({})
     onOpenChange(false)
   }
@@ -88,16 +101,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
 
     data.gowa_version = version
 
-    // Default configuration
-    const defaultConfig: InstanceConfig = {
-      args: ['rest', '--port=PORT'],
-      flags: {
-        accountValidation: true,
-        os: 'GowaManager'
-      }
-    }
-
-    data.config = JSON.stringify(defaultConfig)
+    data.config = JSON.stringify(buildCreateInstanceConfig(generateAuth ? credentials : null))
 
     createMutation.mutate(data)
   }
@@ -136,9 +140,48 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
             disabled={createMutation.isPending}
           />
 
-          <BasicAuthWarning version={version}>
-            <p>After creating the instance, add Basic Auth in its Settings before starting it.</p>
-          </BasicAuthWarning>
+          <div className="space-y-2">
+            <div className="flex gap-3 justify-between items-start">
+              <div className="space-y-0.5">
+                <label htmlFor="generate-basic-auth" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Generate Basic Auth credentials
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Protects the instance's GOWA API and UI. You can change them later in Settings.
+                </p>
+              </div>
+              <Switch
+                id="generate-basic-auth"
+                checked={generateAuth}
+                onCheckedChange={setGenerateAuthChoice}
+                disabled={createMutation.isPending}
+              />
+            </div>
+            {generateAuth && (
+              <div className="flex gap-2 items-center p-2 bg-gray-100 rounded-md dark:bg-gray-800">
+                <code className="flex-1 min-w-0 font-mono text-sm break-all text-gray-900 dark:text-gray-100">
+                  {credentials.username}:{credentials.password}
+                </code>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCredentials(newCredentials())}
+                  className="p-0 w-7 h-7 shrink-0"
+                  aria-label="Generate new credentials"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+                <CopyButton content={`${credentials.username}:${credentials.password}`} variant="ghost" aria-label="Copy credentials" />
+              </div>
+            )}
+          </div>
+
+          {!generateAuth && (
+            <BasicAuthWarning version={version}>
+              <p>Turn on "Generate Basic Auth credentials", or add Basic Auth in the instance's Settings before starting it.</p>
+            </BasicAuthWarning>
+          )}
         </form>
 
         <DialogFooter>
