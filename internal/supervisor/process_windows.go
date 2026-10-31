@@ -296,6 +296,7 @@ func (p *windowsProcess) startWait() {
 			defer windows.CloseHandle(handle)
 			_, err = windows.WaitForSingleObject(handle, windows.INFINITE)
 			p.waitErr = err
+			p.waitForOutput(time.Second)
 			var code uint32
 			if err == nil && windows.GetExitCodeProcess(handle, &code) == nil && code != 0 {
 				p.exitStatus = fmt.Sprintf("exit status %d", code)
@@ -303,6 +304,28 @@ func (p *windowsProcess) startWait() {
 			close(p.waitDone)
 		}()
 	})
+}
+
+// waitForOutput lets the output pipes drain after the process exits, so its
+// last lines (often the reason it exited) are copied before Wait returns,
+// like exec.Cmd.Wait on Unix. It is bounded because a descendant that
+// inherited the pipe can keep it open.
+func (p *windowsProcess) waitForOutput(limit time.Duration) {
+	p.mu.Lock()
+	pipes := append([]*windowsOutputPipe(nil), p.pipes...)
+	p.mu.Unlock()
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	for _, pipe := range pipes {
+		if pipe == nil {
+			continue
+		}
+		select {
+		case <-pipe.done:
+		case <-timer.C:
+			return
+		}
+	}
 }
 
 // ExitStatus reports how the process ended when it exited unsuccessfully,
@@ -327,7 +350,7 @@ func (p *windowsProcess) duplicateProcessHandle() (windows.Handle, error) {
 		return 0, err
 	}
 	var duplicate windows.Handle
-	if err := windows.DuplicateHandle(currentProcess, p.processHandle, currentProcess, &duplicate, windows.SYNCHRONIZE, false, 0); err != nil {
+	if err := windows.DuplicateHandle(currentProcess, p.processHandle, currentProcess, &duplicate, windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, 0); err != nil {
 		return 0, err
 	}
 	return duplicate, nil
