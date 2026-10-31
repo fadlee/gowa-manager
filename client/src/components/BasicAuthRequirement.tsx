@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ShieldAlert } from 'lucide-react'
+import { Lock, LockOpen, ShieldAlert } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { BASIC_AUTH_REQUIRED_SINCE, flagsFromConfig, hasBasicAuth, requiresBasicAuth, resolveGowaVersion } from '../lib/basicAuth'
 import { cn } from '../lib/utils'
@@ -20,13 +20,6 @@ export function useBasicAuthRequirement(version: string | null | undefined) {
     required: requiresBasicAuth(version, latestInstalled),
     resolvedVersion: resolveGowaVersion(version, latestInstalled),
   }
-}
-
-// useMissingBasicAuth is true when the instance's saved config lacks the
-// Basic Auth its GOWA version needs, so the instance cannot start.
-export function useMissingBasicAuth(instance: Pick<Instance, 'gowa_version' | 'config'>): boolean {
-  const { required } = useBasicAuthRequirement(instance.gowa_version)
-  return required && !hasBasicAuth(flagsFromConfig(instance.config))
 }
 
 function versionLabel(resolvedVersion: string | null): string {
@@ -66,39 +59,51 @@ export function BasicAuthWarning({ version, flags, checkFlags = false, children,
   )
 }
 
-interface BasicAuthMissingIndicatorProps {
+interface BasicAuthBadgeProps {
   instance: Pick<Instance, 'gowa_version' | 'config'>
   className?: string
 }
 
-// BasicAuthMissingIndicator is a compact icon for instance lists and headers.
-export function BasicAuthMissingIndicator({ instance, className }: BasicAuthMissingIndicatorProps) {
-  const missing = useMissingBasicAuth(instance)
-  const { resolvedVersion } = useBasicAuthRequirement(instance.gowa_version)
-  if (!missing) return null
+// BasicAuthBadge shows at a glance whether an instance has Basic Auth:
+// green "Auth" when it does, grey "No auth" when its GOWA version runs
+// without it, and amber "No auth" when its version will not start.
+export function BasicAuthBadge({ instance, className }: BasicAuthBadgeProps) {
+  const { required, resolvedVersion } = useBasicAuthRequirement(instance.gowa_version)
+  const secured = hasBasicAuth(flagsFromConfig(instance.config))
+  const blocking = required && !secured
+
+  const Icon = secured ? Lock : blocking ? ShieldAlert : LockOpen
+  const label = secured ? 'Auth' : 'No auth'
+  const title = secured ? 'Basic Auth enabled' : blocking ? 'Basic Auth required' : 'No Basic Auth'
+  const detail = secured
+    ? "The instance's GOWA API and UI require a username and password."
+    : blocking
+      ? `${versionLabel(resolvedVersion)} will not start until you add Basic Auth in the instance settings.`
+      : "Anyone who can reach the manager can use this instance's GOWA API and UI. Add Basic Auth in the instance settings."
 
   return (
     <TooltipProvider delayDuration={150}>
       <Tooltip>
         <TooltipTrigger asChild>
           <span
-            role="img"
             tabIndex={0}
-            aria-label="Basic Auth required"
+            aria-label={title}
             onClick={(event) => event.stopPropagation()}
             className={cn(
-              'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-amber-600 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 dark:text-amber-400 dark:hover:bg-amber-950/40',
+              'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-offset-2',
+              secured && 'bg-green-50 text-green-700 focus:ring-green-400 dark:bg-green-950/40 dark:text-green-300',
+              blocking && 'bg-amber-50 text-amber-700 focus:ring-amber-400 dark:bg-amber-950/40 dark:text-amber-300',
+              !secured && !blocking && 'bg-gray-100 text-gray-500 focus:ring-gray-400 dark:bg-gray-800 dark:text-gray-400',
               className,
             )}
           >
-            <ShieldAlert className="h-3.5 w-3.5" />
+            <Icon className="h-3 w-3" />
+            {label}
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-64 text-xs leading-relaxed">
-          <p className="font-medium">Basic Auth required</p>
-          <p className="mt-1 text-gray-600 dark:text-gray-300">
-            {versionLabel(resolvedVersion)} will not start until you add Basic Auth in the instance settings.
-          </p>
+          <p className="font-medium">{title}</p>
+          <p className="mt-1 text-gray-600 dark:text-gray-300">{detail}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

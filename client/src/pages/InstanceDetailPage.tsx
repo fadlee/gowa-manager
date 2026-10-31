@@ -26,7 +26,7 @@ import { FilesSection } from '../components/instance-detail/FilesSection'
 import { LogsSection } from '../components/instance-detail/LogsSection'
 import { DangerZoneSection } from '../components/instance-detail/DangerZoneSection'
 import { VersionUpdateIndicator } from '../components/VersionUpdateIndicator'
-import { BasicAuthMissingIndicator, BasicAuthWarning } from '../components/BasicAuthRequirement'
+import { BasicAuthBadge, BasicAuthWarning } from '../components/BasicAuthRequirement'
 import { flagsFromConfig } from '../lib/basicAuth'
 import { toast } from '../components/ui/use-toast'
 
@@ -201,7 +201,7 @@ export function InstanceDetailPage() {
                 {instance.gowa_version || 'latest'}
               </Badge>
               <VersionUpdateIndicator currentVersion={instance.gowa_version} className="hidden sm:inline-flex" />
-              <BasicAuthMissingIndicator instance={instance} className="hidden sm:inline-flex" />
+              <BasicAuthBadge instance={instance} className="hidden sm:inline-flex" />
             </div>
 
             {/* Right: Status and lifecycle actions */}
