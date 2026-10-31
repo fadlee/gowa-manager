@@ -139,6 +139,8 @@ Each running instance is available at `http://<manager>/app/<instance-key>/`. Th
 curl -u gowa-user:gowa-pass http://localhost:3000/app/ABC12345/app/devices
 ```
 
+> **GOWA v9.8.0 and newer refuse to start without Basic Auth.** If an instance stops a few seconds after you start it, open the instance settings and add a Basic Auth username and password. The reason is shown on the instance card and in the manager log.
+
 ## Upgrading
 
 - **Docker:** `docker pull fadlee/gowa-manager:latest`, then recreate the container with the same volume.

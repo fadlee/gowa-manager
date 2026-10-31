@@ -840,7 +840,7 @@ func TestAppLifecycleCallbacksPersistSupervisorExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	callbacks := appLifecycleCallbacks{repo: repo}
+	callbacks := &appLifecycleCallbacks{repo: repo}
 
 	if err := callbacks.PersistSupervisorStatus(ctx, supervisor.ProcessSnapshot{InstanceID: created.ID, State: supervisor.StateRunning, PID: 123}); err != nil {
 		t.Fatalf("PersistSupervisorStatus error = %v", err)

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +50,7 @@ type LifecycleOptions struct {
 	DeviceCache     DeviceCacheCleaner
 	Monitor         ProcessMonitor
 	Logs            *instancelogs.Store
+	Logger          *slog.Logger
 	MonitorTimeout  time.Duration
 	Now             func() time.Time
 	Sleep           func(context.Context, time.Duration) error
@@ -74,6 +77,7 @@ type LifecycleService struct {
 	cache          DeviceCacheCleaner
 	monitor        ProcessMonitor
 	logs           *instancelogs.Store
+	logger         *slog.Logger
 	monitorTimeout time.Duration
 	now            func() time.Time
 	sleep          func(context.Context, time.Duration) error
@@ -117,7 +121,7 @@ func NewLifecycleService(opts LifecycleOptions) *LifecycleService {
 	if monitorTimeout <= 0 {
 		monitorTimeout = 200 * time.Millisecond
 	}
-	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, logs: opts.Logs, monitorTimeout: monitorTimeout, now: now, sleep: sleep, startMu: make(map[int64]*startLock), logWriters: make(map[int64]logWriterPair)}
+	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, logs: opts.Logs, logger: opts.Logger, monitorTimeout: monitorTimeout, now: now, sleep: sleep, startMu: make(map[int64]*startLock), logWriters: make(map[int64]logWriterPair)}
 }
 
 func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus, error) {
@@ -210,13 +214,61 @@ func (s *LifecycleService) PersistSupervisorStatus(ctx context.Context, snapshot
 	return err
 }
 
+// PersistSupervisorExit records an exit the manager did not ask for. The
+// instance's last error output is attached to the exit reason so the cause
+// shows up in the UI and in the manager log instead of only in the
+// instance's own log.
 func (s *LifecycleService) PersistSupervisorExit(snapshot supervisor.ProcessSnapshot) {
+	s.flushLogWriters(snapshot.InstanceID)
+	reason := snapshot.ExitError
 	if snapshot.ExitError != "" {
 		snapshot.State = supervisor.StateFailed
+		if output := s.lastErrorOutput(snapshot.InstanceID); output != "" {
+			snapshot.ExitError += ": " + output
+		}
+		reason = safeSupervisorExitMessage(snapshot.ExitError)
 	} else {
 		snapshot.State = supervisor.StateStopped
+		reason = "exit status 0"
+	}
+	if s.logger != nil {
+		s.logger.Warn("instance exited unexpectedly", "instance", snapshot.InstanceID, "pid", snapshot.PID, "reason", reason)
 	}
 	_ = s.PersistSupervisorStatus(context.Background(), snapshot)
+}
+
+var logMessagePattern = regexp.MustCompile(`\bmsg=("(?:[^"\\]|\\.)*"|\S+)`)
+
+// lastErrorOutput returns the most relevant recent output line of an
+// instance: the last fatal/panic/error line, else the last line. For
+// logfmt lines (GOWA uses logrus) only the msg value is kept.
+func (s *LifecycleService) lastErrorOutput(id int64) string {
+	if s.logs == nil {
+		return ""
+	}
+	entries := s.logs.Tail(id, 50)
+	line := ""
+	for i := len(entries) - 1; i >= 0; i-- {
+		candidate := strings.TrimSpace(entries[i].Line)
+		if candidate == "" {
+			continue
+		}
+		if line == "" {
+			line = candidate
+		}
+		lower := strings.ToLower(candidate)
+		if strings.Contains(lower, "fatal") || strings.Contains(lower, "panic") || strings.Contains(lower, "error") {
+			line = candidate
+			break
+		}
+	}
+	if match := logMessagePattern.FindStringSubmatch(line); match != nil {
+		if unquoted, err := strconv.Unquote(match[1]); err == nil {
+			return unquoted
+		}
+		return match[1]
+	}
+	return line
 }
 
 func safeSupervisorExitMessage(message string) string {
@@ -225,8 +277,8 @@ func safeSupervisorExitMessage(message string) string {
 		return "process exited unexpectedly"
 	}
 	message = redactSecretValues(message)
-	if len(message) > 200 {
-		message = message[:200]
+	if len(message) > 500 {
+		message = message[:500]
 	}
 	return message
 }
@@ -245,6 +297,11 @@ func redactSecretValues(message string) string {
 			continue
 		}
 		if secretNamePattern.MatchString(lower) {
+			if !strings.ContainsAny(trimmed, "=:") && strings.ContainsAny(trimmed[len(trimmed)-1:], ",.;)") {
+				// A secret's name in prose ("username or password, and"),
+				// not a name/value pair.
+				continue
+			}
 			fields[i] = redactSecretField(field)
 			if !strings.ContainsAny(trimmed, "=:") || strings.HasSuffix(trimmed, "=") || strings.HasSuffix(trimmed, ":") {
 				redactNext = true

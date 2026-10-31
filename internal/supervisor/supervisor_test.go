@@ -625,6 +625,32 @@ func (w *recordingWriter) String() string {
 	return w.s
 }
 
+func TestSupervisorExitWithNonZeroStatusIsFailed(t *testing.T) {
+	proc := &exitStatusProcess{fakeProcess: newFakeProcess(1011), status: "exit status 1"}
+	s := newTestSupervisor(t, func(context.Context, StartConfig) (Process, error) { return proc, nil })
+	if _, err := s.Start(context.Background(), StartConfig{InstanceID: 11, Path: "fakegowa", ReadyTimeout: time.Second}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	proc.exit(nil)
+	s.waitForExitCallbacks(t, 1)
+	snapshot, ok := s.Status(11)
+	if !ok || snapshot.State != StateFailed {
+		t.Fatalf("Status() = %+v ok %v, want failed", snapshot, ok)
+	}
+	if got := s.lastExit().ExitError; got != "exit status 1" {
+		t.Fatalf("exit callback ExitError = %q, want exit status 1", got)
+	}
+}
+
+// exitStatusProcess is a fakeProcess that reports a non-zero exit status,
+// like the platform processes do after an unsuccessful exit.
+type exitStatusProcess struct {
+	*fakeProcess
+	status string
+}
+
+func (p *exitStatusProcess) ExitStatus() string { return p.status }
+
 type fakeProcess struct {
 	pid int
 
@@ -685,6 +711,7 @@ type testSupervisor struct {
 	mu       sync.Mutex
 	starts   int
 	exits    int
+	last     ProcessSnapshot
 	exitCond *sync.Cond
 	ready    ReadinessProbe
 	onStatus StatusCallback
@@ -706,7 +733,13 @@ func newTestSupervisor(t *testing.T, starter Starter) *testSupervisor {
 		}),
 		ReadinessProbe: func(ctx context.Context, snapshot ProcessSnapshot) error { return ts.ready(ctx, snapshot) },
 		StatusCallback: func(ctx context.Context, snapshot ProcessSnapshot) error { return ts.onStatus(ctx, snapshot) },
-		ExitCallback:   func(snapshot ProcessSnapshot) { ts.mu.Lock(); ts.exits++; ts.exitCond.Broadcast(); ts.mu.Unlock() },
+		ExitCallback: func(snapshot ProcessSnapshot) {
+			ts.mu.Lock()
+			ts.exits++
+			ts.last = snapshot
+			ts.exitCond.Broadcast()
+			ts.mu.Unlock()
+		},
 	})
 	return ts
 }
@@ -719,6 +752,11 @@ func (p starterPlatform) Start(ctx context.Context, config ProcessConfig) (Proce
 
 func (s *testSupervisor) startCalls() int { s.mu.Lock(); defer s.mu.Unlock(); return s.starts }
 func (s *testSupervisor) exitCalls() int  { s.mu.Lock(); defer s.mu.Unlock(); return s.exits }
+func (s *testSupervisor) lastExit() ProcessSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.last
+}
 func (s *testSupervisor) waitForExitCallbacks(t *testing.T, want int) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)

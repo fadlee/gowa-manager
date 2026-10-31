@@ -25,6 +25,12 @@ type Process interface {
 	Close() error
 }
 
+// exitStatuser is implemented by processes that can report a non-zero
+// exit status after Wait returns.
+type exitStatuser interface {
+	ExitStatus() string
+}
+
 type StartConfig struct {
 	InstanceID   int64
 	Path         string
@@ -345,6 +351,9 @@ func (s *Supervisor) handleExit(instanceID, generation int64, snapshot ProcessSn
 	if waitErr != nil {
 		exited.State = StateFailed
 		exited.ExitError = waitErr.Error()
+	} else if status, ok := proc.(exitStatuser); ok && status.ExitStatus() != "" {
+		exited.State = StateFailed
+		exited.ExitError = status.ExitStatus()
 	}
 	if err := s.registry.MarkExited(instanceID, generation, exited.State); errors.Is(err, ErrStaleGeneration) {
 		return

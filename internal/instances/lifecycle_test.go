@@ -1,14 +1,17 @@
 package instances
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/fadlee/gowa-manager/internal/instancelogs"
 	"github.com/fadlee/gowa-manager/internal/monitoring"
 	"github.com/fadlee/gowa-manager/internal/supervisor"
 )
@@ -386,6 +389,29 @@ func TestLifecycleSupervisorExitCallbackPersistsStoppedAndClearsCache(t *testing
 	}
 	if !reflect.DeepEqual(deps.cache.cleared, []int64{1}) {
 		t.Fatalf("cleared cache = %#v, want [1]", deps.cache.cleared)
+	}
+}
+
+func TestLifecycleSupervisorExitReportsLastErrorOutput(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	var logged bytes.Buffer
+	lc.logger = slog.New(slog.NewTextHandler(&logged, nil))
+	lc.logs = instancelogs.NewStore(100)
+	deps.repo.instances[1] = testInstance(1, "running", 3000)
+	now := deps.now()
+	lc.logs.Append(1, instancelogs.StreamStderr, `time="2026-10-31T04:12:37Z" level=info msg="[DEVICE_MANAGER] discovered 0 device records"`, now)
+	lc.logs.Append(1, instancelogs.StreamStderr, `time="2026-10-31T04:12:37Z" level=fatal msg="APP_BASIC_AUTH is empty or has an entry with an empty username or password, and APP_HOST \"0.0.0.0\" is not a loopback address."`, now)
+	lc.logs.Append(1, instancelogs.StreamStdout, "shutting down", now)
+
+	lc.PersistSupervisorExit(supervisor.ProcessSnapshot{InstanceID: 1, State: supervisor.StateRunning, PID: 42, ExitError: "exit status 1"})
+
+	instance := deps.repo.instances[1]
+	want := `exit status 1: APP_BASIC_AUTH is empty or has an entry with an empty username or password, and APP_HOST "0.0.0.0" is not a loopback address.`
+	if instance.Status != "failed" || instance.ErrorMessage == nil || *instance.ErrorMessage != want {
+		t.Fatalf("instance = %q %v, want failed with %q", instance.Status, instance.ErrorMessage, want)
+	}
+	if !strings.Contains(logged.String(), "instance exited unexpectedly") || !strings.Contains(logged.String(), "APP_BASIC_AUTH is empty") {
+		t.Fatalf("manager log = %q, want exit reason", logged.String())
 	}
 }
 

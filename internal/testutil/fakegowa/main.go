@@ -107,6 +107,15 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if mode == "fatal-after-ready" {
+		// Like GOWA refusing its configuration after startup: log a
+		// logrus fatal line to stderr and exit 1.
+		go func() {
+			time.Sleep(time.Duration(envInt("FAKE_GOWA_FATAL_DELAY_MS", 300)) * time.Millisecond)
+			fmt.Fprintln(os.Stderr, `time="2026-01-01T00:00:00Z" level=fatal msg="fake fatal: refusing to start \"0.0.0.0\""`)
+			os.Exit(1)
+		}()
+	}
 	if err := server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

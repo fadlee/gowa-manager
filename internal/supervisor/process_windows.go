@@ -38,6 +38,9 @@ type windowsProcess struct {
 	waitOnce      sync.Once
 	waitDone      chan struct{}
 	waitErr       error
+	// exitStatus describes a non-zero exit (e.g. "exit status 1"). It is
+	// written before waitDone is closed.
+	exitStatus string
 }
 
 type jobObjectExtendedLimitInformation struct {
@@ -293,9 +296,24 @@ func (p *windowsProcess) startWait() {
 			defer windows.CloseHandle(handle)
 			_, err = windows.WaitForSingleObject(handle, windows.INFINITE)
 			p.waitErr = err
+			var code uint32
+			if err == nil && windows.GetExitCodeProcess(handle, &code) == nil && code != 0 {
+				p.exitStatus = fmt.Sprintf("exit status %d", code)
+			}
 			close(p.waitDone)
 		}()
 	})
+}
+
+// ExitStatus reports how the process ended when it exited unsuccessfully,
+// or "" while it is running or after a clean exit.
+func (p *windowsProcess) ExitStatus() string {
+	select {
+	case <-p.waitDone:
+		return p.exitStatus
+	default:
+		return ""
+	}
 }
 
 func (p *windowsProcess) duplicateProcessHandle() (windows.Handle, error) {

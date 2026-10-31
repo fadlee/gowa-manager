@@ -357,9 +357,12 @@ func buildHTTPDeps(ctx context.Context, opts httpDepsOptions) (httpapi.Dependenc
 	releases := versions.NewGitHubClient("", nil)
 	versionService := versions.NewService(opts.DataDir, releases)
 	versionInstaller := versions.NewInstaller(opts.DataDir, releases, nil)
-	lifecycleCallbacks := appLifecycleCallbacks{repo: repo, cache: deviceClient, monitor: processMonitor}
+	lifecycleCallbacks := &appLifecycleCallbacks{repo: repo, cache: deviceClient, monitor: processMonitor}
 	processSupervisor := supervisor.New(supervisor.SupervisorConfig{StatusCallback: lifecycleCallbacks.PersistSupervisorStatus, ExitCallback: lifecycleCallbacks.PersistSupervisorExit})
-	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient, Monitor: processMonitor, Logs: logStore})
+	lifecycle := instances.NewLifecycleService(instances.LifecycleOptions{Repository: repo, Filesystem: filesystem, PortAllocator: portAllocator, PortChecker: appPortChecker{}, VersionResolver: appVersionResolver{service: versionService}, Supervisor: processSupervisor, DeviceCache: deviceClient, Monitor: processMonitor, Logs: logStore, Logger: opts.Logger})
+	// The supervisor is built before the lifecycle service, so its callbacks
+	// are bound now: exit handling needs the lifecycle's log store and logger.
+	lifecycleCallbacks.lifecycle = lifecycle
 	instanceService := instances.NewService(repo, filesystem, portAllocator, appServiceLifecycle{service: lifecycle}, instances.WithDeviceCacheCleaner(deviceClient), instances.WithMonitorCacheCleaner(processMonitor), instances.WithLogsCleaner(logStore))
 
 	// Build the auto-update scheduler service. It is wired into deps.AutoUpdate
@@ -471,20 +474,24 @@ func (a appHTTPLifecycle) Status(ctx context.Context, id int64) (httpapi.Instanc
 type appServiceLifecycle struct{ service *instances.LifecycleService }
 
 type appLifecycleCallbacks struct {
-	repo    instances.Repository
-	cache   instances.DeviceCacheCleaner
-	monitor instances.ProcessMonitor
+	repo      instances.Repository
+	cache     instances.DeviceCacheCleaner
+	monitor   instances.ProcessMonitor
+	lifecycle *instances.LifecycleService
 }
 
-func (a appLifecycleCallbacks) service() *instances.LifecycleService {
+func (a *appLifecycleCallbacks) service() *instances.LifecycleService {
+	if a.lifecycle != nil {
+		return a.lifecycle
+	}
 	return instances.NewLifecycleService(instances.LifecycleOptions{Repository: a.repo, DeviceCache: a.cache, Monitor: a.monitor})
 }
 
-func (a appLifecycleCallbacks) PersistSupervisorStatus(ctx context.Context, snapshot supervisor.ProcessSnapshot) error {
+func (a *appLifecycleCallbacks) PersistSupervisorStatus(ctx context.Context, snapshot supervisor.ProcessSnapshot) error {
 	return a.service().PersistSupervisorStatus(ctx, snapshot)
 }
 
-func (a appLifecycleCallbacks) PersistSupervisorExit(snapshot supervisor.ProcessSnapshot) {
+func (a *appLifecycleCallbacks) PersistSupervisorExit(snapshot supervisor.ProcessSnapshot) {
 	a.service().PersistSupervisorExit(snapshot)
 }
 

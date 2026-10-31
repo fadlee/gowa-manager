@@ -190,6 +190,26 @@ func TestLinuxProcessCancellationBeforeStartLeavesNoProcess(t *testing.T) {
 	}
 }
 
+func TestLinuxProcessReportsNonZeroExitStatus(t *testing.T) {
+	proc := startLinuxProcessNoHealth(t, "crash", map[string]string{"FAKE_GOWA_EXIT_CODE": "3"})
+	if err := proc.Wait(context.Background()); err != nil {
+		t.Fatalf("Wait() error = %v, want nil for a normal exit", err)
+	}
+	if got := proc.ExitStatus(); got != "exit status 3" {
+		t.Fatalf("ExitStatus() = %q, want exit status 3", got)
+	}
+}
+
+func TestLinuxProcessGracefulStopHasNoExitStatus(t *testing.T) {
+	proc := startLinuxProcess(t, "serve", nil)
+	if err := proc.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if got := proc.ExitStatus(); got != "" {
+		t.Fatalf("ExitStatus() = %q, want empty after a clean exit", got)
+	}
+}
+
 func startLinuxProcess(t *testing.T, mode string, env map[string]string) *linuxProcess {
 	t.Helper()
 	proc, port := startLinuxProcessWithPort(t, mode, env)

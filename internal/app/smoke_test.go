@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,6 +110,71 @@ func TestRunSmokeFakeGOWA(t *testing.T) {
 	cleanupOrphanedGOWA(t, binaryPath)
 }
 
+// TestRunReportsInstanceCrashReason checks that when an instance exits on
+// its own, the reason (exit status plus the instance's last fatal output)
+// reaches the instance's error_message and the manager log.
+func TestRunReportsInstanceCrashReason(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires building fakegowa binary")
+	}
+	dataDir := t.TempDir()
+	binaryPath := installFakeGOWA(t, dataDir)
+	t.Cleanup(func() { cleanupOrphanedGOWA(t, binaryPath) })
+	t.Setenv("FAKE_GOWA_MODE", "fatal-after-ready")
+
+	var logged syncBuffer
+	ctx, cancel := context.WithCancel(context.Background())
+	addr, errCh := startManagerWithLogger(t, ctx, dataDir, slog.New(slog.NewTextHandler(&logged, nil)))
+	created := createInstanceViaHTTP(t, addr, "crashy")
+	startInstanceViaHTTP(t, addr, created.ID)
+	waitForInstanceStatus(t, addr, created.ID, "failed", 10*time.Second)
+
+	req, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/api/instances/"+fmt.Sprintf("%d", created.ID), nil)
+	req.SetBasicAuth(testAdminUser, testAdminPass)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var instance struct {
+		ErrorMessage *string `json:"error_message"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&instance)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `exit status 1: fake fatal: refusing to start "0.0.0.0"`
+	if instance.ErrorMessage == nil || *instance.ErrorMessage != want {
+		t.Fatalf("error_message = %v, want %q", instance.ErrorMessage, want)
+	}
+	if out := logged.String(); !strings.Contains(out, "instance exited unexpectedly") || !strings.Contains(out, "fake fatal") {
+		t.Fatalf("manager log = %q, want the exit reason", out)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe for concurrent writes from the logger.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // installFakeGOWA builds the fakegowa binary and installs it at the version
 // path expected by the version resolver: {dataDir}/bin/versions/v1.0.0/gowa[.exe].
 func installFakeGOWA(t *testing.T, dataDir string) string {
@@ -136,13 +203,19 @@ func installFakeGOWA(t *testing.T, dataDir string) string {
 // an error channel. It uses the real buildHTTPDeps and default schedulers.
 func startManager(t *testing.T, ctx context.Context, dataDir string) (string, <-chan error) {
 	t.Helper()
+	return startManagerWithLogger(t, ctx, dataDir, slog.New(slog.NewTextHandler(discardWriter{}, nil)))
+}
+
+func startManagerWithLogger(t *testing.T, ctx context.Context, dataDir string, logger *slog.Logger) (string, <-chan error) {
+	t.Helper()
 	started := make(chan struct{})
 	var addr string
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- Run(ctx, Options{
-			Config: config.Config{Port: 0, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass},
-			Logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+			// Skip the startup GitHub download: tests use the installed fake.
+			Config: config.Config{Port: 0, DataDir: dataDir, AdminUsername: testAdminUser, AdminPassword: testAdminPass, SkipStartupInstall: true},
+			Logger: logger,
 			OpenDB: func(_ context.Context, _ string) (Closer, error) {
 				return database.Open(context.Background(), dataDir)
 			},

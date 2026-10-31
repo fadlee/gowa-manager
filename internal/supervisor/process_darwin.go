@@ -35,6 +35,9 @@ type darwinProcess struct {
 	waitOnce sync.Once
 	waitDone chan struct{}
 	waitErr  error
+	// exitStatus describes a non-zero exit (e.g. "exit status 1"). It is
+	// written before waitDone is closed.
+	exitStatus string
 }
 
 func startPlatformProcess(ctx context.Context, config platformProcessConfig) (*darwinProcess, error) {
@@ -161,12 +164,26 @@ func (p *darwinProcess) startWait() {
 					p.waitErr = fmt.Errorf("wait process %d: %w", p.pid, err)
 				}
 			}
+			if cmd.ProcessState != nil && !cmd.ProcessState.Success() {
+				p.exitStatus = cmd.ProcessState.String()
+			}
 			p.mu.Lock()
 			p.cmd = nil
 			p.mu.Unlock()
 			close(p.waitDone)
 		}()
 	})
+}
+
+// ExitStatus reports how the process ended when it exited unsuccessfully,
+// or "" while it is running or after a clean exit.
+func (p *darwinProcess) ExitStatus() string {
+	select {
+	case <-p.waitDone:
+		return p.exitStatus
+	default:
+		return ""
+	}
 }
 
 func (p *darwinProcess) currentCmd() *exec.Cmd {
