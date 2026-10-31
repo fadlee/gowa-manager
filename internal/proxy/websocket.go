@@ -31,6 +31,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -109,8 +110,9 @@ func (b *WSBridge) CloseAll() {
 // ServeWS is the http.HandlerFunc that upgrades a client WebSocket and
 // bridges it to the resolved upstream instance. Instance-not-found
 // yields a 404 written before the upgrade; a stopped/portless instance
-// yields a 503. Upstream dial failures result in a close with
-// StatusInternalError after the upgrade.
+// yields a 503. An upstream that refuses the handshake fails the
+// client's handshake too: its HTTP error is relayed, or 502 when it
+// could not be reached.
 func (b *WSBridge) ServeWS(w http.ResponseWriter, r *http.Request) {
 	instanceKey, _ := splitProxyPath(r.URL.Path)
 	if instanceKey == "" {
@@ -142,19 +144,6 @@ func (b *WSBridge) ServeWS(w http.ResponseWriter, r *http.Request) {
 	// Forward subprotocols requested by the client.
 	subprotocols := parseSubprotocols(r.Header)
 
-	// Accept the client connection. InsecureSkipVerify is set because
-	// the manager proxies arbitrary instance origins; origin checks are
-	// the responsibility of the manager's auth layer, not the WS layer.
-	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		Subprotocols:       subprotocols,
-		InsecureSkipVerify: true,
-	})
-	if err != nil {
-		// Accept already wrote an error response.
-		return
-	}
-	clientConn.SetReadLimit(b.readLimit)
-
 	// Build the upstream ws:// URL from the resolved http:// target.
 	// Clone the URL so the resolver's value is not mutated (matching
 	// the HTTP proxy's behaviour in http.go).
@@ -164,17 +153,41 @@ func (b *WSBridge) ServeWS(w http.ResponseWriter, r *http.Request) {
 	// Prepare forwarded headers and inject instance auth when needed.
 	upstreamHeaders := prepareWSHeaders(r.Header, target.Instance, b.injectAuth)
 
+	// Dial upstream before accepting the client, so a refused upstream
+	// handshake fails the client's handshake the same way. Accepting
+	// first and closing right after looks like a successful connection
+	// to the GOWA UI, which resets its reconnect backoff and reconnects
+	// in a tight loop (e.g. 400 DEVICE_ID_REQUIRED with no device yet).
 	dialCtx, dialCancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer dialCancel()
-	upstreamConn, _, err := websocket.Dial(dialCtx, upstreamURL.String(), &websocket.DialOptions{
+	upstreamConn, upstreamResp, err := websocket.Dial(dialCtx, upstreamURL.String(), &websocket.DialOptions{
 		HTTPHeader:   upstreamHeaders,
 		Subprotocols: subprotocols,
 	})
 	if err != nil {
-		_ = clientConn.Close(websocket.StatusInternalError, "upstream unavailable")
+		relayHandshakeFailure(w, upstreamResp)
 		return
 	}
 	upstreamConn.SetReadLimit(b.readLimit)
+
+	// Accept the client with the subprotocol upstream chose.
+	// InsecureSkipVerify is set because the manager proxies arbitrary
+	// instance origins; origin checks are the responsibility of the
+	// manager's auth layer, not the WS layer.
+	var acceptProtocols []string
+	if chosen := upstreamConn.Subprotocol(); chosen != "" {
+		acceptProtocols = []string{chosen}
+	}
+	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols:       acceptProtocols,
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		// Accept already wrote an error response.
+		_ = upstreamConn.CloseNow()
+		return
+	}
+	clientConn.SetReadLimit(b.readLimit)
 
 	// Register the upstream connection so shutdown/restart can tear it
 	// down. Use a unique per-client id.
@@ -189,6 +202,29 @@ func (b *WSBridge) ServeWS(w http.ResponseWriter, r *http.Request) {
 	if b.registry != nil {
 		b.registry.Delete(connID)
 	}
+}
+
+// relayHandshakeFailure answers a client whose upstream handshake failed.
+// When upstream replied (e.g. 400 or 401), its status, content type, and
+// body are passed through; otherwise the client gets 502.
+func relayHandshakeFailure(w http.ResponseWriter, resp *http.Response) {
+	if resp == nil || resp.StatusCode < 400 {
+		writeProxyError(w, http.StatusBadGateway, "Upstream WebSocket unavailable")
+		return
+	}
+	var body []byte
+	if resp.Body != nil {
+		body, _ = io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		_ = resp.Body.Close()
+	}
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	if challenge := resp.Header.Get("WWW-Authenticate"); challenge != "" {
+		w.Header().Set("WWW-Authenticate", challenge)
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(body)
 }
 
 // bridge runs the two copy loops (client→upstream and upstream→client)

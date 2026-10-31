@@ -27,6 +27,8 @@ func TestGetSystemStatusCountsInstancesAndReportsMetadata(t *testing.T) {
 		{Status: "running", Port: &port8002},
 	}}, "./data", "1.2.3")
 	service.started = time.Now().Add(-1500 * time.Millisecond)
+	// Only DB allocations matter here, not whatever listens on this host.
+	service.isInstancePortAvailable = func(int) bool { return true }
 
 	status, err := service.GetSystemStatus(context.Background())
 	if err != nil {

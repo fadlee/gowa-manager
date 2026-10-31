@@ -581,6 +581,63 @@ func TestWebSocket_InstanceNotFound(t *testing.T) {
 
 // ---- 14. Instance not running → connection rejected ----
 
+// An upstream that refuses the handshake (GOWA answers 400
+// DEVICE_ID_REQUIRED when no device is selected) must make the client's
+// handshake fail the same way. Accepting the client first and then closing
+// it looked like a successful connection to the GOWA UI, which reset its
+// reconnect backoff and reconnected in a tight loop.
+func TestWebSocket_UpstreamHandshakeRejectionIsRelayed(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":"DEVICE_ID_REQUIRED","message":"device_id is required"}`))
+	})
+	upstream := newTestHTTPServer(t, handler)
+	inst := newRunningInstance("k", upstreamPort(t, upstream), "")
+	srv, _, registry := newWSBridgeServer(t, nil, inst)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, resp, err := websocket.Dial(ctx, wsBridgeURL(srv.URL, "k", "/ws?device_id="), nil)
+	if err == nil {
+		c.CloseNow()
+		t.Fatal("expected the client handshake to fail")
+	}
+	if resp == nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("response = %v, want 400 from upstream", resp)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "DEVICE_ID_REQUIRED") {
+		t.Fatalf("body = %q, want upstream error", body)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("Content-Type = %q, want upstream's", got)
+	}
+	if registry.Count() != 0 {
+		t.Fatalf("registry Count() = %d, want 0", registry.Count())
+	}
+}
+
+// An unreachable upstream fails the client handshake with 502 instead of
+// a 101 followed by an immediate close.
+func TestWebSocket_UpstreamUnreachableFailsHandshake(t *testing.T) {
+	upstream := newTestHTTPServer(t, http.NotFoundHandler())
+	port := upstreamPort(t, upstream)
+	upstream.Close()
+	srv, _, _ := newWSBridgeServer(t, nil, newRunningInstance("k", port, ""))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, resp, err := websocket.Dial(ctx, wsBridgeURL(srv.URL, "k", "/ws"), nil)
+	if err == nil {
+		c.CloseNow()
+		t.Fatal("expected the client handshake to fail")
+	}
+	if resp == nil || resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("response = %v, want 502", resp)
+	}
+}
+
 func TestWebSocket_InstanceNotRunning(t *testing.T) {
 	stopped := instances.Instance{ID: 1, Key: "k", Status: "stopped", Port: intPtr(8080)}
 	srv, _, registry := newWSBridgeServer(t, nil, stopped)
