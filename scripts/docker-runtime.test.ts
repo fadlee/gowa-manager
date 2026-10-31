@@ -19,3 +19,13 @@ describe('Docker runtime ownership repair', () => {
     }
   })
 })
+
+describe('Docker runtime credentials', () => {
+  test('images ship without default admin credentials', async () => {
+    for (const dockerfilePath of DOCKERFILES) {
+      const dockerfile = await readFile(dockerfilePath, 'utf8')
+      expect(dockerfile).not.toMatch(/ADMIN_USERNAME=|ADMIN_PASSWORD=/)
+      expect(dockerfile).toContain('DATA_DIR=/app/data')
+    }
+  })
+})

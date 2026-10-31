@@ -484,10 +484,12 @@ non-zero on any mismatch.
 
 ### Auth not working (login/logout broken)
 
-1. Verify `ADMIN_USERNAME` / `ADMIN_PASSWORD` are set correctly.
+1. Check that the account exists and is active (**Users** page), or reset it with `gowa-manager reset-password <username>`. `ADMIN_USERNAME` / `ADMIN_PASSWORD` only seed the first superadmin while no users exist.
 2. Test with curl:
    ```bash
-   curl -u admin:password http://localhost:3000/api/instances
+   curl -u <username>:<password> http://localhost:3000/api/instances
+   # or with an API key
+   curl -H "Authorization: Bearer gowa_..." http://localhost:3000/api/instances
    ```
 3. If auth is broken after a Go cutover, this is a **rollback trigger**.
 
