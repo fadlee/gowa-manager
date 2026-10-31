@@ -73,8 +73,7 @@ bun run test:benchmark:compare
   - `.env` and `.env.example` exist; only `.env.example` should be committed.
   - Use `.gitignore`-d `.env` for local credentials.
 - **Auth**
-  - Backend uses basic auth variables:
-    - `ADMIN_USERNAME`, `ADMIN_PASSWORD` (see `README.md` and `docs/INTEGRATED_SETUP.md`).
+  - DB-backed users, sessions, and API keys (`internal/users/`); `ADMIN_USERNAME`/`ADMIN_PASSWORD` only seed the first superadmin. See `docs/AUTHENTICATION.md`.
   - Do not log sensitive values; log IDs/keys instead.
 - **Data paths**
   - Data directory controlled via env/CLI (`DATA_DIR`, CLI flags).
@@ -99,6 +98,8 @@ bun run test:benchmark:compare
   - Build: `bun run build:client` then `cp -r public/* internal/static/web/`.
   - Or use `bun run scripts/build-go.ts` which does both.
 - **Docs**
+  - User-facing deploy guide: `README.md` (keep it short; details go in `docs/`).
+  - Auth, API, development: `docs/AUTHENTICATION.md`, `docs/API.md`, `docs/DEVELOPMENT.md`.
   - Integration and versioning: `docs/INTEGRATED_SETUP.md`, `docs/VERSION_MANAGEMENT.md`.
   - CLI flags reference: `docs/gowa-cli-flags.md`.
 
