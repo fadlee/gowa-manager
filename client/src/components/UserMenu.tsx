@@ -63,7 +63,7 @@ export function UserMenu({ user, onLogout }: { user: User | null; onLogout: () =
         <span className="hidden max-w-32 truncate sm:inline">{user?.username}</span>
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+        <div role="menu" className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900">
           <div className="border-b border-gray-100 px-3 py-2 dark:border-gray-800">
             <div className="truncate font-medium text-gray-900 dark:text-white">{user?.username}</div>
             <div className="text-xs capitalize text-gray-500 dark:text-gray-400">{user?.role}</div>

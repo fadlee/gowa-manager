@@ -138,7 +138,7 @@ export function InstanceSidebar(props: SidebarProps) {
             <LayoutDashboard className="h-3.5 w-3.5" />Summary
           </button>
         </div>
-        <BulkActionBar count={selection.size} busy={props.busy} onAction={props.onBulkAction} onClear={props.onClearSelection} />
+        <BulkActionBar stacked count={selection.size} busy={props.busy} onAction={props.onBulkAction} onClear={props.onClearSelection} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {attention.length > 0 && (
