@@ -13,6 +13,17 @@ export default {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+  			// WhatsApp-green brand theme. The UI was built on Tailwind's
+  			// indigo (accent) and gray (neutral) scales, so we remap those
+  			// two scales instead of renaming every class.
+  			indigo: {
+  				50: '#ecfaf5', 100: '#d1f3e8', 200: '#a7e6d2', 300: '#6ed3b6', 400: '#34ba96',
+  				500: '#16a080', 600: '#128c7e', 700: '#0e7066', 800: '#0d5952', 900: '#0c4843', 950: '#042b28'
+  			},
+  			gray: {
+  				50: '#f8fbfa', 100: '#f0f5f3', 200: '#e1e9e6', 300: '#cbd6d2', 400: '#96a5a0',
+  				500: '#687772', 600: '#485752', 700: '#34423e', 800: '#1c2825', 900: '#0f1917', 950: '#060d0c'
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

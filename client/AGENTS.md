@@ -48,8 +48,10 @@ bun run dev:web    # frontend on :5173
   - `src/App.tsx` – High-level layout and routing logic (if any).
 - **Components**
   - `src/components/ui/*.tsx` – reusable primitives (button, card, dialog, input, etc.).
-  - `src/components/InstanceList.tsx` – root view for instances.
-  - `src/components/InstanceCard.tsx` – per-instance card with actions + resource display.
+  - `src/pages/WorkspacePage.tsx` – root view: instance sidebar (or full-width table) + detail panel, state in the URL (`/instances/:id?tab=…`, `/?view=table`).
+  - `src/components/workspace/*` – sidebar, table, summary, detail panel, WhatsApp login tab, bulk actions.
+  - `src/components/CommandPalette.tsx`, `src/components/UserMenu.tsx` – Ctrl/⌘K palette and avatar menu (theme, density).
+  - `src/lib/instanceHealth.ts` – batch status polling (`GET /api/instances/status`), health/attention rules, lifecycle actions.
   - `src/components/CreateInstanceDialog.tsx`, `EditInstanceDialog.tsx`, `VersionSelector.tsx`.
   - `src/components/CliFlags/**` – modular CLI flags sections (basic auth, webhooks, advanced options).
   - `src/components/LoginPage.tsx` – login UI.
@@ -116,8 +118,8 @@ bun run dev:web    # frontend on :5173
   - `src/App.tsx` – overall structure.
 - **Core features**
   - Instances:
-    - `src/components/InstanceList.tsx` – list + fetch of instances.
-    - `src/components/InstanceCard.tsx` – all instance lifecycle actions + resource UI.
+    - `src/pages/WorkspacePage.tsx` – list + fetch of instances, filters, selection, routing.
+    - `src/lib/instanceHealth.ts` – instance lifecycle actions + status polling.
   - Dialogs:
     - `src/components/CreateInstanceDialog.tsx`
     - `src/components/EditInstanceDialog.tsx`

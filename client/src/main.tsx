@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { AuthProvider } from './lib/auth'
 import { ThemeProvider } from './lib/theme'
+import { PreferencesProvider } from './lib/preferences'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -22,7 +23,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <App />
+            <PreferencesProvider>
+              <App />
+            </PreferencesProvider>
           </AuthProvider>
         </QueryClientProvider>
       </BrowserRouter>

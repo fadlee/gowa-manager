@@ -73,7 +73,7 @@ export function OverviewSection({ instance, status, isRunning }: OverviewSection
           </div>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="space-y-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/70">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               <Globe className="h-4 w-4" />
