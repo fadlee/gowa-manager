@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fadlee/gowa-manager/internal/auth"
@@ -187,6 +188,10 @@ func (h *instanceHandler) routes(w http.ResponseWriter, r *http.Request) {
 		h.collectionWithSlash(w, r)
 		return
 	}
+	if r.URL.Path == "/api/instances/status" {
+		h.statuses(w, r)
+		return
+	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/instances/"), "/")
 	id, err := parseID(parts[0])
 	if err != nil {
@@ -340,12 +345,62 @@ func (h *instanceHandler) lifecycleRoute(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, status)
 }
 
+// statusConcurrency bounds how many instances are inspected at once by the
+// batch status endpoint, so one slow instance cannot stall the whole list.
+const statusConcurrency = 8
+
+// statuses returns the live status of every instance in one response, so the
+// UI can refresh a long instance list with a single poll.
+func (h *instanceHandler) statuses(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if h.lifecycle == nil {
+		h.writeError(w, instances.ErrRuntimeNotReady, "Instance runtime not ready", false)
+		return
+	}
+	items, err := h.service.List(r.Context())
+	if err != nil {
+		h.writeError(w, err, "Failed to list instances", false)
+		return
+	}
+	out := make([]InstanceStatus, len(items))
+	sem := make(chan struct{}, statusConcurrency)
+	var wg sync.WaitGroup
+	for index, item := range items {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(index int, item instances.Instance) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			status, err := h.lifecycle.Status(r.Context(), item.ID)
+			if err != nil {
+				// Fall back to the stored state so one failing instance does not
+				// hide the rest of the list.
+				status = InstanceStatus{ID: item.ID, Name: item.Name, Status: item.Status, Port: item.Port, ErrorMessage: item.ErrorMessage}
+			}
+			h.attachDeviceSummaryFor(r.Context(), &status, item)
+			out[index] = status
+		}(index, item)
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (h *instanceHandler) attachDeviceSummary(ctx context.Context, status *InstanceStatus, id int64) {
 	if status == nil || isNilDeviceClient(h.devices) {
 		return
 	}
 	item, err := h.service.Get(ctx, id)
 	if err != nil {
+		return
+	}
+	h.attachDeviceSummaryFor(ctx, status, item)
+}
+
+func (h *instanceHandler) attachDeviceSummaryFor(ctx context.Context, status *InstanceStatus, item instances.Instance) {
+	if status == nil || isNilDeviceClient(h.devices) {
 		return
 	}
 	resp, err := h.devices.Fetch(ctx, item)
