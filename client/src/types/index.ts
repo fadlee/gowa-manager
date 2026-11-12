@@ -25,7 +25,10 @@ export interface UpdateInstanceRequest {
 }
 
 export interface DeviceSummary {
+  /** Devices that are paired and logged in. */
   count: number;
+  /** Every device slot GOWA reports, including ones not paired yet. */
+  total?: number;
   connected: boolean;
   stale: boolean;
   fetchedAt?: string;

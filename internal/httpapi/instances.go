@@ -41,6 +41,7 @@ type InstanceStatus struct {
 
 type statusDeviceSummary struct {
 	Count     int        `json:"count"`
+	Total     int        `json:"total"`
 	Connected bool       `json:"connected"`
 	Stale     bool       `json:"stale"`
 	FetchedAt *time.Time `json:"fetchedAt,omitempty"`
@@ -413,9 +414,9 @@ func (h *instanceHandler) attachDeviceSummaryFor(ctx context.Context, status *In
 func toStatusDeviceSummary(resp instances.DevicesResponse) *statusDeviceSummary {
 	fetchedAt := resp.FetchedAt
 	if fetchedAt.IsZero() {
-		return &statusDeviceSummary{Count: resp.Count, Connected: resp.Connected, Stale: resp.Stale, Error: resp.Error}
+		return &statusDeviceSummary{Count: resp.Count, Total: resp.Total, Connected: resp.Connected, Stale: resp.Stale, Error: resp.Error}
 	}
-	return &statusDeviceSummary{Count: resp.Count, Connected: resp.Connected, Stale: resp.Stale, FetchedAt: &fetchedAt, Error: resp.Error}
+	return &statusDeviceSummary{Count: resp.Count, Total: resp.Total, Connected: resp.Connected, Stale: resp.Stale, FetchedAt: &fetchedAt, Error: resp.Error}
 }
 
 func isNilDeviceClient(client InstanceDeviceClient) bool {

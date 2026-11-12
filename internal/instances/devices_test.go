@@ -45,6 +45,52 @@ func TestDeviceClientFetchesLiveDevicesAndSummaryFields(t *testing.T) {
 	}
 }
 
+func TestDeviceClientCountsOnlyLoggedInDevices(t *testing.T) {
+	tests := []struct {
+		name          string
+		body          string
+		wantCount     int
+		wantTotal     int
+		wantConnected bool
+	}{
+		{
+			name: "multi-device slots with state",
+			body: `{"code":"SUCCESS","results":[
+				{"id":"a","state":"logged_in","jid":"62811@s.whatsapp.net"},
+				{"id":"b","state":"connected"},
+				{"id":"c","state":"disconnected","jid":"62812@s.whatsapp.net"}]}`,
+			wantCount: 1, wantTotal: 3, wantConnected: true,
+		},
+		{
+			name:      "slot added but not paired yet",
+			body:      `{"code":"SUCCESS","results":[{"id":"a","state":"connected"}]}`,
+			wantCount: 0, wantTotal: 1, wantConnected: false,
+		},
+		{
+			name:      "older GOWA without state lists logged-in devices",
+			body:      `{"code":"SUCCESS","results":[{"name":"Phone","device":"62811:1@s.whatsapp.net"}]}`,
+			wantCount: 1, wantTotal: 1, wantConnected: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(tt.body))
+			})
+			defer server.Close()
+			client := NewDeviceClient(DeviceClientOptions{HTTPClient: server.Client()})
+			got, err := client.Fetch(context.Background(), runningInstance(server, `{"flags":{}}`))
+			if err != nil {
+				t.Fatalf("Fetch() error = %v", err)
+			}
+			if got.Count != tt.wantCount || got.Total != tt.wantTotal || got.Connected != tt.wantConnected || len(got.Devices) != tt.wantTotal {
+				t.Fatalf("Fetch() count=%d total=%d connected=%v devices=%d, want %d/%d/%v/%d",
+					got.Count, got.Total, got.Connected, len(got.Devices), tt.wantCount, tt.wantTotal, tt.wantConnected, tt.wantTotal)
+			}
+		})
+	}
+}
+
 func TestDeviceClientUsesFreshCacheAndCanClearIt(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(200, 0).UTC()}
 	var calls atomic.Int32

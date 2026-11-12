@@ -47,8 +47,13 @@ type deviceCacheEntry struct {
 	fetched  time.Time
 }
 
+// DevicesResponse lists an instance's WhatsApp devices. Count and
+// Connected only include devices that are logged in (see IsLinkedDevice);
+// Total and Devices include every device slot GOWA reports, such as a
+// slot added in the admin page that has not been paired yet.
 type DevicesResponse struct {
 	Count     int              `json:"count"`
+	Total     int              `json:"total"`
 	Connected bool             `json:"connected"`
 	Stale     bool             `json:"stale"`
 	Devices   []map[string]any `json:"devices"`
@@ -59,6 +64,7 @@ type DevicesResponse struct {
 
 type DeviceSummary struct {
 	Count     int       `json:"count"`
+	Total     int       `json:"total"`
 	Connected bool      `json:"connected"`
 	Stale     bool      `json:"stale"`
 	FetchedAt time.Time `json:"fetchedAt"`
@@ -88,7 +94,7 @@ func NewDeviceClient(options DeviceClientOptions) *DeviceClient {
 
 func (c *DeviceClient) Summary(ctx context.Context, instance Instance) (DeviceSummary, error) {
 	response, err := c.Fetch(ctx, instance)
-	return DeviceSummary{Count: response.Count, Connected: response.Connected, Stale: response.Stale, FetchedAt: response.FetchedAt, Error: response.Error, Source: response.Source}, err
+	return DeviceSummary{Count: response.Count, Total: response.Total, Connected: response.Connected, Stale: response.Stale, FetchedAt: response.FetchedAt, Error: response.Error, Source: response.Source}, err
 }
 
 func (c *DeviceClient) Fetch(ctx context.Context, instance Instance) (DevicesResponse, error) {
@@ -173,7 +179,27 @@ func (c *DeviceClient) fetchLive(ctx context.Context, instance Instance, fetched
 	if err != nil {
 		return DevicesResponse{FetchedAt: fetchedAt}, err
 	}
-	return DevicesResponse{Count: len(devices), Connected: len(devices) > 0, Devices: devices, Source: "live", FetchedAt: fetchedAt}, nil
+	linked := 0
+	for _, device := range devices {
+		if IsLinkedDevice(device) {
+			linked++
+		}
+	}
+	return DevicesResponse{Count: linked, Total: len(devices), Connected: linked > 0, Devices: devices, Source: "live", FetchedAt: fetchedAt}, nil
+}
+
+// IsLinkedDevice reports whether a device record from GOWA is a WhatsApp
+// account that is paired and logged in. Multi-device GOWA (v9) reports every
+// device slot with a "state", and only "logged_in" means a paired phone;
+// a new slot is "connected" before its QR code is scanned. Older versions
+// list only logged-in devices and send no state, so a record without one
+// counts as linked.
+func IsLinkedDevice(device map[string]any) bool {
+	state, ok := device["state"].(string)
+	if !ok {
+		return true
+	}
+	return strings.EqualFold(state, "logged_in")
 }
 
 func normalizeDevices(value any) ([]map[string]any, error) {

@@ -14,8 +14,15 @@ interface WhatsAppLoginSectionProps {
   onOpenAdmin: () => void
 }
 
+// Mirrors IsLinkedDevice in internal/instances/devices.go: multi-device GOWA
+// reports every slot with a state, and only "logged_in" is a paired phone.
+// Older versions list only logged-in devices and send no state.
+function isLinkedDevice(device: Record<string, unknown>): boolean {
+  return typeof device.state !== 'string' || device.state.toLowerCase() === 'logged_in'
+}
+
 function deviceLabel(device: Record<string, unknown>): string {
-  for (const key of ['name', 'device', 'jid', 'id']) {
+  for (const key of ['display_name', 'phone_number', 'name', 'jid', 'device', 'id']) {
     const value = device[key]
     if (typeof value === 'string' && value) return value
   }
@@ -53,7 +60,13 @@ export function WhatsAppLoginSection({ instance, health, onStart, starting, onOp
     )
   }
 
-  const devices = data?.devices ?? []
+  const devices = (data?.devices ?? []).filter(isLinkedDevice)
+  const unpaired = (data?.devices?.length ?? 0) - devices.length
+  const unpairedNote = unpaired > 0 && (
+    <p className="text-xs text-gray-500 dark:text-gray-400">
+      {unpaired} device slot{unpaired === 1 ? ' is' : 's are'} added but not paired yet. Pair {unpaired === 1 ? 'it' : 'them'} in the GOWA admin tab, or remove {unpaired === 1 ? 'it' : 'them'} there.
+    </p>
+  )
 
   return (
     <div className="space-y-6">
@@ -80,6 +93,7 @@ export function WhatsAppLoginSection({ instance, health, onStart, starting, onOp
               <span className="min-w-0 truncate font-mono text-sm text-gray-800 dark:text-gray-200">{deviceLabel(device)}</span>
             </div>
           ))}
+          {unpairedNote}
           <p className="pt-1 text-xs text-gray-500 dark:text-gray-400">To link another number or log out, use the GOWA admin page.</p>
           <Button variant="outline" size="sm" onClick={onOpenAdmin}>
             <LayoutPanelTop className="mr-2 h-4 w-4" />Open admin page
@@ -91,10 +105,11 @@ export function WhatsAppLoginSection({ instance, health, onStart, starting, onOp
             <p className="font-semibold text-amber-900 dark:text-amber-200">No WhatsApp account is linked yet</p>
             <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-300">
               <li>Click <b>Show QR code</b>. The GOWA admin page opens in the <b>GOWA admin</b> tab, already signed in.</li>
-              <li>Click <b>Login</b> there to show the QR code.</li>
+              <li>Click <b>Add device</b>, then <b>Pair</b>, to show the QR code. Older GOWA versions have a <b>Login</b> button instead.</li>
               <li>On your phone, open WhatsApp → Linked devices → Link a device, and scan it.</li>
             </ol>
             <p className="text-xs text-gray-500 dark:text-gray-400">This tab checks every 5 seconds and updates as soon as the phone is linked.</p>
+            {unpairedNote}
           </div>
           <Button size="lg" onClick={onOpenAdmin}>
             <QrCode className="mr-2 h-4 w-4" />Show QR code
