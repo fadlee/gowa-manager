@@ -30,7 +30,7 @@ export function matchesSearch(row: InstanceRowData, search: string): boolean {
   const query = search.trim().toLowerCase()
   if (!query) return true
   const { instance } = row
-  return `${instance.name} ${instance.key} ${instance.port ?? ''}`.toLowerCase().includes(query)
+  return `${instance.name} ${instance.key} ${instance.port ?? ''} ${instance.gowa_version ?? ''}`.toLowerCase().includes(query)
 }
 
 // sortRows puts instances that need attention first, then sorts by name.
@@ -53,13 +53,12 @@ export function countFilters(rows: InstanceRowData[]): Record<InstanceFilter, nu
 }
 
 export function rowSubtitle(row: InstanceRowData): string {
-  const { health, instance } = row
+  const { health } = row
   if (health.state === 'error') return health.errorMessage || 'Error'
   if (health.needsLogin) return 'WhatsApp not logged in'
   if (health.state === 'running') {
     const devices = health.devices
-    const deviceText = devices === undefined ? 'Running' : `${devices} device${devices === 1 ? '' : 's'} connected`
-    return instance.port ? `${deviceText} · :${instance.port}` : deviceText
+    return devices === undefined ? 'Running' : `${devices} device${devices === 1 ? '' : 's'} connected`
   }
   if (health.state === 'starting') return 'Starting…'
   return 'Stopped'

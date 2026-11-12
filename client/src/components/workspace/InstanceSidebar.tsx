@@ -104,9 +104,16 @@ export function InstanceSidebar(props: SidebarProps) {
             {subtitle}
           </div>
         </div>
-        {health.outdated && (
-          <ArrowUpCircle aria-label="Update available" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-indigo-600 group-hover:hidden dark:text-indigo-400" />
-        )}
+        <span
+          className={cn(
+            'mt-0.5 inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums group-hover:hidden',
+            health.outdated ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400',
+          )}
+          title={health.outdated ? 'GOWA version (update available)' : 'GOWA version'}
+        >
+          {instance.gowa_version || 'latest'}
+          {health.outdated && <ArrowUpCircle aria-label="Update available" className="h-3.5 w-3.5" />}
+        </span>
         <div className="-my-1 hidden shrink-0 items-center group-hover:flex" onClick={(event) => event.stopPropagation()}>
           {health.state === 'running' ? (
             <>
