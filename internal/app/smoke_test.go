@@ -121,6 +121,10 @@ func TestRunReportsInstanceCrashReason(t *testing.T) {
 	binaryPath := installFakeGOWA(t, dataDir)
 	t.Cleanup(func() { cleanupOrphanedGOWA(t, binaryPath) })
 	t.Setenv("FAKE_GOWA_MODE", "fatal-after-ready")
+	// Exit well after the start request returns. With the default 300ms a
+	// slow CI runner could still be inside Start when the process died,
+	// which correctly fails the start with a 500 instead of recording a crash.
+	t.Setenv("FAKE_GOWA_FATAL_DELAY_MS", "2000")
 
 	var logged syncBuffer
 	ctx, cancel := context.WithCancel(context.Background())
