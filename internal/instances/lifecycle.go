@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -65,6 +66,9 @@ type LifecycleStatus struct {
 	Uptime       int64                 `json:"uptime,omitempty"`
 	ErrorMessage *string               `json:"error_message,omitempty"`
 	Resources    *monitoring.Resources `json:"resources,omitempty"`
+	// RunningVersion is the GOWA version the process was started with. It
+	// differs from the instance's gowa_version when that is "latest".
+	RunningVersion string `json:"running_version,omitempty"`
 }
 
 type LifecycleService struct {
@@ -87,6 +91,9 @@ type LifecycleService struct {
 
 	logsMu     sync.Mutex
 	logWriters map[int64]logWriterPair
+
+	versionsMu      sync.Mutex
+	runningVersions map[int64]string
 }
 
 type logWriterPair struct {
@@ -121,7 +128,7 @@ func NewLifecycleService(opts LifecycleOptions) *LifecycleService {
 	if monitorTimeout <= 0 {
 		monitorTimeout = 200 * time.Millisecond
 	}
-	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, logs: opts.Logs, logger: opts.Logger, monitorTimeout: monitorTimeout, now: now, sleep: sleep, startMu: make(map[int64]*startLock), logWriters: make(map[int64]logWriterPair)}
+	return &LifecycleService{repo: opts.Repository, fs: opts.Filesystem, ports: opts.PortAllocator, checker: opts.PortChecker, versions: opts.VersionResolver, supervisor: opts.Supervisor, cache: opts.DeviceCache, monitor: opts.Monitor, logs: opts.Logs, logger: opts.Logger, monitorTimeout: monitorTimeout, now: now, sleep: sleep, startMu: make(map[int64]*startLock), logWriters: make(map[int64]logWriterPair), runningVersions: make(map[int64]string)}
 }
 
 func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus, error) {
@@ -163,6 +170,7 @@ func (s *LifecycleService) Start(ctx context.Context, id int64) (LifecycleStatus
 		s.flushLogWriters(id)
 		return LifecycleStatus{}, s.persistFailed(ctx, id, err)
 	}
+	s.setRunningVersion(id, versionFromBinaryPath(path))
 	if _, err := s.repo.UpdateStatus(ctx, id, "running", nil); err != nil {
 		return LifecycleStatus{}, err
 	}
@@ -408,6 +416,7 @@ func (s *LifecycleService) statusFrom(ctx context.Context, instance Instance, sn
 	if snapshot.State == supervisor.StateRunning || snapshot.State == supervisor.StateStarting || snapshot.State == supervisor.StateStopping {
 		pid := snapshot.PID
 		status.PID = &pid
+		status.RunningVersion = s.runningVersion(instance.ID)
 	}
 	if !snapshot.StartedAt.IsZero() {
 		status.Uptime = int64(s.now().Sub(snapshot.StartedAt).Seconds())
@@ -459,4 +468,31 @@ func (s *LifecycleService) flushLogWriters(id int64) {
 	}
 	pair.stdout.Flush()
 	pair.stderr.Flush()
+}
+
+func (s *LifecycleService) setRunningVersion(id int64, version string) {
+	s.versionsMu.Lock()
+	defer s.versionsMu.Unlock()
+	if version == "" {
+		delete(s.runningVersions, id)
+		return
+	}
+	s.runningVersions[id] = version
+}
+
+func (s *LifecycleService) runningVersion(id int64) string {
+	s.versionsMu.Lock()
+	defer s.versionsMu.Unlock()
+	return s.runningVersions[id]
+}
+
+// versionFromBinaryPath returns the version of an installed GOWA binary,
+// which lives at <data>/bin/versions/<version>/<binary>. It returns ""
+// for any other path, such as the legacy <data>/bin/<binary> fallback.
+func versionFromBinaryPath(path string) string {
+	versionDir := filepath.Dir(path)
+	if filepath.Base(filepath.Dir(versionDir)) != "versions" {
+		return ""
+	}
+	return filepath.Base(versionDir)
 }

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Plus, RefreshCw, Smartphone } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { cn } from '../lib/utils'
-import { useInstanceActions, useInstanceStatuses, useLatestGowaVersion, type InstanceAction } from '../lib/instanceHealth'
+import { useInstanceActions, useInstanceStatuses, useLatestGowaVersion, useNewestInstalledGowaVersion, type InstanceAction } from '../lib/instanceHealth'
 import type { Instance } from '../types'
 import { Button } from '../components/ui/button'
 import { CreateInstanceDialog } from '../components/CreateInstanceDialog'
@@ -41,12 +41,13 @@ export function WorkspacePage() {
   })
   const statuses = useInstanceStatuses()
   const latestVersion = useLatestGowaVersion()
+  const newestInstalled = useNewestInstalledGowaVersion()
   const actions = useInstanceActions()
 
   const allRows = useMemo(
-    () => buildRows(instances, statuses.byId, latestVersion),
+    () => buildRows(instances, statuses.byId, latestVersion, newestInstalled),
     // statuses.byId is rebuilt every render; statuses.data is the stable source.
-    [instances, statuses.data, latestVersion],
+    [instances, statuses.data, latestVersion, newestInstalled],
   )
   const searchedRows = allRows.filter(row => matchesSearch(row, search))
   const visibleRows = sortRows(searchedRows.filter(row => matchesFilter(row, filter)))

@@ -7,7 +7,7 @@ import type { Instance } from '../../types'
 import { Button } from '../ui/button'
 import { BulkActionBar } from './BulkActionBar'
 import { ConfirmDialog, FilterChips, RowCheckbox, StatusDot, type InstanceFilter } from './primitives'
-import { rowSubtitle, type InstanceRowData } from './model'
+import { rowSubtitle, versionLabel, versionTitle, type InstanceRowData } from './model'
 import { ViewToggle, type WorkspaceView } from './ViewToggle'
 
 export interface InstanceListControls {
@@ -109,9 +109,9 @@ export function InstanceSidebar(props: SidebarProps) {
             'mt-0.5 inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums group-hover:hidden',
             health.outdated ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400',
           )}
-          title={health.outdated ? 'GOWA version (update available)' : 'GOWA version'}
+          title={versionTitle(health)}
         >
-          {instance.gowa_version || 'latest'}
+          {versionLabel(health)}
           {health.outdated && <ArrowUpCircle aria-label="Update available" className="h-3.5 w-3.5" />}
         </span>
         <div className="-my-1 hidden shrink-0 items-center group-hover:flex" onClick={(event) => event.stopPropagation()}>

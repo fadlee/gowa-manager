@@ -4,7 +4,7 @@ import type { InstanceAction } from '../../lib/instanceHealth'
 import { Button } from '../ui/button'
 import { QuickAction } from './InstanceSidebar'
 import { StatusDot, type InstanceFilter } from './primitives'
-import { rowSubtitle, type InstanceRowData } from './model'
+import { rowSubtitle, versionLabel, type InstanceRowData } from './model'
 
 interface InstanceSummaryProps {
   rows: InstanceRowData[]
@@ -96,14 +96,14 @@ export function InstanceSummary({ rows, latestVersion, pendingIds, onFilter, onO
             GOWA {latestVersion} is available for {outdated.length} instance{outdated.length === 1 ? '' : 's'}
           </h3>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {outdated.map(({ instance }) => (
+            {outdated.map(({ instance, health }) => (
               <button
                 key={instance.id}
                 type="button"
                 onClick={() => onOpenTab(instance.id, 'settings')}
                 className="rounded-full border border-gray-300 px-2.5 py-0.5 text-xs text-gray-700 hover:border-indigo-400 hover:text-indigo-700 dark:border-gray-700 dark:text-gray-300 dark:hover:text-indigo-300"
               >
-                {instance.name} · {instance.gowa_version}
+                {instance.name} · {versionLabel(health)}
               </button>
             ))}
           </div>

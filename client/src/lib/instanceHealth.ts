@@ -30,6 +30,17 @@ export function useLatestGowaVersion(): string | undefined {
   return data.find(version => version.version !== 'latest' && version.isLatest)?.version
 }
 
+// The newest installed GOWA version, which an instance set to "latest" runs
+// when it starts.
+export function useNewestInstalledGowaVersion(): string | undefined {
+  const { data = [] } = useQuery({
+    queryKey: ['versions', 'installed'],
+    queryFn: () => apiClient.getInstalledVersions(),
+    staleTime: 60 * 1000,
+  })
+  return data.find(version => version.version !== 'latest' && version.isLatest)?.version
+}
+
 export type HealthState = 'running' | 'stopped' | 'error' | 'starting' | 'unknown'
 
 export interface InstanceHealth {
@@ -38,20 +49,31 @@ export interface InstanceHealth {
   needsLogin: boolean
   needsAttention: boolean
   outdated: boolean
+  // version is the GOWA version number the instance runs, or would run when
+  // started. "latest" is resolved to a number when it is known.
+  version: string | undefined
+  // followsLatest is true when the instance is set to "latest" instead of a
+  // fixed version.
+  followsLatest: boolean
   devices: number | undefined
   errorMessage: string | null
 }
 
-export function getInstanceHealth(instance: Instance, status: InstanceStatus | undefined, latestVersion?: string): InstanceHealth {
+export function getInstanceHealth(instance: Instance, status: InstanceStatus | undefined, latestVersion?: string, newestInstalled?: string): InstanceHealth {
   const raw = (status?.status || instance.status || 'unknown').toLowerCase()
   const state: HealthState = raw === 'running' || raw === 'stopped' || raw === 'error' || raw === 'starting' ? raw : 'unknown'
   const devices = status?.devices?.count
   const needsLogin = state === 'running' && devices === 0
+  const followsLatest = !instance.gowa_version || instance.gowa_version === 'latest'
+  const running = state === 'running' || state === 'starting'
+  const version = (running && status?.running_version) || (followsLatest ? newestInstalled : instance.gowa_version)
   return {
     state,
     needsLogin,
     needsAttention: state === 'error' || needsLogin,
-    outdated: hasNewerVersion(instance.gowa_version, latestVersion),
+    outdated: hasNewerVersion(version, latestVersion),
+    version,
+    followsLatest,
     devices,
     errorMessage: status?.error_message || instance.error_message || null,
   }

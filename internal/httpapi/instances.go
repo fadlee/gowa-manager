@@ -37,6 +37,9 @@ type InstanceStatus struct {
 	ErrorMessage *string               `json:"error_message,omitempty"`
 	Resources    *monitoring.Resources `json:"resources,omitempty"`
 	Devices      *statusDeviceSummary  `json:"devices,omitempty"`
+	// RunningVersion is the GOWA version the running process was started
+	// with, which resolves "latest" to a version number.
+	RunningVersion string `json:"running_version,omitempty"`
 }
 
 type statusDeviceSummary struct {

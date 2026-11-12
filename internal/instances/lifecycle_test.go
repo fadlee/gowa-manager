@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -167,6 +168,41 @@ func TestLifecycleStartPersistsRunningAndFailedStatus(t *testing.T) {
 	}
 	if got := deps.repo.instances[2].Status; got != "failed" {
 		t.Fatalf("status = %q, want failed", got)
+	}
+}
+
+func TestLifecycleStatusReportsRunningVersion(t *testing.T) {
+	lc, deps := newTestLifecycle(t)
+	deps.repo.instances[1] = testInstance(1, "stopped", 3000)
+	deps.versions.path = filepath.Join("data", "bin", "versions", "v9.9.0", "gowa")
+
+	started, err := lc.Start(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Start error = %v", err)
+	}
+	if started.RunningVersion != "v9.9.0" {
+		t.Fatalf("Start RunningVersion = %q, want v9.9.0", started.RunningVersion)
+	}
+	status, err := lc.Status(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Status error = %v", err)
+	}
+	if status.RunningVersion != "v9.9.0" {
+		t.Fatalf("Status RunningVersion = %q, want v9.9.0", status.RunningVersion)
+	}
+}
+
+func TestVersionFromBinaryPath(t *testing.T) {
+	tests := map[string]string{
+		filepath.Join("data", "bin", "versions", "v9.9.0", "gowa"):     "v9.9.0",
+		filepath.Join("data", "bin", "versions", "v8.5.1", "gowa.exe"): "v8.5.1",
+		filepath.Join("data", "bin", "gowa"):                           "",
+		"gowa":                                                         "",
+	}
+	for path, want := range tests {
+		if got := versionFromBinaryPath(path); got != want {
+			t.Errorf("versionFromBinaryPath(%q) = %q, want %q", path, got, want)
+		}
 	}
 }
 

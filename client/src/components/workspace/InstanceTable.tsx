@@ -6,7 +6,7 @@ import type { Instance } from '../../types'
 import { Button } from '../ui/button'
 import { BulkActionBar } from './BulkActionBar'
 import { ConfirmDialog, FilterChips, RowCheckbox, StatusPill } from './primitives'
-import { formatMemory, formatUptime, rowSubtitle } from './model'
+import { formatMemory, formatUptime, rowSubtitle, versionLabel, versionTitle } from './model'
 import { QuickAction, SearchField, type InstanceListControls } from './InstanceSidebar'
 import { ViewToggle } from './ViewToggle'
 
@@ -74,8 +74,8 @@ export function InstanceTable(props: InstanceTableProps) {
                   <td className={cn(cell, 'max-w-[16rem] truncate text-sm', health.needsAttention ? 'text-amber-700 dark:text-amber-400' : 'text-gray-600 dark:text-gray-300')}>
                     {health.state === 'running' && !health.needsLogin ? `${health.devices ?? '—'} device${health.devices === 1 ? '' : 's'}` : rowSubtitle(row)}
                   </td>
-                  <td className={cn(cell, 'whitespace-nowrap text-sm text-gray-700 dark:text-gray-300')}>
-                    {instance.gowa_version || 'latest'}
+                  <td className={cn(cell, 'whitespace-nowrap text-sm text-gray-700 dark:text-gray-300')} title={versionTitle(health)}>
+                    {versionLabel(health)}
                     {health.outdated && <ArrowUpCircle aria-label="Update available" className="ml-1 inline h-3.5 w-3.5 align-[-2px] text-indigo-600 dark:text-indigo-400" />}
                   </td>
                   <td className={cn(cell, 'hidden font-mono text-sm tabular-nums text-gray-600 dark:text-gray-400 lg:table-cell')}>{instance.port ? `:${instance.port}` : '—'}</td>

@@ -15,7 +15,7 @@ import { DangerZoneSection } from '../instance-detail/DangerZoneSection'
 import { VersionUpdateIndicator } from '../VersionUpdateIndicator'
 import { BasicAuthBadge, BasicAuthWarning } from '../BasicAuthRequirement'
 import { ConfirmDialog, StatusPill } from './primitives'
-import { formatUptime, type InstanceRowData } from './model'
+import { formatUptime, versionLabel, versionTitle, type InstanceRowData } from './model'
 import { WhatsAppLoginSection } from './WhatsAppLoginSection'
 import { AdminFrame } from './AdminFrame'
 
@@ -70,8 +70,8 @@ export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, 
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="mb-0 truncate text-lg font-semibold text-gray-900 dark:text-white">{instance.name}</h1>
               <StatusPill state={pending ? 'starting' : health.state} label={pending ? 'Working…' : undefined} />
-              <Badge variant="secondary" className="text-xs">{instance.gowa_version || 'latest'}</Badge>
-              <VersionUpdateIndicator currentVersion={instance.gowa_version} />
+              <Badge variant="secondary" className="text-xs" title={versionTitle(health)}>{versionLabel(health)}</Badge>
+              <VersionUpdateIndicator currentVersion={health.version ?? instance.gowa_version} />
               <BasicAuthBadge instance={instance} className="hidden sm:inline-flex" />
             </div>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-2 truncate font-mono text-xs text-gray-500 dark:text-gray-400">

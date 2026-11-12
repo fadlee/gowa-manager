@@ -85,6 +85,8 @@ export interface InstanceStatus {
   pid: number | null;
   /** Seconds since the instance started. */
   uptime: number | null;
+  /** The GOWA version the running process was started with ("latest" resolved to a number). */
+  running_version?: string;
   error_message?: string | null;
   resources?: {
     cpuPercent: number;

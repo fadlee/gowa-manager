@@ -8,10 +8,10 @@ export interface InstanceRowData {
   health: InstanceHealth
 }
 
-export function buildRows(instances: Instance[], statuses: Map<number, InstanceStatus>, latestVersion?: string): InstanceRowData[] {
+export function buildRows(instances: Instance[], statuses: Map<number, InstanceStatus>, latestVersion?: string, newestInstalled?: string): InstanceRowData[] {
   return instances.map(instance => {
     const status = statuses.get(instance.id)
-    return { instance, status, health: getInstanceHealth(instance, status, latestVersion) }
+    return { instance, status, health: getInstanceHealth(instance, status, latestVersion, newestInstalled) }
   })
 }
 
@@ -30,7 +30,7 @@ export function matchesSearch(row: InstanceRowData, search: string): boolean {
   const query = search.trim().toLowerCase()
   if (!query) return true
   const { instance } = row
-  return `${instance.name} ${instance.key} ${instance.port ?? ''} ${instance.gowa_version ?? ''}`.toLowerCase().includes(query)
+  return `${instance.name} ${instance.key} ${instance.port ?? ''} ${instance.gowa_version ?? ''} ${row.health.version ?? ''}`.toLowerCase().includes(query)
 }
 
 // sortRows puts instances that need attention first, then sorts by name.
@@ -79,4 +79,16 @@ export function formatUptime(uptimeSeconds: number | null | undefined): string {
 export function formatMemory(memoryMB: number | undefined): string {
   if (memoryMB === undefined) return '—'
   return memoryMB >= 1024 ? `${(memoryMB / 1024).toFixed(1)} GB` : `${memoryMB.toFixed(0)} MB`
+}
+
+/** The version label for an instance: its version number, or "latest" when the number is not known yet. */
+export function versionLabel(health: InstanceHealth): string {
+  return health.version || 'latest'
+}
+
+/** Tooltip text that explains where the version comes from. */
+export function versionTitle(health: InstanceHealth): string {
+  const parts = [health.followsLatest ? 'GOWA version (set to latest installed)' : 'GOWA version (fixed)']
+  if (health.outdated) parts.push('a newer release is available')
+  return parts.join(', ')
 }
