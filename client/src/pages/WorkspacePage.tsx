@@ -63,8 +63,16 @@ export function WorkspacePage() {
     }
   }, [searchParams, setSearchParams])
 
-  const openInstance = (instanceId: number, nextTab?: string) => {
-    navigate(nextTab && nextTab !== 'overview' ? `/instances/${instanceId}?tab=${nextTab}` : `/instances/${instanceId}`)
+  // Switching instances keeps the open tab, so comparing logs (or any other
+  // tab) across instances takes one click each. The last tab is remembered
+  // while the summary or table is shown, too.
+  const lastTab = useRef<DetailTab>(tab)
+  useEffect(() => {
+    if (selectedId !== undefined) lastTab.current = tab
+  }, [selectedId, tab])
+
+  const openInstance = (instanceId: number, nextTab: string = lastTab.current) => {
+    navigate(nextTab !== 'overview' ? `/instances/${instanceId}?tab=${nextTab}` : `/instances/${instanceId}`)
   }
 
   // Keyboard: "/" focuses search, J/K move through the list.
