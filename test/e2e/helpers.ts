@@ -121,7 +121,7 @@ export async function startGoBackend(_options: {
   await seedFakeGowa(dataDir, FAKE_GOWA_VERSION);
 
   const port = await randomPort();
-  const baseURL = `http://localhost:${port}`;
+  const baseURL = `http://127.0.0.1:${port}`;
 
   const proc = spawn(MANAGER_BINARY, [], {
     stdio: ['ignore', 'pipe', 'pipe'],
