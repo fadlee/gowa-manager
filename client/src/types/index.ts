@@ -83,6 +83,7 @@ export interface InstanceStatus {
   status: string;
   port: number | null;
   pid: number | null;
+  /** Seconds since the instance started. */
   uptime: number | null;
   error_message?: string | null;
   resources?: {

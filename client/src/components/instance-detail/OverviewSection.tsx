@@ -29,9 +29,10 @@ export function OverviewSection({ instance, status, isRunning }: OverviewSection
 
   const disabledWebhookSet = new Set(disabledWebhooks)
 
+  // The API reports instance uptime in seconds.
   const formatUptime = (uptime: number | null) => {
     if (!uptime) return 'N/A'
-    const seconds = Math.floor(uptime / 1000)
+    const seconds = Math.floor(uptime)
     const minutes = Math.floor(seconds / 60)
     const hours = Math.floor(minutes / 60)
 

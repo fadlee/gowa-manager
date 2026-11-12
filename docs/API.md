@@ -31,7 +31,7 @@ curl -H "Authorization: Bearer gowa_xxx" http://localhost:3000/api/instances
 | POST | `/api/instances/{id}/restart` | Restart. |
 | POST | `/api/instances/{id}/kill` | Force-stop. |
 | GET | `/api/instances/status` | Status of every instance in one array (same fields as below). The Web UI polls this every 5 seconds. |
-| GET | `/api/instances/{id}/status` | Status, PID, port, uptime, resources, devices. |
+| GET | `/api/instances/{id}/status` | Status, PID, port, uptime (seconds), resources, devices. |
 | GET | `/api/instances/{id}/devices` | WhatsApp devices. `count` and `connected` cover only logged-in devices; `total` and `devices` include slots added in GOWA that are not paired yet. |
 | GET | `/api/instances/{id}/logs?tail=200` | Recent stdout/stderr lines. |
 | GET | `/api/instances/{id}/files?path=<dir>` | List files in the instance folder (read-only). |
