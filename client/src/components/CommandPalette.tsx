@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { LayoutDashboard, Moon, Play, Plus, QrCode, RotateCcw, ScrollText, Search, Square, Table2, UserCircle, Users } from 'lucide-react'
+import { LayoutDashboard, LayoutPanelTop, Moon, Play, Plus, QrCode, RotateCcw, ScrollText, Search, Square, Table2, UserCircle, Users } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { cn } from '../lib/utils'
 import { useTheme } from '../lib/theme'
@@ -54,6 +54,7 @@ export function CommandPalette({ open, onOpenChange, isSuperadmin }: CommandPale
       }
       list.push({ id: `logs-${instance.id}`, label: `Logs ${instance.name}`, hint: 'Open logs', icon: ScrollText, run: () => navigate(`/instances/${instance.id}?tab=logs`) })
       list.push({ id: `login-${instance.id}`, label: `WhatsApp login ${instance.name}`, hint: 'Scan QR', icon: QrCode, run: () => navigate(`/instances/${instance.id}?tab=login`) })
+      list.push({ id: `admin-${instance.id}`, label: `GOWA admin ${instance.name}`, hint: 'Open admin page', icon: LayoutPanelTop, run: () => navigate(`/instances/${instance.id}?tab=admin`) })
     }
     list.push({ id: 'create', label: 'New instance', hint: 'Create', icon: Plus, run: () => navigate('/?create=1') })
     list.push({ id: 'summary', label: 'Summary', hint: 'Go to', icon: LayoutDashboard, run: () => navigate('/') })

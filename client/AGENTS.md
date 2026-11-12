@@ -49,7 +49,7 @@ bun run dev:web    # frontend on :5173
 - **Components**
   - `src/components/ui/*.tsx` – reusable primitives (button, card, dialog, input, etc.).
   - `src/pages/WorkspacePage.tsx` – root view: instance sidebar (or full-width table) + detail panel, state in the URL (`/instances/:id?tab=…`, `/?view=table`).
-  - `src/components/workspace/*` – sidebar, table, summary, detail panel, WhatsApp login tab, bulk actions.
+  - `src/components/workspace/*` – sidebar, table, summary, detail panel, WhatsApp login tab, embedded GOWA admin (`AdminFrame`), bulk actions.
   - `src/components/CommandPalette.tsx`, `src/components/UserMenu.tsx` – Ctrl/⌘K palette and avatar menu (theme, density).
   - `src/lib/instanceHealth.ts` – batch status polling (`GET /api/instances/status`), health/attention rules, lifecycle actions.
   - `src/components/CreateInstanceDialog.tsx`, `EditInstanceDialog.tsx`, `VersionSelector.tsx`.

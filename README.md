@@ -22,7 +22,7 @@ A single binary (or Docker image) that runs [GOWA](https://github.com/aldinokema
 The instance list stays on the left, and the selected instance opens on the right. Switching instances is one click (or <kbd>J</kbd>/<kbd>K</kbd>), so you never go back and forth between a dashboard and a detail page.
 
 - **Problems first.** Instances that crashed or still need a WhatsApp login move to the top of the list, and the summary tells you what to do about each one.
-- **Link WhatsApp in a few clicks.** The *WhatsApp login* tab opens the GOWA QR page already signed in, then updates by itself as soon as your phone is linked.
+- **Link WhatsApp without leaving the page.** The *GOWA admin* tab shows the instance's GOWA admin page inside the manager, already signed in, so you can add a device and scan its QR code right there. The *WhatsApp login* tab updates by itself as soon as your phone is linked.
 - **Act on many instances at once.** Tick several instances and start, stop, or restart them together.
 - **Jump anywhere.** Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>K</kbd> and type an instance or an action, like `restart sales`.
 - **Links that stay put.** The URL keeps the open instance and tab (`/instances/12?tab=logs`), so a refresh or a shared link lands in the same place.

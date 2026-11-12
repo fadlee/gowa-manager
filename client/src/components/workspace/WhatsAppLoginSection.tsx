@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ExternalLink, Play, RefreshCw, Smartphone } from 'lucide-react'
+import { LayoutPanelTop, Play, QrCode, RefreshCw, Smartphone } from 'lucide-react'
 import { apiClient } from '../../lib/api'
 import type { InstanceHealth } from '../../lib/instanceHealth'
 import type { Instance } from '../../types'
@@ -11,6 +11,7 @@ interface WhatsAppLoginSectionProps {
   health: InstanceHealth
   onStart: () => void
   starting: boolean
+  onOpenAdmin: () => void
 }
 
 function deviceLabel(device: Record<string, unknown>): string {
@@ -31,7 +32,7 @@ export async function openAdmin(instance: Instance) {
   }
 }
 
-export function WhatsAppLoginSection({ instance, health, onStart, starting }: WhatsAppLoginSectionProps) {
+export function WhatsAppLoginSection({ instance, health, onStart, starting, onOpenAdmin }: WhatsAppLoginSectionProps) {
   const running = health.state === 'running'
   const { data, isFetching, refetch } = useQuery({
     queryKey: ['instance-devices', instance.id],
@@ -80,8 +81,8 @@ export function WhatsAppLoginSection({ instance, health, onStart, starting }: Wh
             </div>
           ))}
           <p className="pt-1 text-xs text-gray-500 dark:text-gray-400">To link another number or log out, use the GOWA admin page.</p>
-          <Button variant="outline" size="sm" onClick={() => openAdmin(instance)}>
-            <ExternalLink className="mr-2 h-4 w-4" />Open admin page
+          <Button variant="outline" size="sm" onClick={onOpenAdmin}>
+            <LayoutPanelTop className="mr-2 h-4 w-4" />Open admin page
           </Button>
         </div>
       ) : (
@@ -89,14 +90,14 @@ export function WhatsAppLoginSection({ instance, health, onStart, starting }: Wh
           <div className="space-y-3">
             <p className="font-semibold text-amber-900 dark:text-amber-200">No WhatsApp account is linked yet</p>
             <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-300">
-              <li>Click <b>Show QR code</b>. The GOWA admin page opens already signed in.</li>
+              <li>Click <b>Show QR code</b>. The GOWA admin page opens in the <b>GOWA admin</b> tab, already signed in.</li>
               <li>Click <b>Login</b> there to show the QR code.</li>
               <li>On your phone, open WhatsApp → Linked devices → Link a device, and scan it.</li>
             </ol>
-            <p className="text-xs text-gray-500 dark:text-gray-400">This page checks every 5 seconds and updates as soon as the phone is linked.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">This tab checks every 5 seconds and updates as soon as the phone is linked.</p>
           </div>
-          <Button size="lg" onClick={() => openAdmin(instance)}>
-            <ExternalLink className="mr-2 h-4 w-4" />Show QR code
+          <Button size="lg" onClick={onOpenAdmin}>
+            <QrCode className="mr-2 h-4 w-4" />Show QR code
           </Button>
         </div>
       )}

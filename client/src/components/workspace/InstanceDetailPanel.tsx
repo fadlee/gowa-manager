@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { AlertTriangle, ArrowLeft, Clock, ExternalLink, Play, RotateCcw, Square } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, ArrowLeft, Clock, LayoutPanelTop, Play, RotateCcw, Square } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { flagsFromConfig } from '../../lib/basicAuth'
 import type { InstanceAction } from '../../lib/instanceHealth'
@@ -16,11 +16,13 @@ import { VersionUpdateIndicator } from '../VersionUpdateIndicator'
 import { BasicAuthBadge, BasicAuthWarning } from '../BasicAuthRequirement'
 import { ConfirmDialog, StatusPill } from './primitives'
 import { formatUptime, type InstanceRowData } from './model'
-import { WhatsAppLoginSection, openAdmin } from './WhatsAppLoginSection'
+import { WhatsAppLoginSection } from './WhatsAppLoginSection'
+import { AdminFrame } from './AdminFrame'
 
 export const DETAIL_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'login', label: 'WhatsApp login' },
+  { id: 'admin', label: 'GOWA admin' },
   { id: 'logs', label: 'Logs' },
   { id: 'api', label: 'API' },
   { id: 'files', label: 'Files' },
@@ -49,6 +51,13 @@ export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, 
   const [confirmStop, setConfirmStop] = useState(false)
   const running = health.state === 'running'
   const uptime = running ? formatUptime(status?.uptime) : null
+  // Keep the admin page loaded after its first visit, so switching tabs
+  // does not lose what is on it (such as a QR code waiting to be scanned).
+  const [adminLoaded, setAdminLoaded] = useState(tab === 'admin')
+  useEffect(() => {
+    if (tab === 'admin') setAdminLoaded(true)
+  }, [tab])
+  const showAdmin = tab === 'admin' && running
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -82,8 +91,8 @@ export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, 
                 <Button variant="outline" size="sm" disabled={pending} onClick={() => onAction('restart', instance)} aria-label="Restart">
                   <RotateCcw className={cn('h-4 w-4 md:mr-1.5', pending && 'animate-spin')} /><span className="hidden md:inline">Restart</span>
                 </Button>
-                <Button variant="outline" size="sm" className="hidden lg:inline-flex" onClick={() => openAdmin(instance)}>
-                  <ExternalLink className="mr-1.5 h-4 w-4" />Open Admin
+                <Button variant="outline" size="sm" className="hidden lg:inline-flex" onClick={() => onTabChange('admin')}>
+                  <LayoutPanelTop className="mr-1.5 h-4 w-4" />Open Admin
                 </Button>
               </>
             ) : (
@@ -114,7 +123,7 @@ export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, 
         </nav>
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 p-4 dark:bg-gray-950/40 sm:p-6">
+      <div className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 p-4 dark:bg-gray-950/40 sm:p-6', showAdmin && 'hidden')}>
         {health.state === 'error' && (
           <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/30">
             <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
@@ -137,7 +146,15 @@ export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, 
         )}
 
         {tab === 'overview' && <OverviewSection instance={instance} status={status} isRunning={running} />}
-        {tab === 'login' && <WhatsAppLoginSection instance={instance} health={health} starting={pending} onStart={() => onAction('start', instance)} />}
+        {tab === 'login' && <WhatsAppLoginSection instance={instance} health={health} starting={pending} onStart={() => onAction('start', instance)} onOpenAdmin={() => onTabChange('admin')} />}
+        {tab === 'admin' && !running && (
+          <div className="space-y-3 rounded-xl border border-dashed border-gray-300 p-6 text-center dark:border-gray-700">
+            <p className="text-sm text-gray-600 dark:text-gray-300">Start the instance to open its GOWA admin page.</p>
+            <Button onClick={() => onAction('start', instance)} disabled={pending}>
+              <Play className="mr-2 h-4 w-4" />Start instance
+            </Button>
+          </div>
+        )}
         {tab === 'logs' && <LogsSection instance={instance} />}
         {tab === 'api' && <ApiSection instance={instance} />}
         {tab === 'files' && <FilesSection instance={instance} />}
@@ -148,6 +165,8 @@ export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, 
           </div>
         )}
       </div>
+
+      {adminLoaded && running && <AdminFrame instance={instance} className={showAdmin ? 'flex' : 'hidden'} />}
 
       <ConfirmDialog
         open={confirmStop}
