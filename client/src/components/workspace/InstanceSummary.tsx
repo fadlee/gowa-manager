@@ -12,10 +12,11 @@ interface InstanceSummaryProps {
   pendingIds: Set<number>
   onFilter: (filter: InstanceFilter) => void
   onOpenTab: (id: number, tab?: string) => void
+  onChangeVersion: (id: number) => void
   onAction: (action: InstanceAction, instance: Instance) => void
 }
 
-export function InstanceSummary({ rows, latestVersion, pendingIds, onFilter, onOpenTab, onAction }: InstanceSummaryProps) {
+export function InstanceSummary({ rows, latestVersion, pendingIds, onFilter, onOpenTab, onChangeVersion, onAction }: InstanceSummaryProps) {
   const attention = rows.filter(row => row.health.needsAttention).sort((a, b) => a.instance.name.localeCompare(b.instance.name))
   const outdated = rows.filter(row => row.health.outdated)
   const running = rows.filter(row => row.health.state === 'running').length
@@ -100,14 +101,14 @@ export function InstanceSummary({ rows, latestVersion, pendingIds, onFilter, onO
               <button
                 key={instance.id}
                 type="button"
-                onClick={() => onOpenTab(instance.id, 'settings')}
+                onClick={() => onChangeVersion(instance.id)}
                 className="rounded-full border border-gray-300 px-2.5 py-0.5 text-xs text-gray-700 hover:border-indigo-400 hover:text-indigo-700 dark:border-gray-700 dark:text-gray-300 dark:hover:text-indigo-300"
               >
                 {instance.name} · {versionLabel(health)}
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Change the version in each instance's Settings tab.</p>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Click an instance to change its version.</p>
         </section>
       )}
     </div>

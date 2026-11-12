@@ -11,6 +11,7 @@ import { CreateInstanceDialog } from '../components/CreateInstanceDialog'
 import { InstanceSidebar, type InstanceListControls } from '../components/workspace/InstanceSidebar'
 import { InstanceTable } from '../components/workspace/InstanceTable'
 import { InstanceSummary } from '../components/workspace/InstanceSummary'
+import { VersionDialog } from '../components/workspace/VersionDialog'
 import { InstanceDetailPanel, normalizeTab, type DetailTab } from '../components/workspace/InstanceDetailPanel'
 import { buildRows, countFilters, matchesFilter, matchesSearch, sortRows } from '../components/workspace/model'
 import type { InstanceFilter } from '../components/workspace/primitives'
@@ -33,6 +34,7 @@ export function WorkspacePage() {
   const [filter, setFilter] = useState<InstanceFilter>('all')
   const [selection, setSelection] = useState<Set<number>>(() => new Set())
   const [showCreate, setShowCreate] = useState(false)
+  const [versionDialogId, setVersionDialogId] = useState<number | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const { data: instances = [], isLoading, error, refetch } = useQuery({
@@ -53,6 +55,7 @@ export function WorkspacePage() {
   const visibleRows = sortRows(searchedRows.filter(row => matchesFilter(row, filter)))
   const counts = countFilters(searchedRows)
   const selectedRow = allRows.find(row => row.instance.id === selectedId)
+  const versionDialogRow = versionDialogId === null ? undefined : allRows.find(row => row.instance.id === versionDialogId)
 
   // The command palette opens the create dialog through ?create=1.
   useEffect(() => {
@@ -216,6 +219,7 @@ export function WorkspacePage() {
             onAction={runAction}
             onBack={() => navigate('/')}
             onDeleted={() => navigate('/')}
+            onChangeVersion={() => setVersionDialogId(selectedRow.instance.id)}
           />
         ) : selectedId !== undefined ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
@@ -229,11 +233,20 @@ export function WorkspacePage() {
             pendingIds={actions.pendingIds}
             onFilter={setFilter}
             onOpenTab={(instanceId, nextTab) => openInstance(instanceId, nextTab)}
+            onChangeVersion={setVersionDialogId}
             onAction={runAction}
           />
         )}
       </section>
       {createDialog}
+      {versionDialogRow && (
+        <VersionDialog
+          instance={versionDialogRow.instance}
+          health={versionDialogRow.health}
+          open
+          onOpenChange={(open) => !open && setVersionDialogId(null)}
+        />
+      )}
     </div>
   )
 }

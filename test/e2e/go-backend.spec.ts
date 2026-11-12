@@ -469,7 +469,7 @@ test.describe('Go backend E2E', () => {
     await client.deleteInstance(instance.id);
   });
 
-  test('update instance name via detail settings', async ({ page }) => {
+  test('rename instance inline in the header', async ({ page }) => {
     const health = createHealthTracker();
     health.attach(page);
 
@@ -477,16 +477,16 @@ test.describe('Go backend E2E', () => {
     await login(page);
 
     await openInstance(page, 'update-name-instance');
-    await openTab(page, 'Settings');
-
-    // The settings section has a name input with a placeholder.
-    const nameInput = page.getByPlaceholder('Enter instance name...');
+    await page.getByRole('button', { name: 'Rename instance' }).click();
+    const nameInput = page.getByRole('textbox', { name: 'Instance name' });
     await nameInput.fill('updated-name-instance');
-    await page.getByRole('button', { name: /Save Changes/i }).click();
+    await nameInput.press('Enter');
 
-    // Verify via the API that the name changed.
-    const after = await client.getInstance(instance.id);
-    expect(after.name).toBe('updated-name-instance');
+    await expect(page.getByRole('heading', { level: 1, name: 'updated-name-instance' })).toBeVisible();
+    await expect(async () => {
+      const after = await client.getInstance(instance.id);
+      expect(after.name).toBe('updated-name-instance');
+    }).toPass({ timeout: 5_000 });
 
     await client.deleteInstance(instance.id);
 

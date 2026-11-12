@@ -1,23 +1,22 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ArrowLeft, Clock, LayoutPanelTop, Play, RotateCcw, Square } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowUpCircle, ChevronDown, Clock, LayoutPanelTop, Play, RotateCcw, Square } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { flagsFromConfig } from '../../lib/basicAuth'
 import type { InstanceAction } from '../../lib/instanceHealth'
 import type { Instance } from '../../types'
 import { Button } from '../ui/button'
-import { Badge } from '../ui/badge'
 import { OverviewSection } from '../instance-detail/OverviewSection'
 import { ApiSection } from '../instance-detail/ApiSection'
 import { SettingsSection } from '../instance-detail/SettingsSection'
 import { FilesSection } from '../instance-detail/FilesSection'
 import { LogsSection } from '../instance-detail/LogsSection'
 import { DangerZoneSection } from '../instance-detail/DangerZoneSection'
-import { VersionUpdateIndicator } from '../VersionUpdateIndicator'
 import { BasicAuthBadge, BasicAuthWarning } from '../BasicAuthRequirement'
 import { ConfirmDialog, StatusPill } from './primitives'
 import { formatUptime, versionLabel, versionTitle, type InstanceRowData } from './model'
 import { WhatsAppLoginSection } from './WhatsAppLoginSection'
 import { AdminFrame } from './AdminFrame'
+import { InstanceNameEditor } from './InstanceNameEditor'
 
 export const DETAIL_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -44,9 +43,10 @@ interface InstanceDetailPanelProps {
   onAction: (action: InstanceAction, instance: Instance) => void
   onBack: () => void
   onDeleted: () => void
+  onChangeVersion: () => void
 }
 
-export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, onBack, onDeleted }: InstanceDetailPanelProps) {
+export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, onBack, onDeleted, onChangeVersion }: InstanceDetailPanelProps) {
   const { instance, status, health } = row
   const [confirmStop, setConfirmStop] = useState(false)
   const running = health.state === 'running'
@@ -68,10 +68,23 @@ export function InstanceDetailPanel({ row, tab, pending, onTabChange, onAction, 
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="mb-0 truncate text-lg font-semibold text-gray-900 dark:text-white">{instance.name}</h1>
+              <InstanceNameEditor instance={instance} />
               <StatusPill state={pending ? 'starting' : health.state} label={pending ? 'Working…' : undefined} />
-              <Badge variant="secondary" className="text-xs" title={versionTitle(health)}>{versionLabel(health)}</Badge>
-              <VersionUpdateIndicator currentVersion={health.version ?? instance.gowa_version} />
+              <button
+                type="button"
+                onClick={onChangeVersion}
+                title={`${versionTitle(health)}. Click to change.`}
+                aria-label={`GOWA ${versionLabel(health)}${health.outdated ? ', update available' : ''}. Change version`}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
+                  health.outdated
+                    ? 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-200 dark:hover:bg-indigo-900/60'
+                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700',
+                )}
+              >
+                {versionLabel(health)}
+                {health.outdated ? <ArrowUpCircle className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5 opacity-60" />}
+              </button>
               <BasicAuthBadge instance={instance} className="hidden sm:inline-flex" />
             </div>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-2 truncate font-mono text-xs text-gray-500 dark:text-gray-400">

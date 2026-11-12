@@ -42,6 +42,11 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
       !availableVersions.some(av => av.version === v.version)
     )
   ]
+  // "latest" runs the newest installed version, so it must stay selectable
+  // when the GitHub release list is unavailable (offline or rate-limited).
+  if (!allVersions.some(v => v.version === 'latest')) {
+    allVersions.unshift({ version: 'latest', path: '', installed: installedVersions.some(v => v.installed), isLatest: false })
+  }
 
   const selectedVersion = allVersions.find(v => v.version === value) || 
     { version: value, installed: false, isLatest: false }
@@ -121,7 +126,7 @@ export function VersionSelector({ value, onChange, disabled }: VersionSelectorPr
       {!selectedVersion?.installed && (
         <p className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
           <AlertCircle className="h-3 w-3" />
-          This version needs to be installed before creating an instance
+          Install this version before using it
         </p>
       )}
 
