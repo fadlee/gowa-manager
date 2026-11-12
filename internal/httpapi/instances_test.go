@@ -173,6 +173,44 @@ func TestInstanceRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("batch status returns every instance with device summary", func(t *testing.T) {
+		pid := 4321
+		life := &fakeLifecycleRoutes{status: InstanceStatus{ID: 1, Name: "test-instance", Status: "running", Port: &port, PID: &pid, Uptime: 10}}
+		device := &fakeDeviceClient{response: instances.DevicesResponse{Count: 1, Connected: true, Source: "cache"}}
+		rec := serveInstanceRequest(newFakeInstanceService(instance), life, device, http.MethodGet, "/api/instances/status", nil)
+		assertStatus(t, rec, http.StatusOK)
+		var body []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode batch status: %v", err)
+		}
+		if len(body) != 1 || body[0]["status"] != "running" || body[0]["id"] != float64(1) {
+			t.Fatalf("batch status = %#v, want one running instance", body)
+		}
+		devices, ok := body[0]["devices"].(map[string]any)
+		if !ok || devices["count"] != float64(1) {
+			t.Fatalf("batch status devices = %#v, want count 1", body[0]["devices"])
+		}
+	})
+
+	t.Run("batch status falls back to stored state when lifecycle fails", func(t *testing.T) {
+		stored := withInstance(instance, func(i *instances.Instance) { i.Status = "error" })
+		life := &fakeLifecycleRoutes{err: errors.New("process failed")}
+		rec := serveInstanceRequest(newFakeInstanceService(stored), life, nil, http.MethodGet, "/api/instances/status", nil)
+		assertStatus(t, rec, http.StatusOK)
+		var body []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode batch status: %v", err)
+		}
+		if len(body) != 1 || body[0]["status"] != "error" {
+			t.Fatalf("batch status = %#v, want stored error status", body)
+		}
+	})
+
+	t.Run("batch status rejects non-GET", func(t *testing.T) {
+		rec := serveInstanceRequest(newFakeInstanceService(instance), &fakeLifecycleRoutes{}, nil, http.MethodPost, "/api/instances/status", nil)
+		assertStatus(t, rec, http.StatusMethodNotAllowed)
+	})
+
 	t.Run("lifecycle generic error maps to sanitized 500", func(t *testing.T) {
 		life := &fakeLifecycleRoutes{err: errors.New("process failed")}
 		rec := serveInstanceRequest(newFakeInstanceService(instance), life, nil, http.MethodPost, "/api/instances/1/start", nil)

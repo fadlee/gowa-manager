@@ -91,7 +91,7 @@ bun run test:benchmark:compare
   - Start with: `cmd/gowa-manager-go/main.go`, `internal/app/app.go`, `internal/httpapi/`.
   - See `internal/AGENTS.md` (if present) or package-level comments for Go patterns.
 - **Web UI (SPA)**: `client/`
-  - Start with: `client/src/App.tsx`, `client/src/components/InstanceList.tsx`, `client/src/lib/api.ts`.
+  - Start with: `client/src/App.tsx`, `client/src/pages/WorkspacePage.tsx` (split-view instance workspace), `client/src/components/workspace/`, `client/src/lib/api.ts`.
   - See [client/AGENTS.md](client/AGENTS.md) for frontend patterns and commands.
 - **Static & embedding**
   - `public/` (Vite build output, gitignored) → `internal/static/web/` (Go embed directory).

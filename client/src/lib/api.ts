@@ -194,6 +194,11 @@ class ApiClient {
     });
   }
 
+  // Live status of every instance in one request (used by the sidebar).
+  async getInstanceStatuses(): Promise<InstanceStatus[]> {
+    return this.request<InstanceStatus[]>('/instances/status');
+  }
+
   async getInstanceStatus(id: number): Promise<InstanceStatus> {
     return this.request<InstanceStatus>(`/instances/${id}/status`);
   }

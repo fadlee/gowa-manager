@@ -7,7 +7,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-200 shadow-sm hover:shadow",
+        default: "bg-indigo-600 text-white hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:text-gray-950 shadow-sm hover:shadow",
         destructive:
           "bg-red-600 text-white hover:bg-red-500 shadow-sm hover:shadow",
         outline:
@@ -15,7 +15,7 @@ const buttonVariants = cva(
         secondary:
           "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-600",
         ghost: "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white",
-        link: "text-blue-600 dark:text-blue-400 underline-offset-4 hover:underline hover:text-blue-500 dark:hover:text-blue-300",
+        link: "text-indigo-700 dark:text-indigo-300 underline-offset-4 hover:underline hover:text-indigo-600 dark:hover:text-indigo-200",
       },
       size: {
         default: "h-10 px-4 py-2",

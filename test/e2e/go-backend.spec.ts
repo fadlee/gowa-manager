@@ -27,23 +27,51 @@ test.afterAll(async () => {
   if (stop) await stop();
 });
 
+/** The workspace landing view: the summary, or the empty state when there are no instances. */
+function workspaceHome(page: Page) {
+  return page.getByRole('heading', { name: /^(Summary|Create your first instance)$/ });
+}
+
 /** Log in via the frontend login form. */
 async function login(page: Page) {
   await page.goto(baseURL);
   await page.getByLabel('Username').fill(ADMIN_USERNAME);
   await page.getByLabel('Password').fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  // Wait for the dashboard header to appear.
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(workspaceHome(page)).toBeVisible();
+}
+
+/** Log out through the account menu. */
+async function logout(page: Page) {
+  await page.locator('[aria-haspopup="menu"]').click();
+  await page.getByRole('menuitem', { name: 'Log out' }).click();
+  await expect(page.getByText('Sign in to GOWA Manager')).toBeVisible();
+}
+
+/** The sidebar row of an instance. */
+function instanceRow(page: Page, name: string) {
+  return page.locator('[data-instance-row]').filter({ hasText: name });
+}
+
+/** Open an instance from the sidebar and wait for its panel. */
+async function openInstance(page: Page, name: string) {
+  await instanceRow(page, name).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+}
+
+/** Open a tab of the selected instance. */
+async function openTab(page: Page, label: string) {
+  await page.getByRole('navigation', { name: 'Instance sections' }).getByRole('button', { name: label }).click();
 }
 
 /** Create an instance via the UI and return its name. */
 async function createInstanceViaUI(page: Page, name: string): Promise<string> {
-  await page.getByRole('button', { name: 'New Instance' }).click();
+  // "New" in the sidebar, or "New instance" on the empty state.
+  await page.getByRole('button', { name: /^New( instance)?$/ }).first().click();
   await page.getByLabel('Name').fill(name);
   await page.getByRole('button', { name: 'Create' }).click();
-  // Wait for the dialog to close and the instance card heading to appear.
-  await expect(page.getByRole('heading', { name })).toBeVisible();
+  // The new instance opens in the detail panel.
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
   return name;
 }
 
@@ -56,15 +84,12 @@ test.describe('Go backend E2E', () => {
 
     await login(page);
 
-    // Logout via the header button.
-    await page.getByRole('button', { name: 'Logout' }).click();
-    // Should redirect back to the login page.
-    await expect(page.getByText('Sign in to GOWA Manager')).toBeVisible();
+    await logout(page);
 
     health.assert(expect);
   });
 
-  test('dashboard shows instance list', async ({ page }) => {
+  test('workspace shows instance list', async ({ page }) => {
     const health = createHealthTracker();
     health.attach(page);
 
@@ -72,8 +97,7 @@ test.describe('Go backend E2E', () => {
     const instance = await seedInstance(client, { name: 'dash-list-instance' });
     await login(page);
 
-    // The instance card heading should be visible.
-    await expect(page.getByRole('heading', { name: 'dash-list-instance' })).toBeVisible();
+    await expect(instanceRow(page, 'dash-list-instance')).toBeVisible();
 
     // Cleanup.
     await client.deleteInstance(instance.id);
@@ -105,16 +129,14 @@ test.describe('Go backend E2E', () => {
     const instance = await seedInstance(client, { name: 'start-ui-instance' });
     await login(page);
 
-    // The dashboard card has a Switch toggle for start/stop.
-    const card = page.locator('text=start-ui-instance').locator('xpath=ancestor::*[contains(@class,"card") or self::div][1]');
-    // Click the switch to start the instance.
-    const switchToggle = page.locator('[role="switch"]').first();
-    await switchToggle.click();
+    // Rows show Start/Stop/Restart on hover.
+    await instanceRow(page, 'start-ui-instance').hover();
+    await page.getByRole('button', { name: 'Start start-ui-instance', exact: true }).click();
 
     // Wait for the status to become running via the API.
     await waitForInstanceStatus(client, instance.id, 'running', 20_000);
 
-    // Verify the UI shows "Running".
+    // The summary counts it as running.
     await expect(page.getByText('Running').first()).toBeVisible();
 
     // Cleanup: stop and delete.
@@ -134,12 +156,11 @@ test.describe('Go backend E2E', () => {
 
     await login(page);
 
-    // Click the switch to stop (it's currently running/checked).
-    const switchToggle = page.locator('[role="switch"]').first();
-    await switchToggle.click();
+    await instanceRow(page, 'stop-ui-instance').hover();
+    await page.getByRole('button', { name: 'Stop stop-ui-instance', exact: true }).click();
 
     // A confirmation dialog appears for stop.
-    await expect(page.getByRole('heading', { name: /stop/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stop stop-ui-instance?' })).toBeVisible();
     await page.getByRole('button', { name: 'Stop instance' }).click();
 
     // Wait for stopped status.
@@ -160,12 +181,10 @@ test.describe('Go backend E2E', () => {
     await waitForInstanceStatus(client, instance.id, 'running', 20_000);
 
     await login(page);
-    // Navigate to the instance detail page.
-    await page.getByText('restart-detail-instance').click();
-    await expect(page.getByRole('heading', { name: 'restart-detail-instance' })).toBeVisible();
+    await openInstance(page, 'restart-detail-instance');
 
     // Click the Restart button in the detail header.
-    await page.getByRole('button', { name: /Restart/i }).click();
+    await page.getByRole('button', { name: 'Restart', exact: true }).click();
 
     // The instance should remain running after restart.
     await waitForInstanceStatus(client, instance.id, 'running', 20_000);
@@ -186,10 +205,10 @@ test.describe('Go backend E2E', () => {
     await waitForInstanceStatus(client, instance.id, 'running', 20_000);
 
     await login(page);
-    await page.getByText('kill-detail-instance').click();
+    await openInstance(page, 'kill-detail-instance');
 
-    // Navigate to the Danger Zone tab.
-    await page.getByRole('button', { name: /Danger Zone/i }).click();
+    // The danger zone sits at the bottom of the Settings tab.
+    await openTab(page, 'Settings');
 
     // Click "Force Kill" to reveal confirmation.
     await page.getByRole('button', { name: 'Force Kill' }).click();
@@ -212,15 +231,15 @@ test.describe('Go backend E2E', () => {
     const instance = await seedInstance(client, { name: 'delete-detail-instance' });
     await login(page);
 
-    await page.getByText('delete-detail-instance').click();
-    await page.getByRole('button', { name: /Danger Zone/i }).click();
+    await openInstance(page, 'delete-detail-instance');
+    await openTab(page, 'Settings');
 
     // Click Delete to reveal confirmation.
-    await page.getByRole('button', { name: 'Delete' }).click();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
     await page.getByRole('button', { name: 'Confirm Delete' }).click();
 
-    // Should navigate back to the dashboard.
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    // Should go back to the workspace summary.
+    await expect(workspaceHome(page)).toBeVisible();
 
     // Verify via the API that the instance is gone.
     const instances = await client.getInstances();
@@ -236,8 +255,8 @@ test.describe('Go backend E2E', () => {
     const instance = await seedInstance(client, { name: 'reset-detail-instance' });
     await login(page);
 
-    await page.getByText('reset-detail-instance').click();
-    await page.getByRole('button', { name: /Danger Zone/i }).click();
+    await openInstance(page, 'reset-detail-instance');
+    await openTab(page, 'Settings');
 
     // Click "Reset Data" to reveal confirmation.
     await page.getByRole('button', { name: 'Reset Data' }).click();
@@ -457,8 +476,8 @@ test.describe('Go backend E2E', () => {
     const instance = await seedInstance(client, { name: 'update-name-instance' });
     await login(page);
 
-    await page.getByText('update-name-instance').first().click();
-    await page.getByRole('button', { name: /Settings/i }).click();
+    await openInstance(page, 'update-name-instance');
+    await openTab(page, 'Settings');
 
     // The settings section has a name input with a placeholder.
     const nameInput = page.getByPlaceholder('Enter instance name...');
@@ -478,7 +497,7 @@ test.describe('Go backend E2E', () => {
     const health = createHealthTracker();
     health.attach(page);
 
-    // Full flow: login -> dashboard -> create -> start -> stop -> delete -> logout.
+    // Full flow: login -> workspace -> create -> start -> stop -> delete -> logout.
     await login(page);
 
     const name = `health-flow-${Date.now()}`;
@@ -499,9 +518,7 @@ test.describe('Go backend E2E', () => {
     // Delete via API.
     await client.deleteInstance(created!.id);
 
-    // Logout.
-    await page.getByRole('button', { name: 'Logout' }).click();
-    await expect(page.getByText('Sign in to GOWA Manager')).toBeVisible();
+    await logout(page);
 
     health.assert(expect);
   });
@@ -510,16 +527,15 @@ test.describe('Go backend E2E', () => {
     const health = createHealthTracker();
     health.attach(page);
 
-    // Login and verify we stay on the dashboard (no redirect loop back
+    // Login and verify we stay on the workspace (no redirect loop back
     // to the login page).
     await login(page);
     await page.waitForLoadState('networkidle');
-    // We should still be on the dashboard.
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(workspaceHome(page)).toBeVisible();
 
     // Reload the page — the session cookie should keep us authenticated.
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(workspaceHome(page)).toBeVisible();
 
     health.assert(expect);
   });

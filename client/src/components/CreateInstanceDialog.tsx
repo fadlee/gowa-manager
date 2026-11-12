@@ -19,16 +19,17 @@ import { BasicAuthWarning, useBasicAuthRequirement } from './BasicAuthRequiremen
 import { toast } from './ui/use-toast'
 import { generateInstanceName, generatePassword, generateUsername } from '../lib/utils'
 import { buildCreateInstanceConfig } from '../lib/instanceConfig'
-import type { BasicAuthPair } from '../types'
+import type { BasicAuthPair, Instance } from '../types'
 
 const newCredentials = (): BasicAuthPair => ({ username: generateUsername(), password: generatePassword() })
 
 interface CreateInstanceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCreated?: (instance: Instance) => void
 }
 
-export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialogProps) {
+export function CreateInstanceDialog({ open, onOpenChange, onCreated }: CreateInstanceDialogProps) {
   const [name, setName] = useState('')
   const [version, setVersion] = useState('latest')
   const [errors, setErrors] = useState<{name?: string}>({})
@@ -60,6 +61,7 @@ export function CreateInstanceDialog({ open, onOpenChange }: CreateInstanceDialo
       queryClient.invalidateQueries({ queryKey: ['instances'] })
       toast({ title: 'Instance created', description: `${data.name} has been created successfully.`, variant: 'success' })
       handleClose()
+      onCreated?.(data)
     },
     onError: (error) => {
       console.error('Failed to create instance:', error)
