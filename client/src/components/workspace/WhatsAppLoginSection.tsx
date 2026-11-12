@@ -116,7 +116,11 @@ export function WhatsAppLoginSection({ instance, health, onStart, starting, onOp
           </Button>
         </div>
       )}
-      {data?.error && <p className="text-xs text-red-600 dark:text-red-400">Could not read devices: {data.error}</p>}
+      {data?.error && (
+        <p className="text-xs text-amber-700 dark:text-amber-400" title={data.error}>
+          Could not check the linked devices right now. Trying again every 5 seconds.
+        </p>
+      )}
     </div>
   )
 }

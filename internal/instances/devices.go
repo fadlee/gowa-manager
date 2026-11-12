@@ -223,6 +223,9 @@ func normalizeDevices(value any) ([]map[string]any, error) {
 
 func normalizeNestedDevices(value any) ([]map[string]any, bool) {
 	switch typed := value.(type) {
+	case nil:
+		// GOWA v9 sends "results": null when no device has been added.
+		return []map[string]any{}, true
 	case []any:
 		devices, err := recordsFromArray(typed)
 		return devices, err == nil

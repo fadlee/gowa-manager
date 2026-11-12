@@ -67,6 +67,11 @@ func TestDeviceClientCountsOnlyLoggedInDevices(t *testing.T) {
 			wantCount: 0, wantTotal: 1, wantConnected: false,
 		},
 		{
+			name:      "no devices yet sends null results",
+			body:      `{"code":"SUCCESS","message":"List devices","results":null}`,
+			wantCount: 0, wantTotal: 0, wantConnected: false,
+		},
+		{
 			name:      "older GOWA without state lists logged-in devices",
 			body:      `{"code":"SUCCESS","results":[{"name":"Phone","device":"62811:1@s.whatsapp.net"}]}`,
 			wantCount: 1, wantTotal: 1, wantConnected: true,
