@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 
 export type Density = 'compact' | 'comfortable'
+
+const DEFAULT_DENSITY: Density = 'comfortable'
 
 interface PreferencesContextType {
   density: Density
@@ -8,28 +10,31 @@ interface PreferencesContextType {
 }
 
 const PreferencesContext = createContext<PreferencesContextType>({
-  density: 'compact',
+  density: DEFAULT_DENSITY,
   setDensity: () => {},
 })
 
 function readDensity(): Density {
   try {
-    return localStorage.getItem('density') === 'comfortable' ? 'comfortable' : 'compact'
+    const stored = localStorage.getItem('density')
+    return stored === 'compact' || stored === 'comfortable' ? stored : DEFAULT_DENSITY
   } catch {
-    return 'compact'
+    return DEFAULT_DENSITY
   }
 }
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
-  const [density, setDensity] = useState<Density>(readDensity)
+  const [density, setDensityState] = useState<Density>(readDensity)
 
-  useEffect(() => {
+  // Only an explicit choice is stored, so users who never picked one follow the default.
+  const setDensity = (next: Density) => {
+    setDensityState(next)
     try {
-      localStorage.setItem('density', density)
+      localStorage.setItem('density', next)
     } catch {
       // Storage may be unavailable (private mode); the choice still applies for this session.
     }
-  }, [density])
+  }
 
   return (
     <PreferencesContext.Provider value={{ density, setDensity }}>
