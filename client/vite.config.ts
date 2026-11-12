@@ -27,7 +27,10 @@ export default defineConfig({
       },
       '/app': {
         target: apiTarget,
-        changeOrigin: true,
+        // Keep the browser's Host: the manager matches it against Origin to
+        // let GOWA accept requests from its admin page, and uses it for
+        // redirects and the GOWA UI base URL.
+        changeOrigin: false,
         ws: true,
       },
     },

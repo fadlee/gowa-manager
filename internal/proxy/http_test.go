@@ -466,6 +466,58 @@ func TestHTTPProxy_CustomHeaderForwarded(t *testing.T) {
 	}
 }
 
+// GOWA rejects state-changing browser requests whose Origin is not its
+// own host, so a request from the manager's page must reach it with the
+// upstream origin, while a request from another site keeps its Origin.
+func TestHTTPProxy_BrowserSourceRewrittenForManagerOrigin(t *testing.T) {
+	// Reply in plain text: the proxy strips absolute URLs from JSON bodies.
+	upstream := newTestHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprintf(w, "%s\n%s", r.Header.Get("Origin"), r.Header.Get("Referer"))
+	}))
+	port := upstreamPort(t, upstream)
+	inst := newRunningInstance("k", port, "")
+	srv := newProxyServer(t, nil, nil, inst)
+	upstreamOrigin := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	post := func(origin, referer string) (string, string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, proxyURL(srv.URL, "k", "/devices"), strings.NewReader("{}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Referer", referer)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotOrigin, gotReferer, _ := strings.Cut(string(body), "\n")
+		return gotOrigin, gotReferer
+	}
+
+	gotOrigin, gotReferer := post(srv.URL, srv.URL+"/app/k/")
+	if gotOrigin != upstreamOrigin {
+		t.Errorf("same-origin Origin = %q, want %q", gotOrigin, upstreamOrigin)
+	}
+	if want := upstreamOrigin + "/app/k/"; gotReferer != want {
+		t.Errorf("same-origin Referer = %q, want %q", gotReferer, want)
+	}
+
+	gotOrigin, gotReferer = post("https://evil.example.net", "https://evil.example.net/x")
+	if gotOrigin != "https://evil.example.net" {
+		t.Errorf("cross-site Origin = %q, want it unchanged", gotOrigin)
+	}
+	if gotReferer != "https://evil.example.net/x" {
+		t.Errorf("cross-site Referer = %q, want it unchanged", gotReferer)
+	}
+}
+
 // ---- 5. Explicit authorization preservation ----
 
 func TestHTTPProxy_ExplicitAuthPreserved(t *testing.T) {

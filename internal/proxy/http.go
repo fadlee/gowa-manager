@@ -134,6 +134,7 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// Replace the outgoing header set entirely with the prepared
 			// headers (X-Forwarded-*, hop-by-hop stripped, auth injected).
 			r.Out.Header = PrepareForwardHeaders(r.In.Header, instance, p.magicAuth, r.In.URL)
+			RewriteBrowserSource(r.Out.Header, requestHost, target.URL.Host)
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			ctx := modifyResponseContext{

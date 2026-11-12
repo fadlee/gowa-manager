@@ -745,3 +745,91 @@ func TestInjectGOWAUILocalStorageBootstrap_MalformedHTMLReturnsOriginal(t *testi
 		t.Fatalf("malformed HTML should be returned unchanged: %s", got)
 	}
 }
+
+func TestRewriteBrowserSource(t *testing.T) {
+	const manager = "manager.example.com"
+	const upstream = "127.0.0.1:3005"
+	tests := []struct {
+		name        string
+		managerHost string
+		origin      string
+		referer     string
+		wantOrigin  string
+		wantReferer string
+	}{
+		{
+			name:        "manager origin and referer are rewritten",
+			managerHost: manager,
+			origin:      "https://manager.example.com",
+			referer:     "https://manager.example.com/app/k/?tab=1",
+			wantOrigin:  "http://127.0.0.1:3005",
+			wantReferer: "http://127.0.0.1:3005/app/k/?tab=1",
+		},
+		{
+			name:        "dev server port must match",
+			managerHost: "localhost:5173",
+			origin:      "http://localhost:5173",
+			wantOrigin:  "http://127.0.0.1:3005",
+		},
+		{
+			name:        "default port on either side is ignored",
+			managerHost: "manager.example.com:443",
+			origin:      "https://manager.example.com",
+			wantOrigin:  "http://127.0.0.1:3005",
+		},
+		{
+			name:        "host is compared case-insensitively",
+			managerHost: "Manager.Example.com",
+			origin:      "https://manager.example.com",
+			wantOrigin:  "http://127.0.0.1:3005",
+		},
+		{
+			name:        "other site is left alone",
+			managerHost: manager,
+			origin:      "https://evil.example.net",
+			referer:     "https://evil.example.net/page",
+			wantOrigin:  "https://evil.example.net",
+			wantReferer: "https://evil.example.net/page",
+		},
+		{
+			name:        "different port is another origin",
+			managerHost: "localhost:3000",
+			origin:      "http://localhost:5173",
+			wantOrigin:  "http://localhost:5173",
+		},
+		{
+			name:        "null origin is left alone",
+			managerHost: manager,
+			origin:      "null",
+			wantOrigin:  "null",
+		},
+		{
+			name:        "missing headers stay missing",
+			managerHost: manager,
+		},
+		{
+			name:        "empty manager host changes nothing",
+			managerHost: "",
+			origin:      "https://manager.example.com",
+			wantOrigin:  "https://manager.example.com",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			if tt.origin != "" {
+				h.Set("Origin", tt.origin)
+			}
+			if tt.referer != "" {
+				h.Set("Referer", tt.referer)
+			}
+			RewriteBrowserSource(h, tt.managerHost, upstream)
+			if got := h.Get("Origin"); got != tt.wantOrigin {
+				t.Errorf("Origin = %q, want %q", got, tt.wantOrigin)
+			}
+			if got := h.Get("Referer"); got != tt.wantReferer {
+				t.Errorf("Referer = %q, want %q", got, tt.wantReferer)
+			}
+		})
+	}
+}

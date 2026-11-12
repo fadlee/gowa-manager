@@ -319,6 +319,39 @@ func TestWebSocket_SafeHeadersForwarded(t *testing.T) {
 	waitRegistryZero(t, registry, 3*time.Second)
 }
 
+func TestWebSocket_ManagerOriginRewritten(t *testing.T) {
+	var seenOrigin atomic.Value // string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenOrigin.Store(r.Header.Get("Origin"))
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			return
+		}
+		defer c.Close(websocket.StatusNormalClosure, "")
+		echoLoop(context.Background(), c)
+	})
+	upstream := newTestHTTPServer(t, handler)
+	port := upstreamPort(t, upstream)
+	inst := newRunningInstance("k", port, "")
+	srv, _, registry := newWSBridgeServer(t, nil, inst)
+
+	c, _, err := websocket.Dial(context.Background(), wsBridgeURL(srv.URL, "k", "/ws"), &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{srv.URL}},
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	_, _ = wsRoundTrip(t, c, websocket.MessageText, []byte("ping"))
+
+	if got, want := seenOrigin.Load(), fmt.Sprintf("http://127.0.0.1:%d", port); got != want {
+		t.Fatalf("upstream Origin = %q, want %q", got, want)
+	}
+
+	c.Close(websocket.StatusNormalClosure, "done")
+	waitRegistryZero(t, registry, 3*time.Second)
+}
+
 // ---- 6. Subprotocol negotiation ----
 
 func TestWebSocket_Subprotocol(t *testing.T) {

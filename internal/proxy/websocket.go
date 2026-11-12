@@ -152,6 +152,7 @@ func (b *WSBridge) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	// Prepare forwarded headers and inject instance auth when needed.
 	upstreamHeaders := prepareWSHeaders(r.Header, target.Instance, b.injectAuth)
+	RewriteBrowserSource(upstreamHeaders, r.Host, target.URL.Host)
 
 	// Dial upstream before accepting the client, so a refused upstream
 	// handshake fails the client's handshake the same way. Accepting

@@ -73,6 +73,58 @@ func PrepareForwardHeaders(originalHeaders http.Header, instance instances.Insta
 	return out
 }
 
+// RewriteBrowserSource makes a browser request that came from the
+// manager's own pages look same-origin to the upstream GOWA instance.
+//
+// GOWA rejects state-changing browser requests (and WebSocket upgrades)
+// whose Origin or Referer is not its own host or listed in
+// APP_TRUSTED_ORIGINS. Behind this proxy GOWA sees its own loopback
+// address as the host, so the manager's origin never matches. An Origin
+// or Referer whose host equals managerHost (the Host the browser used to
+// reach the manager) is rewritten to upstreamHost. Any other value is
+// left as is, so GOWA still blocks requests from other sites.
+//
+// headers is modified in place.
+func RewriteBrowserSource(headers http.Header, managerHost, upstreamHost string) {
+	if managerHost == "" || upstreamHost == "" {
+		return
+	}
+	if origin := headers.Get("Origin"); origin != "" {
+		if _, ok := fromManagerHost(origin, managerHost); ok {
+			headers.Set("Origin", "http://"+upstreamHost)
+		}
+	}
+	if referer := headers.Get("Referer"); referer != "" {
+		if u, ok := fromManagerHost(referer, managerHost); ok {
+			u.Scheme = "http"
+			u.Host = upstreamHost
+			headers.Set("Referer", u.String())
+		}
+	}
+}
+
+// fromManagerHost parses raw as an http(s) URL and reports whether its
+// host is managerHost. Default ports are ignored on both sides, and the
+// scheme is not compared because a TLS-terminating proxy in front of the
+// manager forwards https traffic over plain http.
+func fromManagerHost(raw, managerHost string) (*url.URL, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, false
+	}
+	return u, strings.EqualFold(stripDefaultPort(u.Host), stripDefaultPort(managerHost))
+}
+
+func stripDefaultPort(host string) string {
+	if h, ok := strings.CutSuffix(host, ":80"); ok {
+		return h
+	}
+	if h, ok := strings.CutSuffix(host, ":443"); ok {
+		return h
+	}
+	return host
+}
+
 // GetInstanceBasicAuthHeader returns the "Basic <base64(user:pass)>"
 // header value for the first basicAuth entry in the instance config, or
 // an empty string when no basic auth is configured or the config is
