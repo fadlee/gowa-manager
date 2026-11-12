@@ -104,7 +104,7 @@ export function InstanceSidebar(props: SidebarProps) {
         {health.outdated && (
           <ArrowUpCircle aria-label="Update available" className="h-3.5 w-3.5 shrink-0 text-indigo-600 group-hover:hidden dark:text-indigo-400" />
         )}
-        <div className="hidden shrink-0 items-center group-hover:flex" onClick={(event) => event.stopPropagation()}>
+        <div className="-my-1 hidden shrink-0 items-center group-hover:flex" onClick={(event) => event.stopPropagation()}>
           {health.state === 'running' ? (
             <>
               <QuickAction label={`Restart ${instance.name}`} disabled={pending} onClick={() => props.onAction('restart', instance)} icon={RotateCcw} />
