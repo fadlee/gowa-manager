@@ -84,15 +84,18 @@ export function InstanceSidebar(props: SidebarProps) {
         }}
         data-instance-row={instance.id}
         className={cn(
-          'group flex cursor-pointer items-center gap-2.5 border-l-2 px-3 outline-none focus-visible:bg-gray-100 dark:focus-visible:bg-gray-800',
+          'group flex cursor-pointer items-start gap-2.5 border-l-2 px-3 outline-none focus-visible:bg-gray-100 dark:focus-visible:bg-gray-800',
           compact ? 'py-1.5' : 'py-2.5',
           active
             ? 'border-indigo-600 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/50'
             : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800/60',
         )}
       >
-        <RowCheckbox checked={selection.has(instance.id)} label={`Select ${instance.name}`} onToggle={() => props.onToggleSelect(instance.id)} />
-        <StatusDot state={pending ? 'starting' : health.state} />
+        {/* Top-aligned so they sit on the name line when the reason wraps below it (comfortable density). The offsets center each item on that 20px line. */}
+        <span className="mt-0.5 flex shrink-0">
+          <RowCheckbox checked={selection.has(instance.id)} label={`Select ${instance.name}`} onToggle={() => props.onToggleSelect(instance.id)} />
+        </span>
+        <StatusDot state={pending ? 'starting' : health.state} className="mt-[5px]" />
         <div className={cn('min-w-0 flex-1', compact && 'flex items-baseline gap-2')}>
           <div className={cn('truncate text-sm font-medium text-gray-900 dark:text-gray-100', active && 'text-indigo-800 dark:text-indigo-200', compact && 'max-w-[60%] shrink-0')}>
             {instance.name}
@@ -102,7 +105,7 @@ export function InstanceSidebar(props: SidebarProps) {
           </div>
         </div>
         {health.outdated && (
-          <ArrowUpCircle aria-label="Update available" className="h-3.5 w-3.5 shrink-0 text-indigo-600 group-hover:hidden dark:text-indigo-400" />
+          <ArrowUpCircle aria-label="Update available" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-indigo-600 group-hover:hidden dark:text-indigo-400" />
         )}
         <div className="-my-1 hidden shrink-0 items-center group-hover:flex" onClick={(event) => event.stopPropagation()}>
           {health.state === 'running' ? (
