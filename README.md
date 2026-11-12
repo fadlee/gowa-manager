@@ -27,6 +27,9 @@ The instance list stays on the left, and the selected instance opens on the righ
 - **Jump anywhere.** Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>K</kbd> and type an instance or an action, like `restart sales`.
 - **Links that stay put.** The URL keeps the open instance and tab (`/instances/12?tab=logs`), so a refresh or a shared link lands in the same place.
 
+<img src="docs/assets/workspace-gowa-admin.png" alt="GOWA admin tab: the instance's own GOWA admin page shown inside the manager, signed in automatically, with the instance list still on the left" width="100%">
+<p align="center"><sub><b>GOWA admin, built in</b>: each instance's GOWA admin page opens right inside the manager, already signed in. Click another instance on the left to manage it next, with no extra tabs and no logins.</sub></p>
+
 <table>
   <tr>
     <td width="50%"><img src="docs/assets/workspace-whatsapp-login.png" alt="WhatsApp login tab with steps to link a phone and a Show QR code button"><br><sub><b>WhatsApp login</b>: link a phone without leaving the list.</sub></td>
