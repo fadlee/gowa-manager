@@ -56,26 +56,40 @@ export function InstanceNameEditor({ instance }: { instance: Instance }) {
   }
 
   if (editing) {
+    // Same box as the heading below so nothing moves when editing starts:
+    // an invisible copy of the text sets the width, the input sits on top
+    // of it, and a spacer keeps the pencil's place.
     return (
-      <input
-        ref={inputRef}
-        value={value}
-        maxLength={MAX_NAME_LENGTH}
-        aria-label="Instance name"
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={finish}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            inputRef.current?.blur()
-          } else if (event.key === 'Escape') {
-            event.preventDefault()
-            cancelled.current = true
-            inputRef.current?.blur()
-          }
-        }}
-        className="-mx-1.5 h-8 min-w-0 max-w-full flex-1 rounded-md border border-indigo-400 bg-white px-1.5 text-lg font-semibold text-gray-900 outline-none ring-2 ring-indigo-500/20 dark:bg-gray-900 dark:text-white sm:max-w-sm"
-      />
+      <div className="flex min-w-0 items-center gap-1">
+        <span className="-mx-1.5 inline-grid min-w-0 max-w-full overflow-hidden">
+          <span aria-hidden="true" className="invisible col-start-1 row-start-1 h-7 whitespace-pre border px-[5px] text-lg font-semibold leading-[26px]">
+            {value || ' '}
+          </span>
+          <input
+            ref={inputRef}
+            value={value}
+            maxLength={MAX_NAME_LENGTH}
+            // size=1 drops the input's default ~20-character width, so the
+            // hidden copy of the text alone decides the width.
+            size={1}
+            aria-label="Instance name"
+            onChange={(event) => setValue(event.target.value)}
+            onBlur={finish}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                inputRef.current?.blur()
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                cancelled.current = true
+                inputRef.current?.blur()
+              }
+            }}
+            className="col-start-1 row-start-1 h-7 w-full min-w-0 rounded-md border border-indigo-400 bg-white px-[5px] text-lg font-semibold leading-[26px] text-gray-900 outline-none ring-2 ring-indigo-500/20 dark:bg-gray-900 dark:text-white"
+          />
+        </span>
+        <span aria-hidden="true" className="h-[22px] w-[22px] shrink-0" />
+      </div>
     )
   }
 
@@ -85,14 +99,16 @@ export function InstanceNameEditor({ instance }: { instance: Instance }) {
   return (
     <div className="group/name flex min-w-0 items-center gap-1">
       <h1
-        className="mb-0 cursor-text truncate text-lg font-semibold text-gray-900 dark:text-white"
+        className="mb-0 cursor-text truncate text-lg font-semibold leading-7 text-gray-900 dark:text-white"
         title="Click to rename"
         onClick={startEditing}
       >
         {shown}
       </h1>
       {rename.isPending ? (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-gray-400" />
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />
+        </span>
       ) : (
         <button
           type="button"
